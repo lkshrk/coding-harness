@@ -1,0 +1,5 @@
+name: G-qwen38-flash-coder
+description: Qwen3.8 Flash as the only implementer; DeepSeek reviews.
+models:
+  coder: basic/qwen3.8-flash
+  reviewer: basic/deepseek-v4.1-flash

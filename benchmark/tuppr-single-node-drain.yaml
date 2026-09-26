@@ -1,0 +1,24 @@
+id: tuppr-single-node-drain
+category: non-trivial-bugfix
+toolchain: go
+repo: https://github.com/lkshrk/tuppr
+base: 23d5fd80c528c34d516bfe0135fd96f434f2a525
+# Historical fix (#310); hidden from agents. Its test files are restored only for verification.
+reference: a82650e352
+hidden_tests:
+  - internal/controller/talosupgrade/controller_test.go
+prompt: |
+  On a single-node cluster the Talos upgrade Job runs on the node it upgrades. talosctl's default
+  cordon+evict drain runs from inside that pod and evicts it before the reboot is issued, which
+  leaves the only node cordoned on the old version.
+
+  For single-node (self-hosted) upgrades, the upgrade Job must not let talosctl drain the node.
+  Multi-node behavior stays unchanged. Cover this in the Job-building tests and update the
+  single-node note in the README.
+verify:
+  - name: build
+    run: go build ./...
+  - name: vet
+    run: go vet ./...
+  - name: test
+    run: go test ./internal/controller/talosupgrade/...

@@ -1,0 +1,32 @@
+# Rendered per call by coding_harness.harness (string.Template placeholders).
+- id: llm-pi-ai
+  config:
+    providers:
+      litellm:
+        api: openai-completions
+        baseURL: ${base_url}
+        apiKeyEnv: LITELLM_API_KEY
+        headers:
+          x-litellm-end-user-id: ${run_id}
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        models:
+          - id: ${model}
+            contextWindow: ${context}
+            maxTokens: 16384
+- id: agent-default-model
+  config:
+    provider: litellm
+    model: ${model}
+# Default headroomTokens (65536) leaves no pressure threshold inside a 64k window, so compaction never fires.
+- id: compaction-basic
+  config:
+    thresholdRatio: 0.75
+    headroomTokens: 8192
+- id: session-log-deepseek
+  config:
+    enabled: false
+- id: sandbox-policy
+  config:
+    mode: danger-full-access

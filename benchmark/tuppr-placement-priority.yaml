@@ -1,0 +1,31 @@
+id: tuppr-placement-priority
+category: multi-file-feature
+toolchain: go
+repo: https://github.com/lkshrk/tuppr
+base: 4379d0b7fd92724fe9e50946b133877fff0b3781
+# Historical fix (#335); hidden from agents. Its test files are restored only for verification.
+reference: 5ab17c67e4
+hidden_tests:
+  - internal/controller/talosupgrade/controller_test.go
+prompt: |
+  Two changes to Talos upgrade Jobs:
+
+  1. Placement: a TalosUpgrade without `policy.placement` currently gets soft (preferred) node
+     avoidance. Make `hard` the default (update the kubebuilder default and CRD). On a single-node
+     (self-hosted) cluster a required avoidance can never be satisfied, so `hard` must degrade to
+     preferred avoidance there. Add a `PlacementHard = "hard"` constant next to `PlacementSoft` in
+     the talosupgrade controller package.
+
+  2. Priority: the upgrade Job pod always uses priority class `system-node-critical`. Add an
+     optional `priorityClassName` field to the policy (Go field `PriorityClassName` on
+     `PolicySpec`, default `system-node-critical`) and pass it through to the Job pod spec; an empty
+     value falls back to `system-node-critical`.
+
+  Update the README example and cover both behaviors with tests.
+verify:
+  - name: build
+    run: go build ./...
+  - name: vet
+    run: go vet ./...
+  - name: test
+    run: go test ./internal/controller/... ./api/...

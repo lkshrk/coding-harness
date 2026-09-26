@@ -1,0 +1,5 @@
+name: B-qwen-coder
+description: Qwen3 Coder Next as the only implementer; DeepSeek reviews.
+models:
+  coder: basic/qwen3-coder-next
+  reviewer: basic/deepseek-v4.1-flash

@@ -1,0 +1,5 @@
+name: H-qwen38-27b-coder
+description: Qwen3.8 27B (dense, realistic local size) as the only implementer; DeepSeek reviews.
+models:
+  coder: basic/qwen3.8-27b
+  reviewer: basic/deepseek-v4.1-flash

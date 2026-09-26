@@ -1,0 +1,10 @@
+name: default
+description: Role aliases as configured in the gateway (local-* / frontier-*), with frontier escalation.
+models:
+  explorer: local-fast
+  coder: local-code
+  debugger: local-reason
+  reviewer: local-reason
+  escalation: frontier-code
+policy:
+  escalation_attempts: 1

@@ -1,0 +1,5 @@
+name: A-glm-coder
+description: GLM 5.3 Flash as the only implementer; DeepSeek reviews.
+models:
+  coder: basic/glm-5.3-flash
+  reviewer: basic/deepseek-v4.1-flash

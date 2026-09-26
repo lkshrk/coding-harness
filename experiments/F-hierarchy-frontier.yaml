@@ -1,0 +1,10 @@
+name: F-hierarchy-frontier
+description: Full local hierarchy with one frontier escalation after local debugging fails.
+models:
+  explorer: basic/glm-5.3-flash
+  coder: basic/qwen3-coder-next
+  debugger: basic/deepseek-v4.1-flash
+  reviewer: basic/deepseek-v4.1-flash
+  escalation: frontier-code
+policy:
+  escalation_attempts: 1

@@ -1,0 +1,6 @@
+name: D-qwen-deepseek-debug
+description: Qwen3 Coder Next implements; DeepSeek debugs repeated failures and reviews.
+models:
+  coder: basic/qwen3-coder-next
+  debugger: basic/deepseek-v4.1-flash
+  reviewer: basic/deepseek-v4.1-flash

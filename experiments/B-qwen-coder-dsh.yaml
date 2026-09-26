@@ -1,0 +1,6 @@
+name: B-qwen-coder-dsh
+description: Experiment B on DeepSeek Harness instead of OpenCode.
+harness: dsh
+models:
+  coder: basic/qwen3-coder-next
+  reviewer: basic/deepseek-v4.1-flash

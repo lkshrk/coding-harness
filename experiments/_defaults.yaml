@@ -1,0 +1,20 @@
+# Merged under every experiment file; experiments override any key.
+harness: opencode
+# Context budget per role; a model shared by several roles gets the largest of their budgets.
+context:
+  explorer: 32768
+  coder: 65536
+  reviewer: 65536
+  debugger: 131072
+  escalation: 131072
+steps:
+  explorer: 25
+  coder: 60
+  reviewer: 25
+  debugger: 60
+  escalation: 60
+policy:
+  coder_retries: 2
+  debugger_attempts: 1
+  escalation_attempts: 0
+  infra_retries: 2

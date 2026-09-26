@@ -1,0 +1,6 @@
+name: C-glm-explore-qwen-code
+description: GLM scouts, Qwen3 Coder Next implements; DeepSeek reviews.
+models:
+  explorer: basic/glm-5.3-flash
+  coder: basic/qwen3-coder-next
+  reviewer: basic/deepseek-v4.1-flash
