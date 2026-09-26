@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from .config import ROOT, Experiment, Task
 from .harness import StepResult, make_harness
 from .sandbox import Sandbox
+from .tracing import A, Kind, fail, flush, ids, set_attributes, span
 from .verify import Verification, verify
 
 RUNS_DIR = ROOT / "runs"
@@ -33,7 +34,21 @@ class Run:
     def call(self, role: str, prompt: str) -> StepResult:
         """Infra failures are retried on the same role and never count as an attempt."""
         for _ in range(self.experiment.policy["infra_retries"] + 1):
-            step = self.harness.run(role, prompt)
+            with span(role, Kind.AGENT, self.run_id, **{A.INPUT_VALUE: prompt}) as current:
+                step = self.harness.run(role, prompt)
+                set_attributes(current, **{
+                    A.LLM_MODEL_NAME: step.model,
+                    A.OUTPUT_VALUE: step.text or step.error,
+                    A.LLM_TOKEN_COUNT_PROMPT: step.tokens.get("input"),
+                    A.LLM_TOKEN_COUNT_COMPLETION: step.tokens.get("output"),
+                    A.LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_READ: step.tokens.get("cache_read"),
+                    "harness.name": step.harness,
+                    "harness.tool_calls": step.tool_calls,
+                    "harness.steps": step.steps,
+                    "harness.failure": step.failure,
+                })
+                if step.failure:
+                    fail(current, f"{step.failure}: {step.error}")
             self.steps.append(step)
             self._log(step.record())
             if step.failure != "infra":
@@ -41,7 +56,15 @@ class Run:
         return step
 
     def check(self, label: str) -> Verification:
-        result = verify(self.sandbox, self.task.verify)
+        with span(f"checks:{label}", Kind.TOOL, self.run_id) as current:
+            result = verify(self.sandbox, self.task.verify)
+            set_attributes(current, **{
+                A.OUTPUT_VALUE: result.feedback() or "all checks passed",
+                "checks.passed": result.passed,
+                "checks.ran": [c.name for c in result.checks],
+            })
+            if not result.passed:
+                fail(current, result.failed.name if result.failed else "no checks ran")
         self.verifications.append({"after": label, "passed": result.passed, "checks": result.record()})
         return result
 
@@ -74,10 +97,28 @@ class Run:
         started = time.monotonic()
         self.sandbox.prepare()
         self.sandbox.start()
+        root_attrs = {
+            A.INPUT_VALUE: self.task.prompt,
+            A.METADATA: {"task": self.task.id, "category": self.task.category, "experiment": self.experiment.name,
+                         "harness": self.experiment.harness, "models": self.experiment.models},
+        }
         try:
-            self.harness.setup()
-            return self._execute(started)
+            with span(f"run:{self.task.id}", Kind.CHAIN, self.run_id, **root_attrs) as root:
+                self.trace = ids(root)
+                self.harness.setup()
+                summary = self._execute(started)
+                set_attributes(root, **{
+                    A.OUTPUT_VALUE: {k: summary[k] for k in ("outcome", "checks_passed", "hidden_tests_passed",
+                                                             "review_verdict", "escalations", "cost_usd")},
+                    "run.outcome": summary["outcome"],
+                    "run.cost_usd": summary["cost_usd"],
+                    "run.frontier_used": summary["frontier_used"],
+                })
+                if summary["outcome"] != "success":
+                    fail(root, "task not solved")
+            return summary
         finally:
+            flush()
             self.sandbox.stop()
 
     def _execute(self, started: float) -> dict:
@@ -145,6 +186,7 @@ class Run:
         costs = [s.cost for s in self.steps if s.cost is not None]
         return {
             "run_id": self.run_id,
+            "trace": self.trace,
             "task": self.task.id,
             "category": self.task.category,
             "experiment": self.experiment.name,

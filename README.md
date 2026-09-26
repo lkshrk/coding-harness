@@ -31,8 +31,7 @@ flowchart LR
     OC & DSH -->|logical model names| GW[LiteLLM gateway]
     GW --> P1[OpenRouter today]
     GW -.-> P2[oMLX on a Mac Studio later]
-    GW -->|traces, session = run id| PX[Arize Phoenix]
-    R -->|dataset · experiments · scores| PX
+    R -->|traces · dataset · experiments · scores| PX[Arize Phoenix]
 ```
 
 Each run walks a fixed pipeline. Every role is its own headless harness session with a fresh context:
@@ -185,11 +184,23 @@ runs/<task>.<experiment>.<timestamp>/
 }
 ```
 
-In **Phoenix**, `just experiment` records each task as an experiment run with evaluator scores
-(`success`, `checks_passed`, `review_agrees`, `frontier_used`, `escalations`, `cost_usd`), so
-experiments compare side by side. With the gateway's `arize_phoenix` callback enabled for the harness
-key, every model call is traced and grouped by run id. Mark human intervention by annotating a run's
-spans.
+In **Phoenix**, every run is a trace in the `coding-harness` project, grouped by run id as session:
+
+```
+run:<task>              CHAIN   task prompt → outcome, cost, escalations
+├── explorer            AGENT   model, tokens, tool calls, report
+├── coder               AGENT   …
+├── checks:coder#1      TOOL    failing check output or "all checks passed"
+├── debugger            AGENT   …
+├── checks:hidden-tests TOOL
+└── reviewer            AGENT   verdict
+```
+
+The runner emits these spans itself (OpenTelemetry, OpenInference attributes), so tracing works the
+same for both harnesses and needs nothing from the gateway. `result.json` stores the root span's
+`trace` ids; annotate that span in Phoenix to mark human intervention. `just experiment` additionally
+records each task as an experiment run with evaluator scores (`success`, `checks_passed`,
+`review_agrees`, `frontier_used`, `escalations`, `cost_usd`), so experiments compare side by side.
 
 ## Configuration
 
@@ -198,7 +209,7 @@ spans.
 | `LITELLM_BASE_URL` | OpenAI-compatible gateway, including `/v1` |
 | `LITELLM_API_KEY` | Gateway key for the harness; scope it to the models it needs |
 | `EXTRA_CA_CERT` | Optional PEM for a private CA in front of the gateway (sandbox and host clients) |
-| `PHOENIX_BASE_URL` | Phoenix UI/API |
+| `PHOENIX_BASE_URL` | Phoenix UI/API and trace endpoint (tracing is off when unset) |
 | `PHOENIX_API_KEY` | Only if Phoenix authentication is enabled |
 
 ```

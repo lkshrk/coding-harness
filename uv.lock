@@ -54,6 +54,9 @@ source = { editable = "." }
 dependencies = [
     { name = "arize-phoenix-client" },
     { name = "certifi" },
+    { name = "openinference-semantic-conventions" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
     { name = "pyyaml" },
     { name = "zstandard" },
 ]
@@ -62,6 +65,9 @@ dependencies = [
 requires-dist = [
     { name = "arize-phoenix-client", specifier = ">=3.5,<4" },
     { name = "certifi" },
+    { name = "openinference-semantic-conventions", specifier = ">=0.1.39" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.45.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.45.0" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "zstandard", specifier = ">=0.23" },
 ]

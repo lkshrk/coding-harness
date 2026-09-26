@@ -10,7 +10,7 @@
 | Sandbox | one Docker container per run, only the clone and a fresh HOME mounted | `sandbox.py` |
 | Orchestration | fixed pipeline with bounded retries | `runner.py` |
 | Verification | the task's own repository commands, exit codes only | `verify.py` |
-| Evaluation | Arize Phoenix datasets/experiments; gateway traces | `phoenix.py` |
+| Evaluation | Arize Phoenix datasets/experiments and runner traces | `phoenix.py`, `tracing.py` |
 
 ## Decisions
 
@@ -32,8 +32,9 @@
 7. **Success = repository checks + hidden tests.** The model's claim of completion and the reviewer's
    verdict never decide success. The reviewer is scored on whether it agrees with the real outcome.
 8. **Phoenix instead of a custom results store.** Benchmark = dataset, experiment file = experiment,
-   outcome metrics = evaluators, human intervention = annotations. The gateway sends the run id as the
-   end-user id, which Phoenix uses as `session.id`, so all calls of one run group together.
+   outcome metrics = evaluators, human intervention = annotations. The runner emits one trace per run
+   (run → agent calls → check rounds) straight to Phoenix. Gateway-side tracing was rejected: LiteLLM's
+   `arize_phoenix` callback enabled for one key ended up tracing all proxy traffic.
 9. **Starter tasks from real history** with hidden tests from the actual fix, SWE-bench style.
 
 ## Deviations from the original proposal
@@ -53,6 +54,6 @@ roles:   docker exec opencode run --agent <role> --format json "<prompt>"
 checks:  docker exec bash -c "<verify command>"    (stop at first failure)
 hidden:  git checkout <reference> -- <hidden_tests>; rerun checks
 review:  reviewer gets task + final diff only
-result:  runs/<id>/result.json; gateway traces in Phoenix under session <run id>
+result:  runs/<id>/result.json; runner trace in Phoenix under session <run id>
 stop:    docker rm -f
 ```
