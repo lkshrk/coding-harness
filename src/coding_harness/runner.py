@@ -55,9 +55,9 @@ class Run:
                 break
         return step
 
-    def check(self, label: str) -> Verification:
+    def check(self, label: str, checks: list[dict[str, str]] | None = None) -> Verification:
         with span(f"checks:{label}", Kind.TOOL, self.run_id) as current:
-            result = verify(self.sandbox, self.task.verify)
+            result = verify(self.sandbox, checks or self.task.verify)
             set_attributes(current, **{
                 A.OUTPUT_VALUE: result.feedback() or "all checks passed",
                 "checks.passed": result.passed,
@@ -97,6 +97,7 @@ class Run:
         started = time.monotonic()
         self.sandbox.prepare()
         self.sandbox.start()
+        self.sandbox.run_setup()
         root_attrs = {
             A.INPUT_VALUE: self.task.prompt,
             A.METADATA: {"task": self.task.id, "category": self.task.category, "experiment": self.experiment.name,
@@ -153,9 +154,9 @@ class Run:
         final_diff = self.sandbox.diff()
         (self.dir / "final.diff").write_text(final_diff)
         hidden = None
-        if result.passed and self.task.hidden_tests:
+        if result.passed and (self.task.hidden_tests or self.task.hidden_test_patch):
             self.sandbox.restore_hidden_tests()
-            hidden = self.check("hidden-tests").passed
+            hidden = self.check("hidden-tests", self.task.hidden_verify).passed
 
         verdict = None
         if result.passed and "reviewer" in models:

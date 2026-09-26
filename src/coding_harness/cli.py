@@ -33,12 +33,18 @@ def main() -> None:
     val = sub.add_parser("validate", help="check each task: hidden tests fail on base, all checks pass on reference")
     val.add_argument("tasks", nargs="*", help="task ids (default: all)")
 
+    imp = sub.add_parser("import-swebench", help="write SWE-bench Verified instances as benchmark tasks")
+    imp.add_argument("--repos", default="psf/requests,pallets/flask,pytest-dev/pytest,pylint-dev/pylint,sympy/sympy")
+    imp.add_argument("--difficulty", default="<15 min fix,15 min - 1 hour")
+    imp.add_argument("--per-repo", type=int, default=4)
+    imp.add_argument("--limit", type=int, default=20)
+
     ds = sub.add_parser("dataset", help="upload benchmark/ as a Phoenix dataset")
-    ds.add_argument("--name", default="coding-harness-benchmark")
+    ds.add_argument("--name", default="coding-harness-benchmark-v2")
 
     exp = sub.add_parser("experiment", help="run an experiment over a Phoenix dataset")
     exp.add_argument("experiment")
-    exp.add_argument("--dataset", default="coding-harness-benchmark")
+    exp.add_argument("--dataset", default="coding-harness-benchmark-v2")
 
     args = parser.parse_args()
     if args.command == "run":
@@ -50,6 +56,11 @@ def main() -> None:
         from .validate import validate_tasks
 
         raise SystemExit(0 if validate_tasks(args.tasks) else 1)
+    elif args.command == "import-swebench":
+        from .swebench import import_tasks
+
+        paths = import_tasks(args.repos.split(","), args.difficulty.split(","), args.per_repo, args.limit)
+        print("\n".join(str(p.relative_to(ROOT)) for p in paths))
     elif args.command == "dataset":
         from .phoenix import sync_dataset
 

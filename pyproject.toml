@@ -13,6 +13,9 @@ dependencies = [
     "zstandard>=0.23",
 ]
 
+[project.optional-dependencies]
+swebench = ["swebench>=4,<5"]
+
 [project.scripts]
 harness = "coding_harness.cli:main"
 

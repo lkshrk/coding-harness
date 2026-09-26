@@ -26,6 +26,7 @@ class Experiment:
     context: dict[str, int]
     steps: dict[str, int]
     policy: dict[str, int]
+    prompts: str
     raw: dict[str, Any] = field(repr=False)
 
     def model_context(self, model: str) -> int:
@@ -43,6 +44,12 @@ class Task:
     verify: list[dict[str, str]]
     reference: str | None = None
     hidden_tests: list[str] = field(default_factory=list)
+    reference_patch: str | None = None
+    hidden_test_patch: str | None = None
+    hidden_verify: list[dict[str, str]] = field(default_factory=list)
+    setup: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+    source: str | None = None
 
 
 def load_experiment(path: str | Path) -> Experiment:
@@ -54,6 +61,8 @@ def load_experiment(path: str | Path) -> Experiment:
         raise ValueError(f"{path}: unknown roles {sorted(unknown)}")
     if "coder" not in data["models"]:
         raise ValueError(f"{path}: an experiment needs a coder model")
+    if data["prompts"] not in ("custom", "vendor"):
+        raise ValueError(f"{path}: prompts must be 'custom' or 'vendor'")
     return Experiment(
         name=data["name"],
         description=data.get("description", ""),
@@ -62,6 +71,7 @@ def load_experiment(path: str | Path) -> Experiment:
         context=data["context"],
         steps=data["steps"],
         policy=data["policy"],
+        prompts=data["prompts"],
         raw=data,
     )
 

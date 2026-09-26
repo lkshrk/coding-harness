@@ -26,12 +26,16 @@ run task experiment:
 validate *tasks:
     uv run harness validate {{ tasks }}
 
+# Import SWE-bench Verified instances into benchmark/ (see `uv run harness import-swebench -h`)
+import-swebench *args:
+    uv run --extra swebench harness import-swebench {{ args }}
+
 # Upload benchmark/ to Phoenix as a dataset
-dataset name="coding-harness-benchmark":
+dataset name="coding-harness-benchmark-v2":
     uv run harness dataset --name {{ name }}
 
 # Run an experiment over the Phoenix dataset
-experiment experiment dataset="coding-harness-benchmark":
+experiment experiment dataset="coding-harness-benchmark-v2":
     uv run harness experiment {{ experiment }} --dataset {{ dataset }}
 
 # Print a run's summary

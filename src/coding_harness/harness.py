@@ -13,6 +13,7 @@ from .config import ROOT, Experiment
 from .sandbox import HOME, Sandbox
 
 AGENTS_DIR = ROOT / "harnesses" / "opencode" / "agents"
+VENDOR_PROMPT = ROOT / "harnesses" / "opencode" / "vendor" / "default.txt"
 DSH_TEMPLATE = ROOT / "harnesses" / "dsh" / "profile.tmpl.yml"
 INFRA_ERROR = re.compile(
     r"\b(429|50[0-4])\b|rate.?limit|timed? ?out|ETIMEDOUT|ECONNRESET|ECONNREFUSED|overloaded|"
@@ -120,9 +121,11 @@ class OpenCode:
         }
         (conf_dir / "opencode.json").write_text(json.dumps(config, indent=2))
         for role, model in self.experiment.models.items():
-            body = (AGENTS_DIR / f"{role_prompt_file(role)}.md").read_text()
-            header = f"---\nmodel: litellm/{model}\nsteps: {self.experiment.steps[role]}\n"
-            (conf_dir / "agents" / f"{role}.md").write_text(body.replace("---\n", header, 1))
+            _, frontmatter, instructions = (AGENTS_DIR / f"{role_prompt_file(role)}.md").read_text().split("---\n", 2)
+            if self.experiment.prompts == "vendor":
+                instructions = f"{VENDOR_PROMPT.read_text()}\n\n# Your role in this run\n\n{instructions}"
+            header = f"model: litellm/{model}\nsteps: {self.experiment.steps[role]}\n"
+            (conf_dir / "agents" / f"{role}.md").write_text(f"---\n{header}{frontmatter}---\n{instructions}")
 
     def run(self, role: str, prompt: str) -> StepResult:
         model = self.experiment.models[role]

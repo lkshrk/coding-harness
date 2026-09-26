@@ -1,0 +1,6 @@
+name: B-qwen-coder-vendor
+description: Experiment B with OpenCode's own system prompt kept and the role appended.
+prompts: vendor
+models:
+  coder: basic/qwen3-coder-next
+  reviewer: basic/deepseek-v4.1-flash

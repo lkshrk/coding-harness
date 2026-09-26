@@ -80,6 +80,7 @@ The run prints a summary and leaves everything under `runs/<run-id>/`.
 |---|---|
 | `just build [toolchain]` | Build sandbox images (toolchain + pinned OpenCode and DeepSeek Harness) |
 | `just validate [task…]` | Check that tasks can tell a correct fix from no change |
+| `just import-swebench [--repos … --per-repo N]` | Import SWE-bench Verified instances as tasks |
 | `just run <task> <experiment>` | Run one task under one experiment locally |
 | `just show <run-id>` | Print a run's summary |
 | `just dataset` | Upload `benchmark/` to Phoenix as a dataset |
@@ -120,6 +121,11 @@ policy:
 Experiments pin concrete gateway models, so remapping a gateway alias never silently changes an
 earlier experiment. To try a new model, add it to the gateway and reference it in an experiment file.
 
+**Prompt sets.** In OpenCode an agent's own prompt *replaces* the harness system prompt
+(`packages/opencode/src/session/llm/request.ts`). `prompts: custom` (default) uses only our role
+prompts; `prompts: vendor` keeps OpenCode's own prompt (`harnesses/opencode/vendor/default.txt`) and
+appends the role. `B-qwen-coder-vendor` compares the two.
+
 ## Benchmark tasks
 
 A task is a real historical change. The agent starts at the commit before the fix with an issue-style
@@ -143,6 +149,19 @@ verify:
   - name: test
     run: go test ./internal/controller/talosupgrade/...
 ```
+
+**SWE-bench Verified.** `just import-swebench` turns SWE-bench Verified instances into tasks: the
+problem statement becomes the prompt, `test_patch` the hidden tests, `patch` the reference fix, and the
+SWE-bench environment spec a per-task setup (a venv with the historical Python version in the sandbox
+HOME). Checks run the same test selection as the SWE-bench harness (`PASS_TO_PASS` while the agents
+work, `FAIL_TO_PASS` + `PASS_TO_PASS` at the end). Only repos with plain pip environments are
+supported so far (requests, flask, pytest, pylint, sympy, seaborn, xarray). The reconstructed
+environments differ from SWE-bench's official images, so some instances fail `just validate` (their
+listed tests fail even on the reference fix); drop those. First import: 9 of 17 instances valid.
+
+Task fields beyond the example: `setup` (commands before the agents start), `env` (sandbox
+environment), `hidden_verify` (checks after the hidden tests are restored, default `verify`),
+`reference_patch` / `hidden_test_patch` (inline diffs instead of a reference commit).
 
 **Adding a task**
 1. Pick a merged fix or feature commit that added or changed tests.
@@ -197,7 +216,8 @@ run:<task>              CHAIN   task prompt → outcome, cost, escalations
 ```
 
 The runner emits these spans itself (OpenTelemetry, OpenInference attributes), so tracing works the
-same for both harnesses and needs nothing from the gateway. `result.json` stores the root span's
+same for both harnesses and needs nothing from the gateway. Inside `just experiment` each trace is
+nested under Phoenix's experiment run, so opening a result in the experiment comparison shows it. `result.json` stores the root span's
 `trace` ids; annotate that span in Phoenix to mark human intervention. `just experiment` additionally
 records each task as an experiment run with evaluator scores (`success`, `checks_passed`,
 `review_agrees`, `frontier_used`, `escalations`, `cost_usd`), so experiments compare side by side.
@@ -242,7 +262,8 @@ the clone. `just reset` removes everything.
   spend (`cost_usd`) is the common measure.
 - Context budgets are per model: a model shared by several roles gets the largest budget.
 - `cost_usd` is the harness key's spend delta over a run, so runs sharing a key must not overlap.
-- The benchmark is small (two Go tasks from one repository). It validates the pipeline, not the models.
+- The benchmark is still small: two tuppr tasks plus imported SWE-bench tasks. SWE-bench repos are
+  public and may be in the models' training data; your own tasks guard against that.
 
 ## Further reading
 

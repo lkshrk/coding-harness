@@ -1,5 +1,7 @@
 # Merged under every experiment file; experiments override any key.
 harness: opencode
+# custom: our role prompt replaces OpenCode's system prompt; vendor: OpenCode's default prompt + our role.
+prompts: custom
 # Context budget per role; a model shared by several roles gets the largest of their budgets.
 context:
   explorer: 32768
