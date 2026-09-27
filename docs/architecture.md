@@ -36,6 +36,35 @@
    (run → agent calls → check rounds) straight to Phoenix. Gateway-side tracing was rejected: LiteLLM's
    `arize_phoenix` callback enabled for one key ended up tracing all proxy traffic.
 9. **Starter tasks from real history** with hidden tests from the actual fix, SWE-bench style.
+10. **OpenCode is the agent layer.** Its agent prompt replaces the system prompt and models, steps,
+    permissions and tools are declared per agent, so what is tuned here carries over unchanged to
+    interactive and production use. DeepSeek Harness stays a one-off comparison, not a candidate.
+    No OpenHands arm: the choice rests on control over prompts and roles, not on score.
+
+## Target platform
+
+The harness sandbox is the model for production: agents work in disposable environments, people
+work through the agent, not inside the environment.
+
+```
+opencode control plane      always on, web UI and sessions, no toolchains, no credentials
+   │ workspace adapter       creates one sandbox per project and attaches to its server
+   ▼
+sandbox (agent-sandbox)     this repo's sandbox image + `opencode serve`, repo on a volume,
+                            toolchain, a scoped agent token, restricted network
+```
+
+- Sandboxes: [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
+  (`Sandbox`, `SandboxTemplate`, `SandboxClaim`, warm pools; alpha).
+- Control plane to sandbox: OpenCode's workspace control plane, which proxies sessions to a remote
+  `opencode serve`. It is experimental and has no adapter for this yet; building one waits until the
+  API settles.
+- The existing agent platform keeps its automations until each has an equivalent here; the first one
+  to move is the pull-request review.
+
+Order: finish the harness experiments (models × roles on OpenCode), use OpenCode interactively
+against the gateway meanwhile, then build the control plane and sandboxes and move automations one
+at a time.
 
 ## Deviations from the original proposal
 
