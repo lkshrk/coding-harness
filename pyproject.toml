@@ -28,3 +28,13 @@ packages = ["src/coding_harness"]
 
 [tool.ruff]
 line-length = 110
+extend-exclude = ["runs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]

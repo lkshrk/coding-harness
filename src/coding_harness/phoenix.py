@@ -67,8 +67,12 @@ def run_experiment(experiment: Experiment, dataset: str) -> None:
         evaluators=[success, checks_passed, review_agrees, frontier_used, escalations, cost_usd],
         experiment_name=experiment.name,
         experiment_description=experiment.description,
-        experiment_metadata={"harness": experiment.harness, **{f"model.{k}": v for k, v in experiment.models.items()},
-                             "policy": experiment.policy, "context": experiment.context},
+        experiment_metadata={
+            "harness": experiment.harness,
+            **{f"model.{k}": v for k, v in experiment.models.items()},
+            "policy": experiment.policy,
+            "context": experiment.context,
+        },
         timeout=EXPERIMENT_TIMEOUT_S,
         retries=0,
     )

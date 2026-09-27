@@ -13,7 +13,9 @@ ROLES = ("explorer", "coder", "debugger", "escalation", "reviewer")
 def _merge(base: dict, override: dict) -> dict:
     out = dict(base)
     for key, value in override.items():
-        out[key] = _merge(out[key], value) if isinstance(value, dict) and isinstance(out.get(key), dict) else value
+        out[key] = (
+            _merge(out[key], value) if isinstance(value, dict) and isinstance(out.get(key), dict) else value
+        )
     return out
 
 

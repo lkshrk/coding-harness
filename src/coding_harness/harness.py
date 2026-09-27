@@ -113,7 +113,10 @@ class OpenCode:
                         "timeout": 600000,
                     },
                     "models": {
-                        m: {"name": m, "limit": {"context": self.experiment.model_context(m), "output": 16384}}
+                        m: {
+                            "name": m,
+                            "limit": {"context": self.experiment.model_context(m), "output": 16384},
+                        }
                         for m in models
                     },
                 }
@@ -121,7 +124,9 @@ class OpenCode:
         }
         (conf_dir / "opencode.json").write_text(json.dumps(config, indent=2))
         for role, model in self.experiment.models.items():
-            _, frontmatter, instructions = (AGENTS_DIR / f"{role_prompt_file(role)}.md").read_text().split("---\n", 2)
+            _, frontmatter, instructions = (
+                (AGENTS_DIR / f"{role_prompt_file(role)}.md").read_text().split("---\n", 2)
+            )
             if self.experiment.prompts == "vendor":
                 instructions = f"{VENDOR_PROMPT.read_text()}\n\n# Your role in this run\n\n{instructions}"
             header = f"model: litellm/{model}\nsteps: {self.experiment.steps[role]}\n"
@@ -129,7 +134,9 @@ class OpenCode:
 
     def run(self, role: str, prompt: str) -> StepResult:
         model = self.experiment.models[role]
-        res = self.sandbox.exec(["opencode", "run", "--agent", role, "--format", "json", prompt], env=_env(self.run_id))
+        res = self.sandbox.exec(
+            ["opencode", "run", "--agent", role, "--format", "json", prompt], env=_env(self.run_id)
+        )
         _save_raw(self.sandbox, role, res.stdout, res.stderr)
         step = StepResult(role, model, self.name, res.exit_code, round(res.duration_s, 1))
         texts: list[str] = []
@@ -182,7 +189,9 @@ class DeepSeekHarness:
         (self.sandbox.home / ".dsh" / "profiles" / "headless" / "cordis.patch.yml").write_text(profile)
         instructions = (AGENTS_DIR / f"{role_prompt_file(role)}.md").read_text().split("---\n", 2)[-1]
         env = {**_env(self.run_id), "DSH_HOME": f"{HOME}/.dsh"}
-        res = self.sandbox.exec(["dsh", "--profile", "headless", "--json", f"{instructions}\n\n{prompt}"], env=env)
+        res = self.sandbox.exec(
+            ["dsh", "--profile", "headless", "--json", f"{instructions}\n\n{prompt}"], env=env
+        )
         _save_raw(self.sandbox, role, res.stdout, res.stderr)
         step = StepResult(role, model, self.name, res.exit_code, round(res.duration_s, 1))
         session_id = None
@@ -220,8 +229,12 @@ class DeepSeekHarness:
                     event = json.loads(line) if line.strip() else {}
                     if event.get("type") == "assistant/message":
                         usage = event.get("data", {}).get("usage") or {}
-                        for src, key in (("inputTokens", "input"), ("outputTokens", "output"),
-                                         ("cacheReadTokens", "cache_read"), ("cacheWriteTokens", "cache_write")):
+                        for src, key in (
+                            ("inputTokens", "input"),
+                            ("outputTokens", "output"),
+                            ("cacheReadTokens", "cache_read"),
+                            ("cacheWriteTokens", "cache_write"),
+                        ):
                             tokens[key] = tokens.get(key, 0) + int(usage.get(src) or 0)
         return tokens
 

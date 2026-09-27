@@ -1,0 +1,46 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended', 'helpers:pinGitHubActionDigests'],
+  labels: ['dependencies'],
+  automergeType: 'pr',
+  platformAutomerge: false,
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+  },
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Harness versions pinned in the sandbox image',
+      managerFilePatterns: ['/^docker/Dockerfile$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG \\w+=(?<currentValue>\\S+)',
+      ],
+    },
+  ],
+  packageRules: [
+    {
+      description: 'Tooling and CI: safe to merge once CI is green',
+      matchManagers: ['github-actions', 'pep621'],
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin'],
+      automerge: true,
+    },
+    {
+      description: 'Harness versions change benchmark results: review by hand and note the bump next to experiment runs',
+      matchDepNames: ['opencode-ai', '@deepseek-ai/dsh'],
+      automerge: false,
+      labels: ['harness-version'],
+    },
+    {
+      description: 'DeepSeek Harness only ships prereleases',
+      matchDepNames: ['@deepseek-ai/dsh'],
+      ignoreUnstable: false,
+    },
+    {
+      description: 'Toolchain images in the justfile are chosen per benchmark repo, not bumped blindly',
+      matchManagers: ['dockerfile'],
+      matchDepNames: ['ghcr.io/astral-sh/uv'],
+      automerge: true,
+    },
+  ],
+}

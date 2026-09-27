@@ -3,7 +3,9 @@ ARG BASE=python:3.13-bookworm
 FROM ${BASE}
 
 ARG NODE_MAJOR=24
+# renovate: datasource=npm depName=opencode-ai
 ARG OPENCODE_VERSION=1.18.32
+# renovate: datasource=npm depName=@deepseek-ai/dsh
 ARG DSH_VERSION=0.1.7-rc.2
 
 RUN apt-get update \

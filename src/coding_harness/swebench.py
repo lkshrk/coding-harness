@@ -15,8 +15,15 @@ from .config import ROOT
 DATASET = "princeton-nlp/SWE-bench_Verified"
 ROWS_API = "https://datasets-server.huggingface.co/rows"
 # Repos whose SWE-bench environments are plain pip installs with a file-based test command.
-SUPPORTED = ("psf/requests", "pallets/flask", "pytest-dev/pytest", "pylint-dev/pylint", "sympy/sympy",
-             "mwaskom/seaborn", "pydata/xarray")
+SUPPORTED = (
+    "psf/requests",
+    "pallets/flask",
+    "pytest-dev/pytest",
+    "pylint-dev/pylint",
+    "sympy/sympy",
+    "mwaskom/seaborn",
+    "pydata/xarray",
+)
 VENV = "/home/agent/venv"
 TASK_ENV = {
     "VIRTUAL_ENV": VENV,
@@ -76,8 +83,10 @@ def _setup(spec: dict, row: dict) -> list[str] | None:
     steps = [f"uv venv -q --seed --python {spec['python']} {VENV}"]
     if packages == "requirements.txt":
         reqs = _requirements(row).strip()
-        steps.append(f"cat > /home/agent/requirements.txt <<'REQS'\n{reqs}\nREQS\n"
-                     "python -m pip install -q -r /home/agent/requirements.txt")
+        steps.append(
+            f"cat > /home/agent/requirements.txt <<'REQS'\n{reqs}\nREQS\n"
+            "python -m pip install -q -r /home/agent/requirements.txt"
+        )
     elif packages:
         steps.append(f"python -m pip install -q {packages}")
     if spec.get("pip_packages"):
@@ -96,8 +105,12 @@ def to_task(row: dict, spec: dict) -> dict | None:
         # Same selection as the SWE-bench harness: only listed tests, so unrelated/network tests don't decide.
         visible = pass_to_pass or [f"--collect-only -q {' '.join(test_files)}"]
         verify = [{"name": "tests", "run": f"{spec['test_cmd']} {' '.join(shlex.quote(t) for t in visible)}"}]
-        hidden = [{"name": "tests", "run": f"{spec['test_cmd']} "
-                   + " ".join(shlex.quote(t) for t in fail_to_pass + pass_to_pass)}]
+        hidden = [
+            {
+                "name": "tests",
+                "run": f"{spec['test_cmd']} " + " ".join(shlex.quote(t) for t in fail_to_pass + pass_to_pass),
+            }
+        ]
     else:
         verify = hidden = [{"name": "tests", "run": f"{spec['test_cmd']} {' '.join(test_files)}"}]
     return {
@@ -134,7 +147,9 @@ def import_tasks(repos: list[str], difficulties: list[str], per_repo: int, limit
             if task is None:
                 continue
             path = ROOT / "benchmark" / f"{task['id']}.yaml"
-            path.write_text(yaml.dump(task, Dumper=_BlockDumper, sort_keys=False, width=110, allow_unicode=True))
+            path.write_text(
+                yaml.dump(task, Dumper=_BlockDumper, sort_keys=False, width=110, allow_unicode=True)
+            )
             written.append(path)
             taken += 1
     return written

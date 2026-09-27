@@ -30,7 +30,9 @@ class Verification:
         failed = self.failed
         if not failed:
             return ""
-        return f"Check `{failed.name}` failed.\n$ {failed.run}\n(exit {failed.exit_code})\n{failed.output_tail}"
+        return (
+            f"Check `{failed.name}` failed.\n$ {failed.run}\n(exit {failed.exit_code})\n{failed.output_tail}"
+        )
 
     def record(self) -> list[dict]:
         return [c.__dict__ for c in self.checks]
@@ -42,7 +44,9 @@ def verify(sandbox: Sandbox, checks: list[dict[str, str]]) -> Verification:
     for check in checks:
         res = sandbox.sh(check["run"])
         output = (res.stdout + res.stderr)[-4000:]
-        result.checks.append(CheckResult(check["name"], check["run"], res.exit_code, round(res.duration_s, 1), output))
+        result.checks.append(
+            CheckResult(check["name"], check["run"], res.exit_code, round(res.duration_s, 1), output)
+        )
         if res.exit_code != 0:
             break
     return result

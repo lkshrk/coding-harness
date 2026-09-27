@@ -87,6 +87,18 @@ The run prints a summary and leaves everything under `runs/<run-id>/`.
 | `just experiment <experiment>` | Run an experiment over the whole Phoenix dataset |
 | `just reset` | Delete `runs/` and leftover sandbox containers |
 
+## Development
+
+```bash
+lefthook install   # pre-commit: gitleaks, ruff, config check; pre-push: pytest
+uv run pytest -q
+uv run harness check-config
+```
+
+CI (GitHub-hosted runners) runs lint, format check, config check, tests, gitleaks and a sandbox image build
+on every push and PR. Renovate keeps dependencies current; OpenCode and DeepSeek Harness bumps are never
+automerged (label `harness-version`) because they change benchmark results.
+
 ## Experiments
 
 An experiment maps roles to gateway models. `experiments/_defaults.yaml` holds the shared context

@@ -30,11 +30,17 @@ def main() -> None:
     run.add_argument("task", help="task id (benchmark/<id>.yaml) or path")
     run.add_argument("experiment", help="experiment name (experiments/<name>.yaml) or path")
 
-    val = sub.add_parser("validate", help="check each task: hidden tests fail on base, all checks pass on reference")
+    sub.add_parser("check-config", help="load every experiment and benchmark task (offline)")
+
+    val = sub.add_parser(
+        "validate", help="check each task: hidden tests fail on base, all checks pass on reference"
+    )
     val.add_argument("tasks", nargs="*", help="task ids (default: all)")
 
     imp = sub.add_parser("import-swebench", help="write SWE-bench Verified instances as benchmark tasks")
-    imp.add_argument("--repos", default="psf/requests,pallets/flask,pytest-dev/pytest,pylint-dev/pylint,sympy/sympy")
+    imp.add_argument(
+        "--repos", default="psf/requests,pallets/flask,pytest-dev/pytest,pylint-dev/pylint,sympy/sympy"
+    )
     imp.add_argument("--difficulty", default="<15 min fix,15 min - 1 hour")
     imp.add_argument("--per-repo", type=int, default=4)
     imp.add_argument("--limit", type=int, default=20)
@@ -50,8 +56,12 @@ def main() -> None:
     if args.command == "run":
         from .runner import run_task
 
-        result = run_task(load_task(_path(args.task, "benchmark")), load_experiment(_path(args.experiment, "experiments")))
+        result = run_task(
+            load_task(_path(args.task, "benchmark")), load_experiment(_path(args.experiment, "experiments"))
+        )
         print(json.dumps({k: v for k, v in result.items() if k not in ("steps", "verifications")}, indent=2))
+    elif args.command == "check-config":
+        raise SystemExit(0 if check_config() else 1)
     elif args.command == "validate":
         from .validate import validate_tasks
 
@@ -69,6 +79,20 @@ def main() -> None:
         from .phoenix import run_experiment
 
         run_experiment(load_experiment(_path(args.experiment, "experiments")), args.dataset)
+
+
+def check_config() -> bool:
+    ok = True
+    for directory, loader in (("experiments", load_experiment), ("benchmark", load_task)):
+        paths = sorted(p for p in (ROOT / directory).glob("*.yaml") if not p.name.startswith("_"))
+        for path in paths:
+            try:
+                loader(path)
+            except (ValueError, TypeError, KeyError) as exc:
+                ok = False
+                print(f"FAIL {path.relative_to(ROOT)}: {exc}")
+        print(f"{directory}: {len(paths)} files")
+    return ok
 
 
 def _path(value: str, directory: str) -> str:

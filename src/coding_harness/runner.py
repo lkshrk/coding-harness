@@ -36,17 +36,20 @@ class Run:
         for _ in range(self.experiment.policy["infra_retries"] + 1):
             with span(role, Kind.AGENT, self.run_id, **{A.INPUT_VALUE: prompt}) as current:
                 step = self.harness.run(role, prompt)
-                set_attributes(current, **{
-                    A.LLM_MODEL_NAME: step.model,
-                    A.OUTPUT_VALUE: step.text or step.error,
-                    A.LLM_TOKEN_COUNT_PROMPT: step.tokens.get("input"),
-                    A.LLM_TOKEN_COUNT_COMPLETION: step.tokens.get("output"),
-                    A.LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_READ: step.tokens.get("cache_read"),
-                    "harness.name": step.harness,
-                    "harness.tool_calls": step.tool_calls,
-                    "harness.steps": step.steps,
-                    "harness.failure": step.failure,
-                })
+                set_attributes(
+                    current,
+                    **{
+                        A.LLM_MODEL_NAME: step.model,
+                        A.OUTPUT_VALUE: step.text or step.error,
+                        A.LLM_TOKEN_COUNT_PROMPT: step.tokens.get("input"),
+                        A.LLM_TOKEN_COUNT_COMPLETION: step.tokens.get("output"),
+                        A.LLM_TOKEN_COUNT_PROMPT_DETAILS_CACHE_READ: step.tokens.get("cache_read"),
+                        "harness.name": step.harness,
+                        "harness.tool_calls": step.tool_calls,
+                        "harness.steps": step.steps,
+                        "harness.failure": step.failure,
+                    },
+                )
                 if step.failure:
                     fail(current, f"{step.failure}: {step.error}")
             self.steps.append(step)
@@ -58,11 +61,14 @@ class Run:
     def check(self, label: str, checks: list[dict[str, str]] | None = None) -> Verification:
         with span(f"checks:{label}", Kind.TOOL, self.run_id) as current:
             result = verify(self.sandbox, checks or self.task.verify)
-            set_attributes(current, **{
-                A.OUTPUT_VALUE: result.feedback() or "all checks passed",
-                "checks.passed": result.passed,
-                "checks.ran": [c.name for c in result.checks],
-            })
+            set_attributes(
+                current,
+                **{
+                    A.OUTPUT_VALUE: result.feedback() or "all checks passed",
+                    "checks.passed": result.passed,
+                    "checks.ran": [c.name for c in result.checks],
+                },
+            )
             if not result.passed:
                 fail(current, result.failed.name if result.failed else "no checks ran")
         self.verifications.append({"after": label, "passed": result.passed, "checks": result.record()})
@@ -86,7 +92,9 @@ class Run:
     def attempt(self, role: str, prompt: str) -> Verification:
         step = self.call(role, prompt)
         result = self.check(f"{role}#{len(self.attempts) + 1}")
-        outcome = "checks passed" if result.passed else (result.failed.name if result.failed else "no checks ran")
+        outcome = (
+            "checks passed" if result.passed else (result.failed.name if result.failed else "no checks ran")
+        )
         note = (step.error if step.failure else step.text).strip()[:200].replace("\n", " ")
         self.attempts.append(f"{role} ({step.model}): {outcome}. {note}")
         return result
@@ -100,21 +108,38 @@ class Run:
         self.sandbox.run_setup()
         root_attrs = {
             A.INPUT_VALUE: self.task.prompt,
-            A.METADATA: {"task": self.task.id, "category": self.task.category, "experiment": self.experiment.name,
-                         "harness": self.experiment.harness, "models": self.experiment.models},
+            A.METADATA: {
+                "task": self.task.id,
+                "category": self.task.category,
+                "experiment": self.experiment.name,
+                "harness": self.experiment.harness,
+                "models": self.experiment.models,
+            },
         }
         try:
             with span(f"run:{self.task.id}", Kind.CHAIN, self.run_id, **root_attrs) as root:
                 self.trace = ids(root)
                 self.harness.setup()
                 summary = self._execute(started)
-                set_attributes(root, **{
-                    A.OUTPUT_VALUE: {k: summary[k] for k in ("outcome", "checks_passed", "hidden_tests_passed",
-                                                             "review_verdict", "escalations", "cost_usd")},
-                    "run.outcome": summary["outcome"],
-                    "run.cost_usd": summary["cost_usd"],
-                    "run.frontier_used": summary["frontier_used"],
-                })
+                set_attributes(
+                    root,
+                    **{
+                        A.OUTPUT_VALUE: {
+                            k: summary[k]
+                            for k in (
+                                "outcome",
+                                "checks_passed",
+                                "hidden_tests_passed",
+                                "review_verdict",
+                                "escalations",
+                                "cost_usd",
+                            )
+                        },
+                        "run.outcome": summary["outcome"],
+                        "run.cost_usd": summary["cost_usd"],
+                        "run.frontier_used": summary["frontier_used"],
+                    },
+                )
                 if summary["outcome"] != "success":
                     fail(root, "task not solved")
             return summary
@@ -140,15 +165,24 @@ class Run:
                 f"Fix it.\n\n{result.feedback()}",
             )
 
-        for role, limit in (("debugger", policy["debugger_attempts"]), ("escalation", policy["escalation_attempts"])):
+        for role, limit in (
+            ("debugger", policy["debugger_attempts"]),
+            ("escalation", policy["escalation_attempts"]),
+        ):
             if role not in models:
                 continue
             for _ in range(limit):
                 if result.passed:
                     break
                 failed = result.failed.name if result.failed else "no checks"
-                self.escalations.append({"to": role, "model": models[role], "reason": f"{failed} still failing",
-                                         "after_attempts": len(self.attempts)})
+                self.escalations.append(
+                    {
+                        "to": role,
+                        "model": models[role],
+                        "reason": f"{failed} still failing",
+                        "after_attempts": len(self.attempts),
+                    }
+                )
                 result = self.attempt(role, self.brief(result))
 
         final_diff = self.sandbox.diff()
@@ -179,7 +213,9 @@ class Run:
         after = key_spend()
         return None if after is None else round(after - self.spend_before, 6)
 
-    def summary(self, success: bool, checks: bool, hidden: bool | None, verdict: str | None, wall: float) -> dict:
+    def summary(
+        self, success: bool, checks: bool, hidden: bool | None, verdict: str | None, wall: float
+    ) -> dict:
         tokens: dict[str, int] = {}
         for step in self.steps:
             for key, value in step.tokens.items():
@@ -221,7 +257,9 @@ SPEND_SETTLE_S = 20
 def key_spend() -> float | None:
     """Total spend LiteLLM has booked on the harness key; runs are sequential, so the delta is the run's cost."""
     base = os.environ["LITELLM_BASE_URL"].rstrip("/").removesuffix("/v1")
-    request = urllib.request.Request(f"{base}/key/info", headers={"Authorization": f"Bearer {os.environ['LITELLM_API_KEY']}"})
+    request = urllib.request.Request(
+        f"{base}/key/info", headers={"Authorization": f"Bearer {os.environ['LITELLM_API_KEY']}"}
+    )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return float(json.load(response)["info"].get("spend") or 0)

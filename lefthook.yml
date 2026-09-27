@@ -1,0 +1,16 @@
+pre-commit:
+  parallel: true
+  commands:
+    gitleaks:
+      run: gitleaks git --staged --redact --no-banner
+    ruff:
+      glob: "*.py"
+      run: uv run ruff check {staged_files} && uv run ruff format --check {staged_files}
+    config:
+      glob: "{experiments,benchmark}/*.yaml"
+      run: uv run harness check-config
+
+pre-push:
+  commands:
+    tests:
+      run: uv run pytest -q
