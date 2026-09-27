@@ -157,13 +157,21 @@ class Run:
 
         result = self.attempt("coder", f"TASK:\n{self.task.prompt}{context}")
         for _ in range(policy["coder_retries"]):
-            if result.passed:
+            changed = bool(self.sandbox.diff().strip())
+            if result.passed and changed:
                 break
-            result = self.attempt(
-                "coder",
-                f"TASK:\n{self.task.prompt}\n\nYour change does not pass the repository checks yet. "
-                f"Fix it.\n\n{result.feedback()}",
-            )
+            if not changed:
+                # Checks pass on an untouched tree, so an empty diff means the coder stopped before editing.
+                prompt = (
+                    f"TASK:\n{self.task.prompt}\n\nThe previous attempt ended without changing any file. "
+                    f"Its last notes:\n{self.attempts[-1]}\n\nMake the change now."
+                )
+            else:
+                prompt = (
+                    f"TASK:\n{self.task.prompt}\n\nYour change does not pass the repository checks yet. "
+                    f"Fix it.\n\n{result.feedback()}"
+                )
+            result = self.attempt("coder", prompt)
 
         for role, limit in (
             ("debugger", policy["debugger_attempts"]),

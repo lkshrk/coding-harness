@@ -256,7 +256,9 @@ docs/                 architecture and decisions, moving models to oMLX
 
 **Sandbox safety.** Each run gets its own container. Only the run's clone and a fresh HOME are
 mounted; no host credentials, dotfiles or git config reach the agent. Host git hooks are disabled for
-the clone. `just reset` removes everything.
+the clone. The clone holds the base commit and its ancestors only: later commits would include the
+reference fix, so the full clone used for hidden tests stays on the host in `runs/<id>/source`.
+`just reset` removes everything.
 
 **Interactive use.** OpenCode can use the same gateway: copy the `provider` block from a run's
 `home/.config/opencode/opencode.json` into `~/.config/opencode/opencode.json` and pick

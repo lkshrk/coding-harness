@@ -27,7 +27,7 @@ def test_opencode_renders_provider_and_agents(tmp_path):
     assert provider["options"]["headers"] == {"x-litellm-end-user-id": "{env:RUN_ID}"}
     assert provider["models"]["basic/glm-5.3-flash"]["limit"]["context"] == 32768
     escalation = (conf / "agents" / "escalation.md").read_text()
-    assert escalation.startswith("---\nmodel: litellm/frontier-code\nsteps: 60\n")
+    assert escalation.startswith("---\nmodel: litellm/frontier-code\nsteps: 150\n")
 
 
 def test_vendor_prompt_set_keeps_opencode_prompt(tmp_path):

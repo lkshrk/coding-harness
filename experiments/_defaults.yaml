@@ -9,12 +9,13 @@ context:
   reviewer: 65536
   debugger: 131072
   escalation: 131072
+# DeepSeek Harness has no per-role limit; these sit above its observed maximum so both harnesses get the same budget.
 steps:
-  explorer: 25
-  coder: 60
-  reviewer: 25
-  debugger: 60
-  escalation: 60
+  explorer: 40
+  coder: 150
+  reviewer: 50
+  debugger: 150
+  escalation: 150
 policy:
   coder_retries: 2
   debugger_attempts: 1

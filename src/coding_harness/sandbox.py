@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 from .config import Task
 
 WORKDIR = "/work"
+BASE_REF = "harness-base"
 HOME = "/home/agent"
 
 
@@ -30,10 +32,12 @@ class Sandbox:
         self.run_dir = run_dir
         self.task = task
         self.repo = run_dir / "repo"
+        self.source = run_dir / "source"
         self.home = run_dir / "home"
         self.container: str | None = None
 
     def prepare(self) -> None:
+        # The agent repo holds base and its ancestors only: later commits would contain the reference fix.
         self.home.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             [
@@ -42,17 +46,38 @@ class Sandbox:
                 "core.hooksPath=/dev/null",
                 "clone",
                 "--quiet",
+                "--no-checkout",
                 "--template=",
                 self.task.repo,
-                str(self.repo),
+                str(self.source),
             ],
             check=True,
         )
+        subprocess.run(
+            ["git", "-C", str(self.source), "config", "uploadpack.allowAnySHA1InWant", "true"], check=True
+        )
         git = ["git", "-C", str(self.repo)]
-        subprocess.run([*git, "checkout", "--quiet", "--detach", self.task.base], check=True)
+        subprocess.run(["git", "init", "--quiet", "--template=", str(self.repo)], check=True)
+        subprocess.run([*git, "config", "core.hooksPath", "/dev/null"], check=True)
         subprocess.run([*git, "config", "user.name", "coding-harness"], check=True)
         subprocess.run([*git, "config", "user.email", "harness@localhost"], check=True)
-        subprocess.run([*git, "config", "core.hooksPath", "/dev/null"], check=True)
+        subprocess.run([*git, "fetch", "--quiet", "--no-tags", str(self.source), self.task.base], check=True)
+        subprocess.run([*git, "checkout", "--quiet", "--detach", "FETCH_HEAD"], check=True)
+        subprocess.run([*git, "tag", BASE_REF], check=True)
+
+    def export(self, commit: str, dest: Path) -> None:
+        """Write the tree of a source commit into dest without touching its git metadata."""
+        with tempfile.NamedTemporaryFile(dir=self.run_dir) as index:
+            env = {**os.environ, "GIT_INDEX_FILE": index.name}
+            git = ["git", f"--git-dir={self.source / '.git'}", f"--work-tree={dest}"]
+            subprocess.run([*git, "read-tree", commit], check=True, env=env)
+            subprocess.run([*git, "checkout-index", "--all", "--force"], check=True, env=env)
+
+    def show_source(self, commit: str, path: str) -> bytes | None:
+        res = subprocess.run(
+            ["git", "-C", str(self.source), "show", f"{commit}:{path}"], capture_output=True, check=False
+        )
+        return res.stdout if res.returncode == 0 else None
 
     def start(self) -> None:
         image = f"coding-harness:{self.task.toolchain}"
@@ -117,28 +142,38 @@ class Sandbox:
         if reset_files_to_base:
             files = sorted(set(re.findall(r"^diff --git a/(\S+) b/", patch, re.MULTILINE)))
             existing = [
-                f
-                for f in files
-                if self.sh(f"git cat-file -e {self.task.base}:{shlex.quote(f)}").exit_code == 0
+                f for f in files if self.sh(f"git cat-file -e {BASE_REF}:{shlex.quote(f)}").exit_code == 0
             ]
             if existing:
-                self.sh(f"git checkout {self.task.base} -- " + " ".join(shlex.quote(f) for f in existing))
+                self.sh(f"git checkout {BASE_REF} -- " + " ".join(shlex.quote(f) for f in existing))
         res = self.sh("git apply --whitespace=nowarn -", stdin=patch)
         if res.exit_code != 0:
             raise RuntimeError(f"git apply failed: {res.stderr.strip()[:500]}")
 
     def diff(self) -> str:
         self.sh("git add --intent-to-add --all")
-        return self.sh("git diff").stdout
+        return self.sh(f"git diff {BASE_REF}").stdout
 
     def restore_hidden_tests(self) -> None:
         if self.task.hidden_test_patch:
             self.apply_patch(self.task.hidden_test_patch, reset_files_to_base=True)
         elif self.task.reference and self.task.hidden_tests:
-            files = " ".join(shlex.quote(f) for f in self.task.hidden_tests)
-            res = self.sh(f"git checkout {shlex.quote(self.task.reference)} -- {files}")
-            if res.exit_code != 0:
-                raise RuntimeError(f"restoring hidden tests failed: {res.stderr.strip()}")
+            for path in self.task.hidden_tests:
+                content = self.show_source(self.task.reference, path)
+                if content is None:
+                    raise RuntimeError(f"restoring hidden tests failed: {path} not in {self.task.reference}")
+                target = self.repo / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+
+    def checkout_reference(self) -> None:
+        """Replace the working tree with the reference commit's tree."""
+        self.sh(f"git checkout --quiet --force {BASE_REF} && git clean -fdq")
+        tracked = self.sh("git ls-files -z").stdout.split("\0")
+        for path in filter(None, tracked):
+            (self.repo / path).unlink(missing_ok=True)
+        assert self.task.reference
+        self.export(self.task.reference, self.repo)
 
     def stop(self) -> None:
         if self.container:

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import shlex
+import subprocess
 import tempfile
 from pathlib import Path
 
 from .config import Task, benchmark_tasks
-from .sandbox import Sandbox
+from .sandbox import BASE_REF, Sandbox
 from .verify import verify
 
 
@@ -24,18 +24,20 @@ def validate_task(task: Task) -> list[str]:
             if verify(sandbox, task.hidden_verify or task.verify).passed:
                 problems.append("hidden tests pass on base: they do not detect the missing change")
         if task.reference_patch:
-            sandbox.sh(f"git checkout --quiet --force {shlex.quote(task.base)} && git clean -fdq")
+            sandbox.sh(f"git checkout --quiet --force {BASE_REF} && git clean -fdq")
             sandbox.apply_patch(task.reference_patch)
             if task.hidden_test_patch:
                 sandbox.apply_patch(task.hidden_test_patch, reset_files_to_base=True)
             if not (result := verify(sandbox, task.hidden_verify or task.verify)).passed:
                 problems.append(f"reference fails its own checks: {result.feedback()[-500:]}")
         elif task.reference:
-            checkout = sandbox.sh(f"git checkout --quiet --force {shlex.quote(task.reference)}")
-            if checkout.exit_code != 0:
-                problems.append(f"cannot check out reference: {checkout.stderr.strip()}")
-            elif not (result := verify(sandbox, task.verify)).passed:
-                problems.append(f"reference fails its own checks: {result.feedback()[-500:]}")
+            try:
+                sandbox.checkout_reference()
+            except subprocess.CalledProcessError as exc:
+                problems.append(f"cannot check out reference: {exc}")
+            else:
+                if not (result := verify(sandbox, task.verify)).passed:
+                    problems.append(f"reference fails its own checks: {result.feedback()[-500:]}")
     finally:
         sandbox.stop()
     return problems
