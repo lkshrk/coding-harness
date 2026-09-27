@@ -17,8 +17,24 @@
         '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG \\w+=(?<currentValue>\\S+)',
       ],
     },
+    {
+      customType: 'jsonata',
+      description: 'Skills Coder workspaces fetch, pinned to a tag or commit per source repository',
+      fileFormat: 'json',
+      managerFilePatterns: ['/^agent/skills\\.json$/'],
+      matchStrings: [
+        "skills[$length(ref) != 40].{ 'depName': $replace($replace(repo, 'https://github.com/', ''), '.git', ''), 'currentValue': ref, 'datasource': 'github-tags' }",
+        "skills[$length(ref) = 40].{ 'depName': $replace($replace(repo, 'https://github.com/', ''), '.git', ''), 'packageName': repo, 'currentValue': 'main', 'currentDigest': ref, 'datasource': 'git-refs' }",
+      ],
+    },
   ],
   packageRules: [
+    {
+      description: 'Skills change what every workspace agent does: review the upstream diff, never automerge',
+      matchFileNames: ['agent/skills.json'],
+      automerge: false,
+      labels: ['agent-skills'],
+    },
     {
       description: 'Tooling and CI: safe to merge once CI is green',
       matchManagers: ['github-actions', 'pep621'],

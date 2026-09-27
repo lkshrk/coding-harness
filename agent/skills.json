@@ -3,73 +3,73 @@
     {
       "name": "brainstorming",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/brainstorming"
     },
     {
       "name": "writing-plans",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/writing-plans"
     },
     {
       "name": "executing-plans",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/executing-plans"
     },
     {
       "name": "test-driven-development",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/test-driven-development"
     },
     {
       "name": "systematic-debugging",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/systematic-debugging"
     },
     {
       "name": "verification-before-completion",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/verification-before-completion"
     },
     {
       "name": "subagent-driven-development",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/subagent-driven-development"
     },
     {
       "name": "dispatching-parallel-agents",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/dispatching-parallel-agents"
     },
     {
       "name": "using-git-worktrees",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/using-git-worktrees"
     },
     {
       "name": "requesting-code-review",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/requesting-code-review"
     },
     {
       "name": "receiving-code-review",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/receiving-code-review"
     },
     {
       "name": "finishing-a-development-branch",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "ref": "v6.3.0",
       "path": "skills/finishing-a-development-branch"
     },
     {
@@ -111,43 +111,43 @@
     {
       "name": "iterate",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/iterate"
     },
     {
       "name": "code-review",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/code-review"
     },
     {
       "name": "qa-changes",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/qa-changes"
     },
     {
       "name": "learn-from-code-review",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/learn-from-code-review"
     },
     {
       "name": "agent-memory",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/agent-memory"
     },
     {
       "name": "release-notes",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/release-notes"
     },
     {
       "name": "github-actions",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "ref": "v0.25.0",
       "path": "skills/github-actions"
     },
     {
