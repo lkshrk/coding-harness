@@ -9,6 +9,15 @@ permissions:
   - action: subagent
     resource: "*"
     effect: deny
+  - action: "context-mode_ctx_*execute*"
+    resource: "*"
+    effect: deny
+  - action: context-mode_ctx_upgrade
+    resource: "*"
+    effect: deny
+  - action: context-mode_ctx_purge
+    resource: "*"
+    effect: deny
   - action: shell
     resource: "*"
     effect: ask
