@@ -3,73 +3,73 @@
     {
       "name": "brainstorming",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/brainstorming"
     },
     {
       "name": "writing-plans",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/writing-plans"
     },
     {
       "name": "executing-plans",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/executing-plans"
     },
     {
       "name": "test-driven-development",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/test-driven-development"
     },
     {
       "name": "systematic-debugging",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/systematic-debugging"
     },
     {
       "name": "verification-before-completion",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/verification-before-completion"
     },
     {
       "name": "subagent-driven-development",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/subagent-driven-development"
     },
     {
       "name": "dispatching-parallel-agents",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/dispatching-parallel-agents"
     },
     {
       "name": "using-git-worktrees",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/using-git-worktrees"
     },
     {
       "name": "requesting-code-review",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/requesting-code-review"
     },
     {
       "name": "receiving-code-review",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/receiving-code-review"
     },
     {
       "name": "finishing-a-development-branch",
       "repo": "https://github.com/obra/superpowers.git",
-      "ref": "v6.3.0",
+      "ref": "v6.4.2",
       "path": "skills/finishing-a-development-branch"
     },
     {
