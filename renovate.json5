@@ -32,6 +32,11 @@
       labels: ['harness-version'],
     },
     {
+      description: 'swebench>=5 dropped MAP_REPO_VERSION_TO_SPECS, which import-swebench reads',
+      matchPackageNames: ['swebench'],
+      allowedVersions: '<5',
+    },
+    {
       description: 'DeepSeek Harness only ships prereleases',
       matchDepNames: ['@deepseek-ai/dsh'],
       ignoreUnstable: false,
