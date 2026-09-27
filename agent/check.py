@@ -40,6 +40,12 @@ def check_markdown(kind, directory, errors):
             errors.append(f"{name}: mode must be one of {sorted(AGENT_MODES)}")
         if meta.get("model") and not MODELS.match(meta["model"]):
             errors.append(f"{name}: model must be gw/fast, gw/coding or gw/deep")
+        text = path.read_text()
+        read_only = re.search(r"- action: edit\n\s+resource: \"\*\"\n\s+effect: deny", text)
+        if kind == "agent" and read_only and 'action: "context-mode_ctx_*execute*"' not in text:
+            errors.append(
+                f"{name}: read-only agents must deny context-mode_ctx_*execute* (it runs arbitrary code)"
+            )
         if kind == "command" and meta.get("agent") and meta["agent"] not in agents:
             errors.append(f"{name}: unknown agent {meta['agent']}")
 
