@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-swebench = ["swebench>=4,<5"]
+swebench = ["swebench>=5,<6"]
 
 [project.scripts]
 harness = "coding_harness.cli:main"
