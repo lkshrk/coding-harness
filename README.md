@@ -247,6 +247,7 @@ records each task as an experiment run with evaluator scores (`success`, `checks
 ```
 benchmark/            tasks (one YAML per task)
 experiments/          role → model mappings, _defaults.yaml for budgets and policy
+agent/                deployed agent config for Coder workspaces (rules, agents, commands, plugins, skills)
 harnesses/opencode/   agent prompts (explorer, coder, debugger, reviewer)
 harnesses/dsh/        DeepSeek Harness profile template
 docker/Dockerfile     sandbox image: toolchain + OpenCode + DeepSeek Harness, pinned
