@@ -43,28 +43,39 @@
 
 ## Target platform
 
-The harness sandbox is the model for production: agents work in disposable environments, people
-work through the agent, not inside the environment.
+People work through the agent, not inside its environment. The agent's environments are Coder
+workspaces, which already provide toolchains, Docker, repository identity and lifecycle.
 
 ```
-opencode control plane      always on, web UI and sessions, no toolchains, no credentials
-   │ workspace adapter       creates one sandbox per project and attaches to its server
+opencode control plane      stock image, always on, web UI and sessions, no toolchains, no credentials
+   │ "coder" workspace type  plugin: finds or creates the workspace for a repository's stacks
    ▼
-sandbox (agent-sandbox)     this repo's sandbox image + `opencode serve`, repo on a volume,
-                            toolchain, a scoped agent token, restricted network
+Coder workspace             stacks, Docker-in-Docker, agent-only GitHub token,
+                            `opencode serve` exposed as a Coder app; all tools run here
 ```
 
-- Sandboxes: [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox)
-  (`Sandbox`, `SandboxTemplate`, `SandboxClaim`, warm pools; alpha).
-- Control plane to sandbox: OpenCode's workspace control plane, which proxies sessions to a remote
-  `opencode serve`. It is experimental and has no adapter for this yet; building one waits until the
-  API settles.
+- Control plane: the stock `ghcr.io/anomalyco/opencode` image. Config, agent prompts and the plugin
+  come from a ConfigMap, keys from a Secret, session state from a volume. The plugin has no
+  dependencies (plain HTTP against the Coder API), so no custom image is needed.
+- Control plane to workspace: OpenCode's workspace control plane, which proxies sessions to a remote
+  `opencode serve`. Workspace types come from plugins; the API is experimental, so both sides run the
+  same pinned OpenCode version, bumped together and tested against the plugin first. The benchmark
+  runs that version too.
+- The plugin sets workspace parameters itself, no presets: stacks from repository markers
+  (`go.mod`, `pyproject.toml`, `kustomization.yaml`, ...), Docker when the repository builds or tests
+  with containers, autostop per workspace. It reuses a workspace with the same stack set, so there is
+  one long-lived workspace per stack combination rather than per project (a start takes minutes).
+  Projects are directories in it, routed by request directory; parallel sessions on one repository
+  get their own git worktree.
+- The template enforces what the plugin must not choose: workspaces owned by the control plane's
+  Coder user get only the agent GitHub token. That user is limited to workspace lifecycle.
+- The benchmark keeps its disposable local containers; measurement needs a clean environment per run.
 - The existing agent platform keeps its automations until each has an equivalent here; the first one
   to move is the pull-request review.
 
 Order: finish the harness experiments (models × roles on OpenCode), use OpenCode interactively
-against the gateway meanwhile, then build the control plane and sandboxes and move automations one
-at a time.
+against the gateway meanwhile, then build the control plane and the Coder workspace type and move
+automations one at a time.
 
 ## Deviations from the original proposal
 
