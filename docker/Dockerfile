@@ -17,7 +17,7 @@ RUN apt-get update \
 RUN npm install -g "opencode-ai@${OPENCODE_VERSION}" "@deepseek-ai/dsh@${DSH_VERSION}" \
     && npm cache clean --force
 
-COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /uvx /usr/local/bin/
 
 ENV OPENCODE_DISABLE_AUTOUPDATE=1 \
     OPENCODE_DISABLE_MODELS_FETCH=1 \
