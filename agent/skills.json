@@ -1,0 +1,166 @@
+{
+  "skills": [
+    {
+      "name": "brainstorming",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/brainstorming"
+    },
+    {
+      "name": "writing-plans",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/writing-plans"
+    },
+    {
+      "name": "executing-plans",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/executing-plans"
+    },
+    {
+      "name": "test-driven-development",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/test-driven-development"
+    },
+    {
+      "name": "systematic-debugging",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/systematic-debugging"
+    },
+    {
+      "name": "verification-before-completion",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/verification-before-completion"
+    },
+    {
+      "name": "subagent-driven-development",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/subagent-driven-development"
+    },
+    {
+      "name": "dispatching-parallel-agents",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/dispatching-parallel-agents"
+    },
+    {
+      "name": "using-git-worktrees",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/using-git-worktrees"
+    },
+    {
+      "name": "requesting-code-review",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/requesting-code-review"
+    },
+    {
+      "name": "receiving-code-review",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/receiving-code-review"
+    },
+    {
+      "name": "finishing-a-development-branch",
+      "repo": "https://github.com/obra/superpowers.git",
+      "ref": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "path": "skills/finishing-a-development-branch"
+    },
+    {
+      "name": "linear-create-issue",
+      "repo": "https://github.com/lkshrk/linear-ai.git",
+      "ref": "v1.6.3",
+      "path": "skills/linear-create-issue"
+    },
+    {
+      "name": "linear-refine",
+      "repo": "https://github.com/lkshrk/linear-ai.git",
+      "ref": "v1.6.3",
+      "path": "skills/linear-refine"
+    },
+    {
+      "name": "linear-implement",
+      "repo": "https://github.com/lkshrk/linear-ai.git",
+      "ref": "v1.6.3",
+      "path": "skills/linear-implement"
+    },
+    {
+      "name": "linear-review",
+      "repo": "https://github.com/lkshrk/linear-ai.git",
+      "ref": "v1.6.3",
+      "path": "skills/linear-review"
+    },
+    {
+      "name": "linear-close",
+      "repo": "https://github.com/lkshrk/linear-ai.git",
+      "ref": "v1.6.3",
+      "path": "skills/linear-close"
+    },
+    {
+      "name": "linear-status",
+      "repo": "https://github.com/lkshrk/linear-ai.git",
+      "ref": "v1.6.3",
+      "path": "skills/linear-status"
+    },
+    {
+      "name": "iterate",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/iterate"
+    },
+    {
+      "name": "code-review",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/code-review"
+    },
+    {
+      "name": "qa-changes",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/qa-changes"
+    },
+    {
+      "name": "learn-from-code-review",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/learn-from-code-review"
+    },
+    {
+      "name": "agent-memory",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/agent-memory"
+    },
+    {
+      "name": "release-notes",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/release-notes"
+    },
+    {
+      "name": "github-actions",
+      "repo": "https://github.com/OpenHands/extensions.git",
+      "ref": "bea7a20c59c44ec4dacddac3fc0efe58b9c73880",
+      "path": "skills/github-actions"
+    },
+    {
+      "name": "upgrade-deps",
+      "repo": "https://github.com/lkshrk/useful-skills.git",
+      "ref": "v0.3.0",
+      "path": "skills/upgrade-deps"
+    },
+    {
+      "name": "wow-addon",
+      "repo": "https://github.com/lkshrk/auto-code-env.git",
+      "ref": "59408cb36469031adc4d8a504f18b51f11502db9",
+      "path": "openhands/skills/wow-addon"
+    }
+  ]
+}
