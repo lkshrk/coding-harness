@@ -1,5 +1,5 @@
 # Sandbox image: task toolchain + both harnesses. BASE selects the toolchain (see justfile).
-ARG BASE=python:3.13-bookworm
+ARG BASE=python:3.14-bookworm
 FROM ${BASE}
 
 ARG NODE_MAJOR=24
