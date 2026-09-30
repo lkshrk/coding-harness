@@ -4,7 +4,7 @@ FROM ${BASE}
 
 ARG NODE_MAJOR=24
 # renovate: datasource=npm depName=opencode-ai
-ARG OPENCODE_VERSION=1.18.32
+ARG OPENCODE_VERSION=1.18.34
 # renovate: datasource=npm depName=@deepseek-ai/dsh
 ARG DSH_VERSION=0.1.7-rc.2
 
