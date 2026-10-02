@@ -111,43 +111,43 @@
     {
       "name": "iterate",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/iterate"
     },
     {
       "name": "code-review",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/code-review"
     },
     {
       "name": "qa-changes",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/qa-changes"
     },
     {
       "name": "learn-from-code-review",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/learn-from-code-review"
     },
     {
       "name": "agent-memory",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/agent-memory"
     },
     {
       "name": "release-notes",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/release-notes"
     },
     {
       "name": "github-actions",
       "repo": "https://github.com/OpenHands/extensions.git",
-      "ref": "v0.25.0",
+      "ref": "v0.26.0",
       "path": "skills/github-actions"
     },
     {
