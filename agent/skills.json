@@ -159,7 +159,7 @@
     {
       "name": "wow-addon",
       "repo": "https://github.com/lkshrk/auto-code-env.git",
-      "ref": "59408cb36469031adc4d8a504f18b51f11502db9",
+      "ref": "8763afa78195d3713709159e8b5a6b815a5df711",
       "path": "openhands/skills/wow-addon"
     }
   ]
