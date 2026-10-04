@@ -75,37 +75,37 @@
     {
       "name": "linear-create-issue",
       "repo": "https://github.com/lkshrk/linear-ai.git",
-      "ref": "v1.6.3",
+      "ref": "v2.0.0",
       "path": "skills/linear-create-issue"
     },
     {
       "name": "linear-refine",
       "repo": "https://github.com/lkshrk/linear-ai.git",
-      "ref": "v1.6.3",
+      "ref": "v2.0.0",
       "path": "skills/linear-refine"
     },
     {
       "name": "linear-implement",
       "repo": "https://github.com/lkshrk/linear-ai.git",
-      "ref": "v1.6.3",
+      "ref": "v2.0.0",
       "path": "skills/linear-implement"
     },
     {
       "name": "linear-review",
       "repo": "https://github.com/lkshrk/linear-ai.git",
-      "ref": "v1.6.3",
+      "ref": "v2.0.0",
       "path": "skills/linear-review"
     },
     {
       "name": "linear-close",
       "repo": "https://github.com/lkshrk/linear-ai.git",
-      "ref": "v1.6.3",
+      "ref": "v2.0.0",
       "path": "skills/linear-close"
     },
     {
       "name": "linear-status",
       "repo": "https://github.com/lkshrk/linear-ai.git",
-      "ref": "v1.6.3",
+      "ref": "v2.0.0",
       "path": "skills/linear-status"
     },
     {
