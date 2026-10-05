@@ -1,0 +1,42 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended', 'helpers:pinGitHubActionDigests'],
+  labels: ['dependencies'],
+  automergeType: 'pr',
+  platformAutomerge: false,
+  lockFileMaintenance: { enabled: true, automerge: true },
+  customDatasources: {
+    'opencode-v2': {
+      defaultRegistryUrlTemplate: 'https://raw.githubusercontent.com/anomalyco/homebrew-tap/HEAD/opencode-v2.rb',
+      format: 'plain',
+      transformTemplates: [
+        '{"releases": [{"version": $replace($filter(releases.version, function($v){ $match($v, /^\\s*version "/) })[0], /^\\s*version "([^"]+)".*$/, "$1")}]}',
+      ],
+    },
+  },
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Versions pinned with a "# renovate:" comment (features, agent layer, vendored schemas)',
+      managerFilePatterns: ['/(^|/)features/.+\\.(sh|json)$/', '/(^|/)Dockerfile$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\S+?[=:]\\s*"?(?<currentValue>[^"\\s]+)"?',
+      ],
+    },
+  ],
+  packageRules: [
+    {
+      description: 'Tooling and CI: safe to merge once CI is green',
+      matchManagers: ['github-actions', 'bun', 'pep621'],
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin'],
+      matchDepNames: ['!opencode-ai', '!@opencode/cli'],
+      automerge: true,
+    },
+    {
+      description: 'Harness and agent-layer versions change agent behaviour: review by hand, re-run the evaluation',
+      matchDepNames: ['@opencode/cli', 'opencode', 'rtk-ai/rtk'],
+      automerge: false,
+      labels: ['agent-behaviour'],
+    },
+  ],
+}

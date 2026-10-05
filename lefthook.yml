@@ -1,0 +1,21 @@
+pre-commit:
+  parallel: true
+  commands:
+    gitleaks:
+      run: gitleaks git --staged --redact --no-banner
+    biome:
+      glob: "*.{ts,json,jsonc}"
+      run: bunx biome check --no-errors-on-unmatched {staged_files}
+    ruff:
+      root: eval/
+      glob: "*.py"
+      run: uv run ruff check {staged_files} && uv run ruff format --check {staged_files}
+
+pre-push:
+  parallel: true
+  commands:
+    typescript:
+      run: bun run typecheck && bun test
+    python:
+      root: eval/
+      run: uv run pytest -q

@@ -7,3 +7,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .DS_Store
+dist/
+node_modules/
+*.tsbuildinfo
+.claude/settings.local.json
+.omx/
+.agent-progress.md

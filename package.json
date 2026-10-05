@@ -1,0 +1,24 @@
+{
+  "name": "nightshift",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "gen": "bun packages/core/src/gen.ts",
+    "typecheck": "tsc -b",
+    "test": "bun test",
+    "check": "bun run lint && bun run typecheck && bun run test",
+    "sync:host": "scripts/sync-host.sh"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@devcontainers/cli": "0.89.0",
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2"
+  }
+}
