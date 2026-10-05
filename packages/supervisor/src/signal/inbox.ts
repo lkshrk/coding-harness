@@ -118,15 +118,6 @@ export class SignalInbox {
     this.o.out(`signal: ${BACK_MESSAGE}`)
   }
 
-  private reply(text: string): void {
-    this.chain = this.chain
-      .then(() => this.o.link.send(text))
-      .then(
-        () => undefined,
-        (e) => this.o.out(`signal: reply failed: ${(e as Error).message}`),
-      )
-  }
-
   async handle(frame: Frame): Promise<void> {
     const e = frame.envelope
     const kind = frameKind(e)
