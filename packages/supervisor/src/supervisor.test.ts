@@ -488,6 +488,31 @@ describe('vault ingest lifecycle', () => {
   })
 })
 
+describe('own Linear writes', () => {
+  test('a stale read after dispatch does not stop the fresh run', async () => {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1' }))
+    await h.sup.start()
+    h.linear.freezeReads()
+    await h.sup.tick()
+    const run = h.sup.runs.forIssue('FOR-1').at(-1)
+    if (!run) throw new Error('not dispatched')
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(h.sup.runs.get(run.id)?.state).not.toBe('stopped')
+    expect(h.of('WORKER_FAILED')).toEqual([])
+  })
+
+  test('an external status change newer than our write still stops the run', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.advance(60_000)
+    h.linear.patch('FOR-1', { status: 'Todo' })
+    await h.sup.tick()
+    expect(h.sup.runs.get(run.id)?.state).toBe('stopped')
+  })
+})
+
 describe('worker lifecycle', () => {
   test('WORKER_STARTED moves the run to running and posts the attach command once', async () => {
     const h = harness()

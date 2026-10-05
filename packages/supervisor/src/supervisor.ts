@@ -6,6 +6,7 @@ import {
   type LoadResult,
   NIGHTSHIFT_VERSION,
   profileEntries,
+  teamStatuses,
   validateAgainstWorkspace,
 } from '@nightshift/core'
 import { changedPaths, restartRequired } from './config-watch'
@@ -24,6 +25,7 @@ import type {
   Classifier,
   ExecutorStart,
   IssueSnapshot,
+  IssueUpdate,
   LinearComment,
   LinearPort,
   Notification,
@@ -142,6 +144,7 @@ export class Supervisor {
   private readonly now: () => Date
   private readonly retry: RetryQueue
   private readonly cache = new Map<string, IssueSnapshot>()
+  private readonly ownWrites = new Map<string, { status: string; previous: string; before: string }>()
   private readonly stalls = new Map<string, number>()
   private readonly roleInFlight = new Set<string>()
   private readonly roleFailures = new Map<string, number>()
@@ -257,7 +260,7 @@ export class Supervisor {
     for (const { view, by } of plan.unblocked) {
       const id = view.snapshot.identifier
       if (by.length) this.log.append({ type: 'DEPENDENCY_UNBLOCKED', issue: id, data: { by } })
-      await this.d.linear.update(id, { status: 'ready' })
+      await this.writeStatus(id, { status: 'ready' })
       report.unblocked.push(id)
     }
     for (const view of plan.dispatch) {
@@ -403,7 +406,7 @@ export class Supervisor {
 
   private async holdForYou(issue: string, awaiting: Awaiting): Promise<void> {
     this.setAwaiting(issue, awaiting)
-    await this.d.linear.update(issue, { status: 'blocked' })
+    await this.writeStatus(issue, { status: 'blocked' })
   }
 
   held(): string[] {
@@ -700,7 +703,7 @@ export class Supervisor {
       })
     }
     await this.d.linear.attachLink(record.issue, record.url, `PR #${record.number}: ${title}`)
-    await this.d.linear.update(record.issue, { status: 'review' })
+    await this.writeStatus(record.issue, { status: 'review' })
     if (!logged) {
       await this.notify(`PR #${record.number} ready for review`, record.issue, {
         kind: 'pr',
@@ -772,7 +775,7 @@ export class Supervisor {
     const stage = issue && viewIssue(issue, this.cfg, this.viewOptions(pr.issue))?.stage
     if (stage === INTEGRATION) await this.completeStage(pr.issue)
     else this.log.append({ type: 'STAGE_COMPLETED', issue: pr.issue, data: { stage: INTEGRATION } })
-    if (this.awaiting(pr.issue)?.kind !== 'after') await this.d.linear.update(pr.issue, { status: 'done' })
+    if (this.awaiting(pr.issue)?.kind !== 'after') await this.writeStatus(pr.issue, { status: 'done' })
     const dependents = [...this.cache.values()].filter((i) =>
       i.blockedBy.some((b) => b.identifier === pr.issue),
     )
@@ -785,9 +788,25 @@ export class Supervisor {
   }
 
   private observeIssue(issue: IssueSnapshot): void {
+    const own = this.ownWrites.get(issue.identifier)
+    // A read that still carries the pre-write updatedAt is Linear lagging our own write, not a change.
+    if (own && issue.updatedAt === own.before && issue.status === own.previous) {
+      this.cache.set(issue.identifier, { ...issue, status: own.status })
+      return
+    }
+    this.ownWrites.delete(issue.identifier)
     this.cache.set(issue.identifier, issue)
     const lifecycle = lifecycleOf(this.cfg, issue.team, issue.status)
     if (lifecycle === 'done' || lifecycle === 'canceled') this.uncover(issue.identifier)
+  }
+
+  private async writeStatus(identifier: string, change: IssueUpdate): Promise<void> {
+    await this.d.linear.update(identifier, change)
+    const issue = this.cache.get(identifier)
+    if (!issue || change.status === undefined) return
+    const status = teamStatuses(this.cfg, issue.team)[change.status]
+    this.ownWrites.set(identifier, { status, previous: issue.status, before: issue.updatedAt })
+    this.cache.set(identifier, { ...issue, status })
   }
 
   private async pullRequestClosed(pr: PullRequestRecord): Promise<void> {
@@ -1004,7 +1023,7 @@ export class Supervisor {
         `lost-${issue.updatedAt}`,
         'nightshift lost the runtime state of this run; it is dispatched again.',
       )
-      await this.d.linear.update(issue.identifier, { status: 'ready' })
+      await this.writeStatus(issue.identifier, { status: 'ready' })
       report.lost.push(issue.identifier)
     }
     return report
@@ -1123,7 +1142,7 @@ export class Supervisor {
     }
     this.leaseEvent('LEASE_ACQUIRED', id)
     this.retry.take(id)
-    await this.d.linear.update(id, { status: 'running' })
+    await this.writeStatus(id, { status: 'running' })
     await this.launch(run, view)
     return run
   }
@@ -1234,7 +1253,7 @@ export class Supervisor {
 
     if (action === 'retry_same') {
       this.retry.schedule(run.issue, c.class, this.now().getTime())
-      await this.d.linear.update(run.issue, { status: 'ready' })
+      await this.writeStatus(run.issue, { status: 'ready' })
     } else if (action === 'pause_dispatch') {
       this.pause(`failure ${c.class} on ${run.issue}`, 'supervisor')
       await this.notify(`dispatch paused after a ${c.class} failure`, run.issue, {
@@ -1293,7 +1312,7 @@ export class Supervisor {
         'INSERT OR IGNORE INTO questions (comment, issue, run, asked_to, asked_at) VALUES (?, ?, ?, ?, ?)',
       )
       .run(comment.id, run.issue, run.id, to, this.now().toISOString())
-    await this.d.linear.update(run.issue, { status: 'blocked' })
+    await this.writeStatus(run.issue, { status: 'blocked' })
     await this.notify(`question for the ${to}: ${question}`, run.issue, {
       kind: 'question',
       context: [
@@ -1337,7 +1356,7 @@ export class Supervisor {
       return
     const issue = this.cache.get(identifier)
     if (!issue || lifecycleOf(this.cfg, issue.team, issue.status) !== 'blocked') return
-    await this.d.linear.update(identifier, { status: 'ready' })
+    await this.writeStatus(identifier, { status: 'ready' })
     await this.refresh(identifier)
   }
 
@@ -1346,7 +1365,7 @@ export class Supervisor {
     this.log.append({ type: 'STAGE_ENTERED', issue: id, data: { stage, ...(from ? { from } : {}) } })
     const hold = this.cfg.stages[stage]?.human_checkpoint === 'before'
     this.setAwaiting(id, hold ? { kind: 'before', stage } : null)
-    await this.d.linear.update(id, { stage, ...(hold ? { status: 'blocked' as const } : {}) })
+    await this.writeStatus(id, { stage, ...(hold ? { status: 'blocked' as const } : {}) })
     if (hold)
       await this.notify(`${stage} needs your approval before it starts`, id, {
         kind: 'blocked',

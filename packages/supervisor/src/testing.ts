@@ -149,7 +149,9 @@ export class FakeLinear implements LinearPort {
   readonly updates: { identifier: string; change: IssueUpdate }[] = []
   readonly attachments = new Map<string, { url: string; title: string }[]>()
   workspaceValue: LinearWorkspace = testWorkspace()
+  stale: Map<string, IssueSnapshot> | null = null
   private ids = 0
+  private lastStamp = 0
 
   constructor(
     private readonly config: Config,
@@ -157,13 +159,13 @@ export class FakeLinear implements LinearPort {
   ) {}
 
   put(...issues: IssueSnapshot[]): void {
-    for (const i of issues) this.store.set(i.identifier, { ...i, updatedAt: this.now().toISOString() })
+    for (const i of issues) this.store.set(i.identifier, { ...i, updatedAt: this.stamp() })
   }
 
   patch(identifier: string, over: Partial<IssueSnapshot>): void {
     const cur = this.store.get(identifier)
     if (!cur) throw new Error(`no issue ${identifier}`)
-    this.store.set(identifier, { ...cur, ...over, updatedAt: this.now().toISOString() })
+    this.store.set(identifier, { ...cur, ...over, updatedAt: this.stamp() })
   }
 
   get(identifier: string): IssueSnapshot {
@@ -176,8 +178,18 @@ export class FakeLinear implements LinearPort {
     return this.workspaceValue
   }
 
+  // Linear never gives two writes the same updatedAt, even within one millisecond.
+  private stamp(): string {
+    this.lastStamp = Math.max(this.now().getTime(), this.lastStamp + 1)
+    return new Date(this.lastStamp).toISOString()
+  }
+
+  freezeReads(): void {
+    this.stale = new Map([...this.store].map(([k, v]) => [k, { ...v }]))
+  }
+
   async issues(q: { updatedSince?: string }): Promise<IssueSnapshot[]> {
-    return [...this.store.values()]
+    return [...(this.stale ?? this.store).values()]
       .filter(
         (i) => optedIn(i, this.config) && (q.updatedSince === undefined || i.updatedAt >= q.updatedSince),
       )
@@ -185,7 +197,7 @@ export class FakeLinear implements LinearPort {
   }
 
   async issue(identifier: string): Promise<IssueSnapshot | null> {
-    const cur = this.store.get(identifier)
+    const cur = (this.stale ?? this.store).get(identifier)
     return cur ? this.live(cur) : null
   }
 
