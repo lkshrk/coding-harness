@@ -17,6 +17,7 @@ import type { ReviewOutcome } from '../stages/gates/review'
 import { type PullRequestRecord, PullRequestStore } from '../stages/integration/records'
 import { EventLog } from '../state/events'
 import { LeaseStore } from '../state/leases'
+import { retain } from '../state/retention'
 import { type Run, RunStore } from '../state/runs'
 import { readStatus, type SupervisorStatus, type Waiting } from '../state/status'
 import { resolveRun } from '../state/targets'
@@ -29,6 +30,7 @@ import { Leases } from './leases'
 import { LinearSync } from './linear-sync'
 import { PullRequestWatch } from './pr-watch'
 import { Questions } from './questions'
+import { Recovery } from './recovery'
 import { Remediation } from './remediation'
 import { RunLifecycle } from './run-lifecycle'
 import { type RecoveryReport, type SupervisorDeps, SupervisorRuntime } from './runtime'
@@ -40,7 +42,6 @@ export { fallbackClassifier } from './remediation'
 export type { RecoveryReport, SupervisorDeps } from './runtime'
 
 const LEASE_TTL_MS = 180_000
-const RETENTION_MS = 90 * 24 * 3600_000
 const RBW_LOCKED = 'rbw locked'
 
 export type TickReport = { dispatched: string[]; unblocked: string[]; stopped: string[]; waiting: Waiting[] }
@@ -103,6 +104,7 @@ export class Supervisor {
       questions: new Questions(rt, flow),
       ingest: new Ingest(rt, flow),
       lifecycle: new RunLifecycle(rt, flow),
+      recovery: new Recovery(rt, flow),
       verification: new Verification(rt, flow),
       prWatch: new PullRequestWatch(rt, flow),
       dispatcher: new Dispatcher(rt, this.leases, this.retry, flow),
@@ -123,10 +125,10 @@ export class Supervisor {
     this.rt.setMeta('active_profile', this.cfg.profiles.active)
     this.rt.setMeta('restart_required', 'false')
     this.paused = this.rt.meta('dispatch') === 'paused'
-    this.retain()
+    retain(this.d.db, this.now())
     this.log.append({ type: 'SUPERVISOR_STARTED', data: { version: NIGHTSHIFT_VERSION } })
     await this.m.linearSync.sync()
-    const report = await this.m.lifecycle.recover()
+    const report = await this.m.recovery.recover()
     return report
   }
 
@@ -344,23 +346,4 @@ export class Supervisor {
     o: { agent?: string; profile?: string; continue?: boolean },
     by: By,
   ): Promise<Run> => this.m.dispatcher.retryRun(target, o, by)
-
-  private retain(): void {
-    const cutoff = new Date(this.now().getTime() - RETENTION_MS).toISOString()
-    const open = "SELECT id FROM runs WHERE state NOT IN ('done','failed','stopped')"
-    this.d.db
-      .query(
-        `DELETE FROM events WHERE ts < ? AND (run IS NULL OR run NOT IN (${open}))
-         AND (issue IS NULL OR issue NOT IN (SELECT issue FROM questions WHERE answered_at IS NULL))`,
-      )
-      .run(cutoff)
-    this.d.db
-      .query(
-        `DELETE FROM runs WHERE started_at < ? AND state IN ('done','failed','stopped')
-         AND id NOT IN (SELECT run FROM events WHERE run IS NOT NULL)
-         AND id NOT IN (SELECT run FROM leases)
-         AND id NOT IN (SELECT run FROM questions WHERE run IS NOT NULL)`,
-      )
-      .run(cutoff)
-  }
 }

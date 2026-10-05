@@ -7,6 +7,7 @@ import type { Leases } from './leases'
 import type { LinearSync } from './linear-sync'
 import type { PullRequestWatch } from './pr-watch'
 import type { Questions } from './questions'
+import type { Recovery } from './recovery'
 import type { Remediation } from './remediation'
 import type { RunLifecycle } from './run-lifecycle'
 import type { RunFlow } from './runtime'
@@ -19,6 +20,7 @@ export type Modules = {
   questions: Questions
   ingest: Ingest
   lifecycle: RunLifecycle
+  recovery: Recovery
   verification: Verification
   prWatch: PullRequestWatch
   dispatcher: Dispatcher
@@ -70,9 +72,11 @@ export function runFlow(h: FlowHost): RunFlow {
     forceManual: (issue, why) => h.modules().prWatch.forceManual(issue, why),
     remediate: (run, reason, detail) => h.modules().remediation.remediate(run, reason, detail),
     recoverRun: (run) =>
-      h.modules().lifecycle.recoverRun(run, { reattached: [], resumed: [], failed: [], stopped: [] }),
+      h.modules().recovery.recoverRun(run, { reattached: [], resumed: [], failed: [], stopped: [] }),
     requireActive: (target) => h.modules().lifecycle.requireActive(target),
     profileFor: (view) => h.modules().dispatcher.profileFor(view),
     forgetStalls: (runId) => h.modules().lifecycle.forgetStalls(runId),
+    sandboxDestroyed: (runId, handle) => h.modules().lifecycle.sandboxDestroyed(runId, handle),
+    sandboxHandle: (run) => h.modules().lifecycle.handle(run),
   }
 }

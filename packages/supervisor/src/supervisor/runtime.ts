@@ -15,6 +15,7 @@ import type {
   RepoInspector,
   RunExecutor,
   SandboxDriver,
+  SandboxHandle,
   StageHandler,
   VaultIngest,
   WorkerDriver,
@@ -163,4 +164,6 @@ export type RunFlow = {
   requireActive(target: string): Run
   profileFor(view: IssueView): string
   forgetStalls(runId: string): void
+  sandboxDestroyed(runId: string, handle: SandboxHandle): void
+  sandboxHandle(run: Run): SandboxHandle
 }

@@ -1,4 +1,4 @@
-import { decide, VERIFICATION, viewIssue } from '../policy/stages'
+import { viewIssue } from '../policy/stages'
 import type { SandboxHandle } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
@@ -6,13 +6,7 @@ import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/w
 import { type Event, EventValidationError } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'
 import { activeRun } from '../state/targets'
-import {
-  type FinishLike,
-  INGEST_AGENT,
-  type RecoveryReport,
-  type RunFlow,
-  type SupervisorRuntime,
-} from './runtime'
+import { type FinishLike, INGEST_AGENT, type RunFlow, type SupervisorRuntime } from './runtime'
 
 const NO_FINISH_REASONS = ['step_cap', 'time_cap', 'token_cap', 'no_finish']
 
@@ -183,96 +177,6 @@ export class RunLifecycle {
     const stage = (issue && viewIssue(issue, this.rt.config())?.stage) ?? ''
     await this.flow.holdForYou(run.issue, { kind: 'escalated', stage })
     return this.rt.requireRun(run.id)
-  }
-
-  async recover(): Promise<RecoveryReport> {
-    const report: RecoveryReport = {
-      reattached: [],
-      resumed: [],
-      failed: [],
-      stopped: [],
-      answered: [],
-      lost: [],
-      orphanSandboxes: [],
-      orphanOutboxes: [],
-    }
-    const withRun = new Set(this.rt.runs.active().map((r) => r.issue))
-    const lost = [...this.rt.cache.values()].filter((i) => {
-      const view = viewIssue(i, this.rt.config(), this.flow.viewOptions(i.identifier))
-      if (view?.lifecycle !== 'running' || withRun.has(i.identifier)) return false
-      return (
-        view.stage === VERIFICATION ||
-        decide(view, this.rt.config(), { agentKind: this.rt.deps.agentKind }).kind === 'running'
-      )
-    })
-    for (const run of this.rt.runs.active()) await this.recoverRun(run, report)
-    report.answered = await this.flow.checkQuestions()
-
-    const active = new Set(this.rt.runs.active().map((r) => r.id))
-    for (const handle of await this.rt.deps.sandbox.list({ nightshift: '1' })) {
-      if (active.has(handle.name)) continue
-      await this.rt.deps.sandbox.destroy(handle)
-      report.orphanSandboxes.push(handle.id)
-      if (this.rt.runs.get(handle.name)) this.sandboxDestroyed(handle.name, handle)
-    }
-    const sandboxes = new Set((await this.rt.deps.sandbox.list({ nightshift: '1' })).map((h) => h.name))
-    for (const dir of this.rt.deps.outbox.list()) {
-      if (sandboxes.has(dir)) continue
-      this.rt.deps.outbox.remove(dir)
-      report.orphanOutboxes.push(dir)
-    }
-
-    for (const issue of lost) {
-      await this.rt.postOnce(
-        issue.identifier,
-        `lost-${issue.updatedAt}`,
-        'nightshift lost the runtime state of this run; it is dispatched again.',
-      )
-      await this.flow.writeStatus(issue.identifier, { status: 'ready' })
-      report.lost.push(issue.identifier)
-    }
-    return report
-  }
-
-  async recoverRun(run: Run, report: Pick<RecoveryReport, 'reattached' | 'resumed' | 'failed' | 'stopped'>) {
-    if (run.agent === INGEST_AGENT) {
-      await this.flow.ingestRunFailed(run.id, 'interrupted by supervisor restart')
-      report.failed.push(run.id)
-      return
-    }
-    const issue = await this.rt.deps.linear.issue(run.issue)
-    if (issue) this.flow.observeIssue(issue)
-    const view = issue && viewIssue(issue, this.rt.config(), this.flow.viewOptions(issue.identifier))
-    if (view?.lifecycle !== 'running') {
-      await this.stopRun(run.id, 'issue changed in Linear')
-      report.stopped.push(run.id)
-      return
-    }
-    if (run.state === 'queued') {
-      this.flow.takeLease(run)
-      report.resumed.push(run.id)
-      return
-    }
-    if (run.state === 'gating' || run.state === 'reviewing') {
-      this.flow.takeLease(run)
-      this.flow.schedule(run)
-      report.resumed.push(run.id)
-      return
-    }
-    if (await this.alive(run)) {
-      this.flow.takeLease(run)
-      await this.rt.deps.executor.reattach(run)
-      report.reattached.push(run.id)
-      return
-    }
-    await this.workerFailed(run.id, 'supervisor_restart')
-    report.failed.push(run.id)
-  }
-
-  async alive(run: Run): Promise<boolean> {
-    if (run.sandbox === null || run.session === null) return false
-    if ((await this.rt.deps.sandbox.status(this.handle(run))) !== 'running') return false
-    return this.rt.deps.worker.alive({ id: run.session, attach: [] })
   }
 
   async end(runId: string, to: 'done' | 'failed' | 'stopped', cause: Event): Promise<Run> {
