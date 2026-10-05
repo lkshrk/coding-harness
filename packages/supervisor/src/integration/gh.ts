@@ -53,7 +53,24 @@ async function gitRemote(checkout: string, remote: string): Promise<string> {
   return r.stdout.trim()
 }
 
-type GhCheck = { name: string; bucket: string }
+type GhRollupItem = {
+  name?: string
+  context?: string
+  status?: string
+  conclusion?: string
+  state?: string
+}
+
+const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
+
+export function bucketOf(c: GhRollupItem): 'pass' | 'fail' | 'cancel' | 'pending' {
+  if (c.status !== undefined && c.status !== 'COMPLETED') return 'pending'
+  const result = (c.conclusion || c.state || '').toUpperCase()
+  if (FAILED.has(result)) return 'fail'
+  if (result === 'CANCELLED') return 'cancel'
+  if (result === 'PENDING' || result === 'EXPECTED' || result === '') return 'pending'
+  return 'pass'
+}
 
 export class GhGitHost implements GitHost {
   private readonly run: HostCommandRunner
@@ -182,14 +199,14 @@ export class GhGitHost implements GitHost {
 
   async ci(pr: PullRequest): Promise<CiState> {
     return this.o.tokens.withToken(pr.repository, async (token) => {
+      // `gh pr checks --json` needs gh >= 2.48; the rollup works on older distro packages.
       const r = await this.run(
-        ['gh', 'pr', 'checks', String(pr.number), '--repo', pr.repo, '--json', 'name,bucket'],
+        ['gh', 'pr', 'view', String(pr.number), '--repo', pr.repo, '--json', 'statusCheckRollup'],
         { env: gitAuthEnv(token) },
       )
-      if (r.stdout.trim() === '' && /no checks reported/i.test(r.stderr))
-        return { state: 'passed', failedChecks: [], url: pr.url }
-      if (r.stdout.trim() === '') this.check({ ...r, exitCode: r.exitCode || 1 }, 'gh pr checks')
-      const checks = JSON.parse(r.stdout) as GhCheck[]
+      this.check(r, 'gh pr view')
+      const { statusCheckRollup = [] } = JSON.parse(r.stdout) as { statusCheckRollup?: GhRollupItem[] }
+      const checks = statusCheckRollup.map((c) => ({ name: c.name ?? c.context ?? '?', bucket: bucketOf(c) }))
       const failedChecks = checks
         .filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')
         .map((c) => c.name)

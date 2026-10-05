@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { importBundle, runRef } from '../gates/host'
 import { git, gitFixture } from '../gates/testing'
 import type { PullRequest } from '../interfaces'
-import { githubSlug } from './gh'
+import { bucketOf, githubSlug } from './gh'
 import { AGENT_TOKEN, bareRemote, FakeGh, fakeHost, hostConfig, PERSONAL_TOKEN } from './testing'
 
 let root: string
@@ -145,6 +145,15 @@ describe('GhGitHost pull requests', () => {
       { name: 'test', bucket: 'cancel' },
     ]
     expect(await host.ci(pr)).toEqual({ state: 'failed', failedChecks: ['build', 'test'], url: pr.url })
+    gh.checks = [
+      { name: 'build', bucket: 'pass' },
+      { name: 'deploy', bucket: 'skipping' },
+    ]
+    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], url: pr.url })
+    gh.checks = []
+    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], url: pr.url })
+    expect(gh.gh('checks')).toHaveLength(0)
+    expect(gh.ciReads()).toHaveLength(4)
     expect(await host.state(pr)).toEqual({ state: 'open' })
     ;(gh.prs[0] as { state: string }).state = 'MERGED'
     expect(await host.state(pr)).toEqual({ state: 'merged', mergeSha: 'm3rg3d' })
@@ -164,6 +173,17 @@ describe('GhGitHost pull requests', () => {
     })
     expect(gh.gh('list')).toHaveLength(2)
     expect(gh.gh('create')).toHaveLength(1)
+  })
+})
+
+describe('bucketOf', () => {
+  test('maps check runs and status contexts', () => {
+    expect(bucketOf({ name: 'a', status: 'QUEUED', conclusion: '' })).toBe('pending')
+    expect(bucketOf({ name: 'a', status: 'COMPLETED', conclusion: 'TIMED_OUT' })).toBe('fail')
+    expect(bucketOf({ name: 'a', status: 'COMPLETED', conclusion: 'NEUTRAL' })).toBe('pass')
+    expect(bucketOf({ context: 'ci/x', state: 'ERROR' })).toBe('fail')
+    expect(bucketOf({ context: 'ci/x', state: 'PENDING' })).toBe('pending')
+    expect(bucketOf({ context: 'ci/x', state: 'SUCCESS' })).toBe('pass')
   })
 })
 

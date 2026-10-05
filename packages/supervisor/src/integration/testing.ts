@@ -27,6 +27,20 @@ export type Call = { cmd: string[]; env: Record<string, string>; stdin?: string 
 
 export type FakePr = { number: number; url: string; head: string; state: 'OPEN' | 'MERGED' | 'CLOSED' }
 
+const ROLLUP: Record<string, { status: string; conclusion: string }> = {
+  pass: { status: 'COMPLETED', conclusion: 'SUCCESS' },
+  fail: { status: 'COMPLETED', conclusion: 'FAILURE' },
+  cancel: { status: 'COMPLETED', conclusion: 'CANCELLED' },
+  pending: { status: 'IN_PROGRESS', conclusion: '' },
+  skipping: { status: 'COMPLETED', conclusion: 'SKIPPED' },
+}
+
+const rollupItem = (c: { name: string; bucket: string }) => ({
+  __typename: 'CheckRun',
+  name: c.name,
+  ...ROLLUP[c.bucket],
+})
+
 export class FakeGh {
   readonly calls: Call[] = []
   readonly prs: FakePr[] = []
@@ -57,7 +71,8 @@ export class FakeGh {
       return ok(`Creating pull request\n${url}\n`)
     }
     if (verb === 'edit') return ok('')
-    if (verb === 'checks') return ok(JSON.stringify(this.checks))
+    if (verb === 'view' && arg('--json') === 'statusCheckRollup')
+      return ok(JSON.stringify({ statusCheckRollup: this.checks.map(rollupItem) }))
     if (verb === 'view') {
       const pr = this.prs.find((p) => String(p.number) === cmd[3])
       return ok(
@@ -69,6 +84,10 @@ export class FakeGh {
 
   gh(verb: string): Call[] {
     return this.calls.filter((c) => c.cmd[0] === 'gh' && c.cmd[2] === verb)
+  }
+
+  ciReads(): Call[] {
+    return this.gh('view').filter((c) => c.cmd.includes('statusCheckRollup'))
   }
 }
 

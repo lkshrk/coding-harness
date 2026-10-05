@@ -1429,7 +1429,7 @@ describe('pull request watching', () => {
       expect(h.of('CI_PASSED').map((e) => [e.issue, e.run, e.data])).toEqual([
         ['FOR-1', h.run.id, { url: 'https://github.com/lkshrk/omni/pull/1' }],
       ])
-      expect(h.gh.gh('checks')).toHaveLength(2)
+      expect(h.gh.ciReads()).toHaveLength(2)
     } finally {
       h.cleanup()
     }
@@ -1505,7 +1505,7 @@ describe('pull request watching', () => {
       expect((await h.first.tick()).dispatched).toEqual(['FOR-2'])
       expect(h.first.pullRequests.all()).toEqual([])
       await h.first.tick()
-      expect(h.gh.gh('view').length).toBe(2)
+      expect(h.gh.gh('view').length - h.gh.ciReads().length).toBe(2)
     } finally {
       h.cleanup()
     }
