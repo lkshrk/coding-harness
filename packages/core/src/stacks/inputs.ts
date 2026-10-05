@@ -165,3 +165,14 @@ export async function inputFiles(tree: RepoTree, patterns: string[]): Promise<Re
   }
   return out
 }
+
+export type Plan = {
+  repo: string
+  checkout: string
+  ref: string
+  tree: RepoTree
+  stacks: Stack[]
+  hash: string
+  tag: string
+  environment: Environment
+}
