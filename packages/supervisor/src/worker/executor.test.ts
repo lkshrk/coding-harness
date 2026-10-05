@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
+import { runRef } from '../gates/host'
+import { git, gitFixture } from '../gates/testing'
 import type { BuiltContext, HarnessEvent, WorkerDriver, WorkerSession, WorkerStart } from '../interfaces'
 import type { Run } from '../runs'
 import { snapshot, testConfig } from '../testing'
@@ -16,6 +18,8 @@ import {
   WorkerExecutor,
 } from './executor'
 import { FakeSandboxDriver } from './testing'
+
+type Repo = Config['repositories'][string]
 
 class FakeWorker implements WorkerDriver {
   readonly harness = 'opencode' as const
@@ -510,6 +514,40 @@ describe('WorkerExecutor watching', () => {
     worker.stream.push({ kind: 'finish', payload: { status: 'DONE' } })
     await until(() => cb.of('finished').length === 1)
     expect(worker.starts).toEqual([])
+  })
+})
+
+describe('WorkerExecutor.captureHead', () => {
+  function withCommit() {
+    const fx = gitFixture(join(state, 'git'))
+    config = {
+      ...config,
+      repositories: {
+        ...config.repositories,
+        omni: { ...(config.repositories.omni as Repo), path: fx.checkout },
+      },
+    }
+    sandbox.exportCommits = async () => fx.bundle(run.id)
+    return fx
+  }
+
+  test('imports the commits of a stopped sandbox into refs/nightshift/<run>', async () => {
+    const fx = withCommit()
+    const head = await executor().captureHead({ ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` })
+    expect(head).toBe(git(fx.worker, 'rev-parse', fx.branch))
+    expect(git(fx.checkout, 'rev-parse', runRef(run.id))).toBe(head ?? '')
+  })
+
+  test('a sandbox without commits ahead of base yields no head', async () => {
+    const fx = withCommit()
+    sandbox.exportCommits = async () => ({ bundle: '', headSha: fx.base })
+    expect(
+      await executor().captureHead({ ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` }),
+    ).toBeUndefined()
+  })
+
+  test('a run without a sandbox yields no head', async () => {
+    expect(await executor().captureHead(run)).toBeUndefined()
   })
 })
 
