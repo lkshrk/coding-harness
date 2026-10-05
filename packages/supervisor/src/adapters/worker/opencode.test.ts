@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import type { HarnessEvent, WorkerStart } from '../../ports/interfaces'
+import type { HarnessEvent, WorkerStart } from '../../ports'
 import {
   argsDigest,
   EventMapper,

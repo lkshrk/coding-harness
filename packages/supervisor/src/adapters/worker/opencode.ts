@@ -10,7 +10,7 @@ import type {
   WorkerDriver,
   WorkerSession,
   WorkerStart,
-} from '../../ports/interfaces'
+} from '../../ports'
 import { Channel } from './channel'
 import { OpenCodeClient } from './opencode-client'
 

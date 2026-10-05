@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type Config, expandHome } from '@nightshift/core'
 import { branchOf, parseDuration, workdirOf } from '../../adapters/worker/executor'
-import type { GateResult, GateRunner, SandboxDriver } from '../../ports/interfaces'
+import type { GateResult, GateRunner, SandboxDriver } from '../../ports'
 import type { Run } from '../../state/runs'
 import { importBundle, writeReviewArtifacts } from './host'
 

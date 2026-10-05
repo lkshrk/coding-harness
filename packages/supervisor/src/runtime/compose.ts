@@ -21,6 +21,7 @@ import {
 import { agentClassifier } from '../adapters/classifier/classifier'
 import { CodeGraphIndex } from '../adapters/codegraph'
 import { sqliteCodeGraph } from '../adapters/codegraph/query'
+import { GhGitHost } from '../adapters/github/gh'
 import { GitHubTokens, gitAuthEnv, githubOwner } from '../adapters/github/github-tokens'
 import { createLinearPort } from '../adapters/linear/linear-adapter'
 import { type SignalInbox, signalApi, signalChannel } from '../adapters/signal'
@@ -35,8 +36,16 @@ import {
   WorkerExecutor,
 } from '../adapters/worker'
 import type { AttachInfo } from '../control/generated/control'
-import type { GateRunner, GitHost, SandboxDriver, WorkerDriver } from '../ports/interfaces'
-import type { LinearPort, Notifier, OutboxDirs, RepoInspector } from '../ports/ports'
+import type {
+  GateRunner,
+  GitHost,
+  LinearPort,
+  Notifier,
+  OutboxDirs,
+  RepoInspector,
+  SandboxDriver,
+  WorkerDriver,
+} from '../ports'
 import {
   contextSelector,
   contextTaskMessage,
@@ -47,7 +56,7 @@ import {
 import { ingestConfig, ingestRuntime, ingestTaskMessage } from '../stages/context/ingest-runtime'
 import { vaultSync } from '../stages/context/vault'
 import { gateStep, reviewStep, SandboxGateRunner, type SingleCall } from '../stages/gates'
-import { GhGitHost, IntegrationHandler } from '../stages/integration'
+import { IntegrationHandler } from '../stages/integration'
 import { acquireLock, type Db, openState, statePath } from '../state/db'
 import type { Run } from '../state/runs'
 import { Supervisor } from '../supervisor/supervisor'

@@ -5,7 +5,7 @@ import {
   runSingleCall,
   type SingleCallResult,
 } from '@nightshift/core'
-import type { IssueSnapshot } from '../../ports/ports'
+import type { IssueSnapshot } from '../../ports'
 import { findDuplicates, type IntakeDeps, issueText } from './duplicates'
 
 export function intakeInput(

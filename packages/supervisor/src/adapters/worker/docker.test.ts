@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { SandboxSpec } from '../../ports/interfaces'
+import type { SandboxSpec } from '../../ports'
 import { type CommandOptions, type CommandResult, type DockerCli, DockerSandbox, memoryMb } from './docker'
 
 class FakeCli implements DockerCli {

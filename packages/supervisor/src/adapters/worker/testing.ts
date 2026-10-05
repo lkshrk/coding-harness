@@ -7,7 +7,7 @@ import type {
   SandboxHandle,
   SandboxSpec,
   SandboxStatus,
-} from '../../ports/interfaces'
+} from '../../ports'
 
 export type ExecCall = {
   cmd: string[]

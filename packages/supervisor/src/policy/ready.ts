@@ -1,5 +1,5 @@
 import type { Config } from '@nightshift/core'
-import type { LifecycleState } from '../ports/ports'
+import type { LifecycleState } from '../ports'
 import { type IssueView, lifecycleOf } from './stages'
 
 export type RunningIssue = { identifier: string; repository: string; files: string[] }

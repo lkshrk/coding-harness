@@ -1,13 +1,6 @@
 import { type Config, type LinearWorkspace, parseConfig } from '@nightshift/core'
 import { optedIn } from '../policy/stages'
 import type {
-  SandboxDriver,
-  SandboxHandle,
-  SandboxStatus,
-  WorkerDriver,
-  WorkerSession,
-} from '../ports/interfaces'
-import type {
   ExecutorStart,
   IssueSnapshot,
   IssueUpdate,
@@ -17,7 +10,12 @@ import type {
   Notifier,
   OutboxDirs,
   RunExecutor,
-} from '../ports/ports'
+  SandboxDriver,
+  SandboxHandle,
+  SandboxStatus,
+  WorkerDriver,
+  WorkerSession,
+} from '../ports'
 import type { Run } from '../state/runs'
 
 const statuses = {

@@ -1,15 +1,14 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome } from '@nightshift/core'
+import { BRANCH_PREFIX } from '../../adapters/github/gh'
 import { INTEGRATION, lifecycleOf, viewIssue } from '../../policy/stages'
-import type { GitHost } from '../../ports/interfaces'
-import type { StageHandler, StageWork } from '../../ports/ports'
+import type { GitHost, StageHandler, StageWork } from '../../ports'
 import type { EventLog } from '../../state/events'
 import type { Run, RunStore } from '../../state/runs'
 import { runRef } from '../gates/host'
 import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
 import { pullRequestBody, pullRequestTitle } from './body'
-import { BRANCH_PREFIX } from './gh'
 import type { PullRequestRecord, PullRequestStore } from './records'
 
 export interface IntegrationCallbacks {

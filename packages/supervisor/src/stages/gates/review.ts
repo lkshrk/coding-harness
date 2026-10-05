@@ -11,7 +11,8 @@ import {
   runSingleCall,
   validateIssue,
 } from '@nightshift/core'
-import type { IssueSnapshot, LinearPort } from '../../ports/ports'
+import type { IssueSnapshot, LinearPort } from '../../ports'
+import type { SingleCall } from '../../ports/context'
 import type { Run } from '../../state/runs'
 import type { GateEventData } from './report'
 
@@ -49,7 +50,7 @@ export interface ReviewCallbacks {
   reviewFinished(runId: string, outcome: ReviewOutcome): Promise<void>
 }
 
-export type SingleCall = typeof runSingleCall
+export type { SingleCall } from '../../ports/context'
 
 export type ReviewStepDeps = {
   config: () => Config

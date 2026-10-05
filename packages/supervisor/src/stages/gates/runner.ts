@@ -1,13 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type {
-  Check,
-  GateResult,
-  GateRunner,
-  Mount,
-  SandboxDriver,
-  SandboxHandle,
-} from '../../ports/interfaces'
+import type { Check, GateResult, GateRunner, Mount, SandboxDriver, SandboxHandle } from '../../ports'
 
 export const GATE_REPO_MOUNT = '/mnt/repo.git'
 export const GATE_BUNDLE_MOUNT = '/mnt/run.bundle'

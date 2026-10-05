@@ -9,9 +9,8 @@ import {
   teamStatuses,
   validateAgainstWorkspace,
 } from '@nightshift/core'
-import type { Progress } from '../adapters/worker/watch'
 import { ControlError } from '../control/socket/errors'
-import { activeRun, isIssueRef, resolveRun } from '../control/socket/targets'
+import { changedPaths, restartRequired } from '../policy/config'
 import { planDispatch } from '../policy/ready'
 import { RetryQueue } from '../policy/retry'
 import { selectAgent } from '../policy/selection'
@@ -28,18 +27,13 @@ import {
   viewIssue,
 } from '../policy/stages'
 import type {
-  CiState,
-  GateResult,
-  GitHost,
-  SandboxDriver,
-  SandboxHandle,
-  WorkerDriver,
-} from '../ports/interfaces'
-import type {
   Awaiting,
+  CiState,
   Classification,
   Classifier,
   ExecutorStart,
+  GateResult,
+  GitHost,
   IssueSnapshot,
   IssueUpdate,
   LinearComment,
@@ -50,10 +44,14 @@ import type {
   RemediationHandler,
   RepoInspector,
   RunExecutor,
+  SandboxDriver,
+  SandboxHandle,
   StageHandler,
   VaultIngest,
-} from '../ports/ports'
-import { changedPaths, restartRequired } from '../runtime/config-watch'
+  WorkerDriver,
+} from '../ports'
+import type { By } from '../ports/control'
+import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 import { TaskTooLargeError } from '../stages/context'
 import { type GateEventData, gateComment, gateEventData } from '../stages/gates/report'
 import { blockerSummary, type ReviewOutcome, reviewComment } from '../stages/gates/review'
@@ -64,9 +62,10 @@ import { type Event, EventLog, EventValidationError } from '../state/events'
 import { type Lease, LeaseStore } from '../state/leases'
 import { isTerminal, type Run, RunStore } from '../state/runs'
 import { readStatus, type SupervisorStatus, type Waiting } from '../state/status'
+import { activeRun, isIssueRef, resolveRun } from '../state/targets'
 import { createUlid } from '../state/ulid'
 
-export type By = 'cli' | 'supervisor' | 'lead' | 'signal'
+export type { By } from '../ports/control'
 
 type DispatchOverride = { agent?: string; profile?: string; by?: By; continueFrom?: Run }
 
@@ -129,9 +128,7 @@ export type RecoveryReport = {
   orphanOutboxes: string[]
 }
 
-export type WorkerStartedInfo = { sandbox: string; session: string; attach?: string }
-
-export type SandboxCreatedInfo = { driver: SandboxHandle['driver']; id: string; image: string }
+export type { SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 
 type FinishLike = {
   status?: unknown

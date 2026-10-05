@@ -3,12 +3,12 @@ import { type Config, expandHome, issueSpec, validateIssue } from '@nightshift/c
 import type {
   Attempt,
   BlockerOutput,
-  BuiltContext,
-  ContextBudget,
   ContextBuilder,
   ContextInput,
-} from '../../ports/interfaces'
-import type { ExecutorStart, IssueSnapshot, LinearPort } from '../../ports/ports'
+  IssueSnapshot,
+  LinearPort,
+} from '../../ports'
+import type { TaskMessage, TaskStart } from '../../ports/context'
 import type { Db } from '../../state/db'
 import { EventLog } from '../../state/events'
 import { type Run, RunStore } from '../../state/runs'
@@ -16,9 +16,7 @@ import { createUlid } from '../../state/ulid'
 import { CiFailureStore } from '../integration/records'
 import { selectVaultPages } from './vault'
 
-export type TaskStart = ExecutorStart & { indexPath?: string }
-
-export type TaskMessage = (s: TaskStart, budget: ContextBudget) => Promise<BuiltContext>
+export type { TaskMessage, TaskStart } from '../../ports/context'
 
 export type TaskContextDeps = {
   config: () => Config

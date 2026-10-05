@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { type Config, expandHome } from '@nightshift/core'
-import type { Notifier } from '../../ports/ports'
+import type { Notifier } from '../../ports'
 import type { Db } from '../../state/db'
 import { SignalApi, SignalLink } from './api'
 import { type SignalActions, SignalInbox } from './inbox'

@@ -1,4 +1,5 @@
-import type { HarnessEvent, Ms, WorkerStart } from '../../ports/interfaces'
+import type { HarnessEvent, Ms, WorkerStart } from '../../ports'
+import type { Progress } from '../../ports/worker'
 
 export type WatchThresholds = {
   noToolCallSteps: number
@@ -22,13 +23,7 @@ export type StallSignal = 'no_tool_calls' | 'repeated_tool_call' | 'no_diff_grow
 
 export type CapReason = 'step_cap' | 'time_cap' | 'token_cap'
 
-export type Progress = {
-  steps: number
-  tool_calls: number
-  tokens: number
-  diff_lines?: number
-  last_tool?: string
-}
+export type { Progress } from '../../ports/worker'
 
 export type WatchAction =
   | { kind: 'progress'; data: Progress }

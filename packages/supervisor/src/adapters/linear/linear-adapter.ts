@@ -11,7 +11,7 @@ import {
   type TokenProvider,
   teamStatuses,
 } from '@nightshift/core'
-import type { IssueUpdate, LinearPort } from '../../ports/ports'
+import type { IssueUpdate, LinearPort } from '../../ports'
 
 export type LinearPortOptions = {
   config: () => Config

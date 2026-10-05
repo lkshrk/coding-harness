@@ -1,18 +1,8 @@
-import type { CiFailure, PullRequest } from '../../ports/interfaces'
-import type { MergeMode } from '../../ports/ports'
+import type { CiFailure } from '../../ports'
+import type { PullRequestRecord } from '../../ports/git-host'
 import type { Db } from '../../state/db'
 
-export type PullRequestRecord = PullRequest & {
-  issue: string
-  run: string
-  headSha: string
-  mode: MergeMode
-  draft: boolean
-  ci: 'pending' | 'passed' | 'failed'
-  title?: string
-  body?: string
-  mergeSha?: string
-}
+export type { PullRequestRecord } from '../../ports/git-host'
 
 const KEY = 'pull_requests'
 const CI_KEY = 'ci_failures'

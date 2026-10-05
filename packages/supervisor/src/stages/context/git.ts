@@ -1,4 +1,4 @@
-import type { ContextRepository } from '../../ports/interfaces'
+import type { ContextRepository } from '../../ports'
 import type { RepoSource } from './builder'
 
 async function git(cwd: string, args: string[]): Promise<{ ok: boolean; out: Uint8Array; err: string }> {

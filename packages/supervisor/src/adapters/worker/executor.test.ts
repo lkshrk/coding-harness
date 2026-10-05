@@ -3,13 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
-import type {
-  BuiltContext,
-  HarnessEvent,
-  WorkerDriver,
-  WorkerSession,
-  WorkerStart,
-} from '../../ports/interfaces'
+import type { BuiltContext, HarnessEvent, WorkerDriver, WorkerSession, WorkerStart } from '../../ports'
 import { runRef } from '../../stages/gates/host'
 import { git, gitFixture } from '../../stages/gates/testing'
 import type { Run } from '../../state/runs'

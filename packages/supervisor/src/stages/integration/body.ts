@@ -1,5 +1,5 @@
 import { validateIssue } from '@nightshift/core'
-import type { IssueSnapshot } from '../../ports/ports'
+import type { IssueSnapshot } from '../../ports'
 import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
 

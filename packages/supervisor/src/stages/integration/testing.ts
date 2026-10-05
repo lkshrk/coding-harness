@@ -1,9 +1,14 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
+import {
+  GhGitHost,
+  type HostCommandResult,
+  type HostCommandRunner,
+  spawnCommand,
+} from '../../adapters/github/gh'
 import { GitHubTokens } from '../../adapters/github/github-tokens'
-import type { GateResult } from '../../ports/interfaces'
-import type { IssueSnapshot } from '../../ports/ports'
+import type { GateResult, IssueSnapshot } from '../../ports'
 import { openState } from '../../state/db'
 import type { EventType } from '../../state/event-schema'
 import type { Run } from '../../state/runs'
@@ -20,7 +25,6 @@ import {
 } from '../../testing/testing'
 import { importBundle } from '../gates/host'
 import { git, gitFixture } from '../gates/testing'
-import { GhGitHost, type HostCommandResult, type HostCommandRunner, spawnCommand } from './gh'
 import { IntegrationHandler } from './stage'
 
 export type Call = { cmd: string[]; env: Record<string, string>; stdin?: string }

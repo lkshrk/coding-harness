@@ -2,9 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Supervisor, type SupervisorDeps } from '../../index'
 import { openState } from '../../state/db'
 import { issueRecords, questionRecords, workerRecords } from '../../state/records'
-import { Supervisor, type SupervisorDeps } from '../../supervisor/supervisor'
 import {
   FakeExecutor,
   FakeLinear,

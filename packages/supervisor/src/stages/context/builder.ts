@@ -1,5 +1,4 @@
 import { fence, type IssueSpec, WORKER_BLOCKS, type WorkerBlock } from '@nightshift/core'
-import type { CodeGraph } from '../../adapters/codegraph/query'
 import type {
   BuiltContext,
   ContextBudget,
@@ -7,7 +6,8 @@ import type {
   ContextInput,
   ContextRepository,
   ContextSection,
-} from '../../ports/interfaces'
+} from '../../ports'
+import type { CodeGraph } from '../../ports/context'
 
 export type TokenCounter = (text: string, model: string) => Promise<number>
 

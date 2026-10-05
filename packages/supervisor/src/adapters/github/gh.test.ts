@@ -2,11 +2,18 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { PullRequest } from '../../ports/interfaces'
-import { importBundle, runRef } from '../gates/host'
-import { git, gitFixture } from '../gates/testing'
+import type { PullRequest } from '../../ports'
+import { importBundle, runRef } from '../../stages/gates/host'
+import { git, gitFixture } from '../../stages/gates/testing'
+import {
+  AGENT_TOKEN,
+  bareRemote,
+  FakeGh,
+  fakeHost,
+  hostConfig,
+  PERSONAL_TOKEN,
+} from '../../stages/integration/testing'
 import { bucketOf, githubSlug, MAX_CI_LOG, MAX_JOB_LOG } from './gh'
-import { AGENT_TOKEN, bareRemote, FakeGh, fakeHost, hostConfig, PERSONAL_TOKEN } from './testing'
 
 let root: string
 beforeEach(() => {

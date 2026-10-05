@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { activeProfile, type FetchLike, loadAgents } from '@nightshift/core'
-import type { FailureSignal } from '../../ports/ports'
+import type { FailureSignal } from '../../ports'
 import type { Event } from '../../state/events'
 import { testConfig } from '../../testing/testing'
 import { agentClassifier } from './classifier'

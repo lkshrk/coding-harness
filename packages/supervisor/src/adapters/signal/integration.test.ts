@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { Supervisor } from '../../index'
 import { type Db, openState } from '../../state/db'
-import { Supervisor } from '../../supervisor/supervisor'
 import {
   FakeExecutor,
   FakeLinear,

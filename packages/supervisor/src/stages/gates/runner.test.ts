@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { FakeSandboxDriver } from '../../adapters/worker/testing'
-import type { Check, ExecResult } from '../../ports/interfaces'
+import type { Check, ExecResult } from '../../ports'
 import { GATE_BUNDLE_MOUNT, GATE_REPO_MOUNT, OUTPUT_TAIL_CHARS, SandboxGateRunner } from './runner'
 
 const repo = { name: 'omni', image: 'nightshift/worker:test', gitDir: '/home/u/omni/.git' }

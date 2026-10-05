@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { HarnessEvent } from '../../ports/interfaces'
+import type { HarnessEvent } from '../../ports'
 import { WATCH_DEFAULTS, type WatchAction, Watcher } from './watch'
 
 const limits = { steps: 50, wallClockMs: 600_000, tokens: 10_000, graceTurns: 1 }

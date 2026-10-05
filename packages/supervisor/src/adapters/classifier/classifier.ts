@@ -6,8 +6,8 @@ import {
   type Gateway,
   runSingleCall,
 } from '@nightshift/core'
-import type { Classification, Classifier, FailureClass, FailureSignal, Remediation } from '../../ports/ports'
-import type { SingleCall } from '../../stages/gates'
+import type { Classification, Classifier, FailureClass, FailureSignal, Remediation } from '../../ports'
+import type { SingleCall } from '../../ports/context'
 import type { Event } from '../../state/events'
 
 const ACTIONS: Record<FailureClass, Remediation> = {

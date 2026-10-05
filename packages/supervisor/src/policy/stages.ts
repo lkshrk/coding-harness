@@ -1,5 +1,5 @@
 import { type Config, LABEL_GROUPS, teamStatuses, validateIssue } from '@nightshift/core'
-import type { Awaiting, IssueSnapshot, LifecycleState, MergeMode } from '../ports/ports'
+import type { Awaiting, IssueSnapshot, LifecycleState, MergeMode } from '../ports'
 import { selectAgent } from './selection'
 
 export type IssueView = {

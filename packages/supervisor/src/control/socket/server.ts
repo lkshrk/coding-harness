@@ -8,8 +8,8 @@ import {
   NIGHTSHIFT_VERSION,
   outputValidator,
 } from '@nightshift/core'
+import type { ControlSupervisor } from '../../ports/control'
 import type { Run } from '../../state/runs'
-import type { Supervisor } from '../../supervisor/supervisor'
 import type {
   AnswerRequest,
   AttachInfo,
@@ -30,22 +30,7 @@ export function socketPath(config: Pick<Config, 'paths'>, home: string = homedir
   return join(expandHome(config.paths.state, home), SOCKET_FILE)
 }
 
-export type ControlSupervisor = Pick<
-  Supervisor,
-  | 'status'
-  | 'gateway'
-  | 'pause'
-  | 'resume'
-  | 'hold'
-  | 'unhold'
-  | 'cover'
-  | 'uncover'
-  | 'resolveRun'
-  | 'sendMessage'
-  | 'answerQuestion'
-  | 'stopForUser'
-  | 'retryRun'
->
+export type { ControlSupervisor } from '../../ports/control'
 
 export type ControlOptions = {
   attach?: (run: Run) => AttachInfo | undefined

@@ -111,6 +111,21 @@ the context builder; a task too large or an architectural conflict goes back to 
 dependency creates a blocker issue; a capability limit goes to you. Each classified failure is recorded on
 the issue and in Phoenix so issue sizing can be tuned from data.
 
+### Package layout
+
+- `index.ts` — public API.
+- `runtime/` — composition, loop, and config watching.
+- `supervisor/` — orchestration and lifecycle.
+- `policy/` — scheduling and decision rules.
+- `state/` — persistence, events, and projections.
+- `ports/` — shared contracts by concern.
+- `stages/` — gates, context, intake, and integration.
+- `adapters/` — external service and worker implementations.
+- `control/` — socket API and generated protocol types.
+- `testing/` — shared test fixtures.
+
+Dependencies follow the layer matrix enforced by `boundaries.test.ts`: runtime composes all layers, supervisor uses policy/state/ports/stages, policy uses ports, state uses ports, ports is self-contained, stages use ports/state/policy, and adapters/control use ports/state, with explicit file-pair exceptions.
+
 ## Hosts
 
 nightshift runs on Linux and macOS. The interim host is `towerr-dev` (Ubuntu under WSL2 on the Windows

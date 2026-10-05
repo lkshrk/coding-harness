@@ -1,22 +1,10 @@
+import type { InboxSupervisor } from '../../ports/control'
 import type { SupervisorStatus } from '../../state/status'
-import type { Supervisor } from '../../supervisor/supervisor'
 import type { SignalLink, SignalTarget } from './api'
 import { type Envelope, type Frame, frameKind, groupOf, textOf } from './envelope'
 import type { SentMessage, SignalStore } from './store'
 
-export type SignalActions = Pick<
-  Supervisor,
-  | 'answerQuestion'
-  | 'sendMessage'
-  | 'pause'
-  | 'resume'
-  | 'hold'
-  | 'unhold'
-  | 'cover'
-  | 'stopForUser'
-  | 'retryRun'
-  | 'status'
->
+export type SignalActions = InboxSupervisor
 
 export type Receiver = { start(): void; stop(): Promise<void> }
 

@@ -1,4 +1,4 @@
-import type { Notification, Notifier } from '../../ports/ports'
+import type { Notification, Notifier } from '../../ports'
 import { type SignalLink, validPollOptions } from './api'
 import type { SignalStore } from './store'
 

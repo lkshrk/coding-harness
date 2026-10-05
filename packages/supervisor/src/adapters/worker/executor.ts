@@ -13,18 +13,19 @@ import {
 } from '@nightshift/core'
 import type {
   BuiltContext,
+  ExecutorStart,
   HarnessEvent,
   Ms,
+  RunExecutor,
   SandboxDriver,
   SandboxHandle,
   WorkerDriver,
   WorkerSession,
-} from '../../ports/interfaces'
-import type { ExecutorStart, RunExecutor } from '../../ports/ports'
-import type { TaskMessage } from '../../stages/context'
+} from '../../ports'
+import type { TaskMessage } from '../../ports/context'
+import type { SandboxCreatedInfo, WorkerStartedInfo } from '../../ports/worker'
 import { importBundle, runRef } from '../../stages/gates/host'
 import type { Run } from '../../state/runs'
-import type { SandboxCreatedInfo, WorkerStartedInfo } from '../../supervisor/supervisor'
 import { INDEX_MOUNT, indexDb } from '../codegraph'
 import { Channel } from './channel'
 import { memoryMb } from './docker'

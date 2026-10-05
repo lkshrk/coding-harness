@@ -1,4 +1,4 @@
-import type { GateResult } from '../../ports/interfaces'
+import type { GateResult } from '../../ports'
 import { outputTail } from './runner'
 
 export type GateEventData = {

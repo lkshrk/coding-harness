@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome, githubAccount } from '@nightshift/core'
-import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from '../../adapters/github/github-tokens'
-import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState } from '../../ports/interfaces'
+import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState } from '../../ports'
+import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from './github-tokens'
 
 export type HostCommandResult = { exitCode: number; stdout: string; stderr: string }
 

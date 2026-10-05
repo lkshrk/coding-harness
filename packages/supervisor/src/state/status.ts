@@ -1,31 +1,11 @@
+import type { SupervisorStatus, Waiting } from '../ports/control'
 import { coveredIssues, heldIssues } from './coverage'
 import type { Db } from './db'
-import { type Event, EventLog } from './events'
-import { type Run, RunStore } from './runs'
+import { EventLog } from './events'
+import { RunStore } from './runs'
 import { createUlid } from './ulid'
 
-export type Waiting = { identifier: string; reason: string }
-
-export type OpenQuestion = {
-  comment: string
-  issue: string
-  run: string | null
-  askedTo: string
-  askedAt: string
-}
-
-export type SupervisorStatus = {
-  dispatch: 'running' | 'paused'
-  restartRequired: boolean
-  activeProfile: string | null
-  active: Run[]
-  waiting: Waiting[]
-  questions: OpenQuestion[]
-  failures: Event[]
-  held: string[]
-  covered: string[]
-  linearOrg: string | null
-}
+export type { OpenQuestion, SupervisorStatus, Waiting } from '../ports/control'
 
 const RECENT_FAILURES = 10
 

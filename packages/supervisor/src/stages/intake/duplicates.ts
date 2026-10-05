@@ -8,7 +8,7 @@ import {
   runSingleCall,
 } from '@nightshift/core'
 import { choice, TypeSafeClient } from '@typesafe-ai/sdk'
-import type { IssueSnapshot, LinearPort } from '../../ports/ports'
+import type { IssueSnapshot, LinearPort } from '../../ports'
 import type { SingleCall } from '../gates'
 
 export type IntakeDeps = {

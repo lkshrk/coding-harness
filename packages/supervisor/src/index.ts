@@ -31,8 +31,7 @@ export {
   nextStage,
   viewIssue,
 } from './policy/stages'
-export type * from './ports/interfaces'
-export type * from './ports/ports'
+export type * from './ports'
 export { changedPaths, restartRequired, type WatchOptions, watchConfig } from './runtime/config-watch'
 export { agentResolver, type LoopOptions, runSupervisor } from './runtime/loop'
 export { duplicateInput, findCandidates, findDuplicates, type IntakeDeps } from './stages/intake/duplicates'
@@ -76,6 +75,15 @@ export {
 export function supervisorVersion(): string {
   return NIGHTSHIFT_VERSION
 }
+export {
+  BRANCH_PREFIX,
+  GhGitHost,
+  type GhGitHostOptions,
+  githubSlug,
+  type HostCommandResult,
+  type HostCommandRunner,
+  spawnCommand,
+} from './adapters/github/gh'
 export {
   PAIRING_TTL_MS,
   readSignalState,

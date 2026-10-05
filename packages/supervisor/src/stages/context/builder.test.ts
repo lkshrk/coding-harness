@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { type IssueSpec, WORKER_BLOCKS } from '@nightshift/core'
 import type { CodeGraph } from '../../adapters/codegraph/query'
-import type { BuiltContext, ContextInput } from '../../ports/interfaces'
+import type { BuiltContext, ContextInput } from '../../ports'
 import {
   expandFiles,
   FencedContextBuilder,

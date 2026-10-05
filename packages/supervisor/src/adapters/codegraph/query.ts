@@ -1,15 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import type { CodeGraph } from '../../ports/context'
 import { indexDb } from './index'
 
-export type Neighbour = { path: string; edges: number }
-
-export interface CodeGraph {
-  neighbours(files: readonly string[]): Neighbour[]
-  outline(path: string): string
-  close(): void
-}
+export type { CodeGraph, Neighbour } from '../../ports/context'
 
 const OUTLINE_LABELS = ['Class', 'Interface', 'Type', 'Enum', 'Function', 'Method']
 const MAX_OUTLINE_SYMBOLS = 60

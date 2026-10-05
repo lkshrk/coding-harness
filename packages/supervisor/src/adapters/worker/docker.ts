@@ -10,7 +10,7 @@ import type {
   SandboxHandle,
   SandboxSpec,
   SandboxStatus,
-} from '../../ports/interfaces'
+} from '../../ports'
 
 export type CommandResult = {
   exitCode: number

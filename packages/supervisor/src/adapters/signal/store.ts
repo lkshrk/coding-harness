@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { NotificationKind } from '../../ports/ports'
+import type { NotificationKind } from '../../ports'
 import type { Db } from '../../state/db'
 
 export type SentMessage = {
