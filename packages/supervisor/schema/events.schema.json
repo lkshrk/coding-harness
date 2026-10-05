@@ -1,0 +1,525 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nightshift.local/schema/event/v1",
+  "title": "nightshift event",
+  "description": "One row of the append-only event log. 'type' selects the shape of 'data'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "ts", "type", "data"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID; sortable by time"
+    },
+    "ts": { "type": "string", "format": "date-time" },
+    "type": { "$ref": "#/$defs/eventType" },
+    "issue": { "$ref": "#/$defs/issueRef" },
+    "run": { "$ref": "#/$defs/ulid" },
+    "data": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "RUN_STARTING" } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/empty" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "VAULT_INGEST_STARTED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/empty" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "VAULT_INGESTED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/vaultIngested" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "VAULT_INGEST_FAILED" } } },
+      "then": {
+        "required": ["issue"],
+        "properties": { "data": { "$ref": "#/$defs/data/vaultIngestFailed" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "STAGE_ENTERED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/stage" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "STAGE_COMPLETED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/stage" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "DISPATCHED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/dispatched" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "WORKER_STARTED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/workerStarted" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "WORKER_PROGRESS" } } },
+      "then": { "required": ["run"], "properties": { "data": { "$ref": "#/$defs/data/workerProgress" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "WORKER_STALLED" } } },
+      "then": { "required": ["run"], "properties": { "data": { "$ref": "#/$defs/data/workerStalled" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "WORKER_FINISHED" } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "finish.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["WORKER_NO_FINISH", "WORKER_FAILED"] } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/workerFailed" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["GATE_PASSED", "GATE_FAILED"] } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/gate" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "REVIEW_RECEIVED" } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/review" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "FAILURE_CLASSIFIED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/classified" } }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "QUESTION_ASKED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/question" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "QUESTION_ANSWERED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/answer" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["PR_CREATED", "MERGED"] } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/pr" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["CI_PASSED", "CI_FAILED"] } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/ci" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "DEPENDENCY_UNBLOCKED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/unblocked" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["SINGLE_CALL_INVALID", "INPUT_OVER_BUDGET"] } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/data/singleCall" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["CONFIG_RELOADED", "CONFIG_REJECTED"] } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/data/config" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "DISPATCH_PAUSED",
+              "DISPATCH_RESUMED",
+              "GATEWAY_UNAVAILABLE",
+              "GATEWAY_RECOVERED",
+              "SUPERVISOR_STARTED",
+              "SUPERVISOR_STOPPED"
+            ]
+          }
+        }
+      },
+      "then": { "properties": { "data": { "$ref": "#/$defs/data/system" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["LEASE_ACQUIRED", "LEASE_RELEASED", "LEASE_EXPIRED"] } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/lease" } } }
+    },
+    {
+      "if": { "properties": { "type": { "enum": ["SANDBOX_CREATED", "SANDBOX_DESTROYED"] } } },
+      "then": { "required": ["run"], "properties": { "data": { "$ref": "#/$defs/data/sandbox" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "NOTIFICATION_SENT" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/data/notification" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "MESSAGE_SENT" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/message" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "COVERAGE_CHANGED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/coverage" } } }
+    }
+  ],
+  "$defs": {
+    "ulid": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+    "issueRef": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]{1,6}-[1-9][0-9]*$",
+      "description": "Linear identifier, e.g. XXX-42"
+    },
+    "by": {
+      "enum": ["cli", "supervisor", "lead", "signal"],
+      "description": "who requested a control action"
+    },
+    "eventType": {
+      "enum": [
+        "SUPERVISOR_STARTED",
+        "VAULT_INGEST_STARTED",
+        "VAULT_INGESTED",
+        "VAULT_INGEST_FAILED",
+        "SUPERVISOR_STOPPED",
+        "CONFIG_RELOADED",
+        "CONFIG_REJECTED",
+        "DISPATCH_PAUSED",
+        "DISPATCH_RESUMED",
+        "GATEWAY_UNAVAILABLE",
+        "GATEWAY_RECOVERED",
+        "STAGE_ENTERED",
+        "STAGE_COMPLETED",
+        "DEPENDENCY_UNBLOCKED",
+        "LEASE_ACQUIRED",
+        "LEASE_RELEASED",
+        "LEASE_EXPIRED",
+        "DISPATCHED",
+        "RUN_STARTING",
+        "SANDBOX_CREATED",
+        "SANDBOX_DESTROYED",
+        "WORKER_STARTED",
+        "WORKER_PROGRESS",
+        "WORKER_STALLED",
+        "WORKER_FINISHED",
+        "WORKER_NO_FINISH",
+        "WORKER_FAILED",
+        "GATE_PASSED",
+        "GATE_FAILED",
+        "REVIEW_RECEIVED",
+        "FAILURE_CLASSIFIED",
+        "QUESTION_ASKED",
+        "QUESTION_ANSWERED",
+        "PR_CREATED",
+        "CI_PASSED",
+        "CI_FAILED",
+        "MERGED",
+        "SINGLE_CALL_INVALID",
+        "INPUT_OVER_BUDGET",
+        "NOTIFICATION_SENT",
+        "MESSAGE_SENT",
+        "COVERAGE_CHANGED"
+      ]
+    },
+    "failureClass": {
+      "enum": [
+        "environment",
+        "implementation_defect",
+        "insufficient_context",
+        "task_too_large",
+        "missing_dependency",
+        "architectural_conflict",
+        "capability_limit",
+        "unknown"
+      ]
+    },
+    "data": {
+      "empty": { "type": "object", "additionalProperties": false, "properties": {} },
+      "vaultIngested": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["commits"],
+        "properties": { "commits": { "type": "array", "items": { "type": "string" } } }
+      },
+      "vaultIngestFailed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string" } }
+      },
+      "stage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage"],
+        "properties": { "stage": { "type": "string" }, "from": { "type": "string" } }
+      },
+      "dispatched": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent", "profile", "model", "attempt", "repository"],
+        "properties": {
+          "agent": { "type": "string" },
+          "profile": { "type": "string" },
+          "model": { "type": "string" },
+          "attempt": { "type": "integer", "minimum": 1 },
+          "repository": { "type": "string" },
+          "base": { "type": "string" },
+          "reason": {
+            "type": "string",
+            "description": "selection rule or failure class that chose the agent"
+          },
+          "continues": {
+            "$ref": "#/$defs/ulid",
+            "description": "earlier run whose commit this attempt continues from"
+          },
+          "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "workerStarted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sandbox", "session"],
+        "properties": {
+          "sandbox": { "type": "string" },
+          "session": { "type": "string", "description": "OpenCode session id" },
+          "attach": { "type": "string", "description": "command that attaches to the worker" }
+        }
+      },
+      "workerProgress": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["steps", "tool_calls", "tokens"],
+        "properties": {
+          "steps": { "type": "integer", "minimum": 0 },
+          "tool_calls": { "type": "integer", "minimum": 0 },
+          "tokens": { "type": "integer", "minimum": 0 },
+          "diff_lines": { "type": "integer", "minimum": 0 },
+          "last_tool": { "type": "string" }
+        }
+      },
+      "workerStalled": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["signal"],
+        "properties": {
+          "signal": { "enum": ["no_tool_calls", "repeated_tool_call", "no_diff_growth", "idle"] },
+          "detail": { "type": "string" }
+        }
+      },
+      "workerFailed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "reason": {
+            "enum": [
+              "step_cap",
+              "time_cap",
+              "token_cap",
+              "crash",
+              "sandbox_error",
+              "gateway_error",
+              "stopped",
+              "supervisor_restart",
+              "no_finish",
+              "task_too_large"
+            ]
+          },
+          "detail": { "type": "string" },
+          "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "gate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "exit_code", "duration_ms"],
+        "properties": {
+          "check": { "type": "string" },
+          "exit_code": { "type": "integer" },
+          "duration_ms": { "type": "integer", "minimum": 0 },
+          "output_tail": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "last lines of output; full log stored as an artifact"
+          },
+          "artifact": { "type": "string" }
+        }
+      },
+      "review": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verdict", "findings"],
+        "properties": {
+          "verdict": { "enum": ["pass", "fail"] },
+          "model": { "type": "string", "description": "concrete model the call was pinned to" },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["severity", "file", "message", "evidence", "confidence"],
+              "properties": {
+                "severity": { "enum": ["BLOCKER", "SUGGESTION"] },
+                "file": { "type": "string" },
+                "lines": { "type": "string", "pattern": "^[1-9][0-9]*(-[1-9][0-9]*)?$" },
+                "message": { "type": "string" },
+                "evidence": { "type": "string" },
+                "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+              }
+            }
+          }
+        }
+      },
+      "classified": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["class", "action"],
+        "properties": {
+          "class": { "$ref": "#/$defs/failureClass" },
+          "action": {
+            "enum": [
+              "retry_same",
+              "repair",
+              "best_of",
+              "enrich_context",
+              "split",
+              "create_blocker",
+              "escalate_lead",
+              "escalate_user",
+              "pause_dispatch"
+            ]
+          },
+          "evidence": { "type": "string" },
+          "fallback": {
+            "type": "boolean",
+            "description": "true when the classifier failed and 'unknown' was used"
+          }
+        }
+      },
+      "question": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["to", "question", "comment"],
+        "properties": {
+          "to": { "enum": ["lead", "user"] },
+          "question": { "type": "string" },
+          "comment": { "type": "string", "description": "Linear comment id" },
+          "options": { "type": "array", "items": { "type": "string" }, "description": "fixed answers" }
+        }
+      },
+      "answer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["comment", "answer"],
+        "properties": {
+          "comment": { "type": "string" },
+          "answer": { "type": "string" },
+          "by": { "type": "string" }
+        }
+      },
+      "pr": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url", "branch"],
+        "properties": {
+          "url": { "type": "string" },
+          "branch": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "mergeSha": { "type": "string" },
+          "account": { "type": "string" },
+          "mode": { "enum": ["manual", "auto", "feature-branch"] }
+        }
+      },
+      "ci": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string" },
+          "failed_checks": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "unblocked": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["by"],
+        "properties": { "by": { "type": "array", "items": { "type": "string" }, "minItems": 1 } }
+      },
+      "singleCall": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent"],
+        "properties": {
+          "agent": { "type": "string" },
+          "model": { "type": "string", "description": "concrete model the call was pinned to" },
+          "tokens": { "type": "integer" },
+          "budget": { "type": "integer" },
+          "errors": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "config": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "changed": { "type": "array", "items": { "type": "string" } },
+          "errors": { "type": "array", "items": { "type": "string" } },
+          "restart_required": { "type": "boolean" }
+        }
+      },
+      "system": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": { "type": "string" },
+          "version": { "type": "string" },
+          "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "lease": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["holder", "expires"],
+        "properties": {
+          "holder": { "type": "string" },
+          "expires": { "type": "string", "format": "date-time" }
+        }
+      },
+      "sandbox": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["driver", "id"],
+        "properties": {
+          "driver": { "enum": ["docker", "sbx"] },
+          "id": { "type": "string" },
+          "image": { "type": "string" }
+        }
+      },
+      "notification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["channel", "title"],
+        "properties": {
+          "channel": { "enum": ["linear", "macos", "ntfy", "signal"] },
+          "title": { "type": "string" },
+          "issue": { "type": "string" }
+        }
+      },
+      "message": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "by"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1 },
+          "by": { "$ref": "#/$defs/by" },
+          "comment": {
+            "type": "string",
+            "description": "Linear comment id of the answered question; absent for a message into the worker session"
+          }
+        }
+      },
+      "coverage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["covered", "by"],
+        "properties": { "covered": { "type": "boolean" }, "by": { "$ref": "#/$defs/by" } }
+      }
+    }
+  }
+}

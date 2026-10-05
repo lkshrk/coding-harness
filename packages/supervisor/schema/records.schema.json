@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nightshift.local/schema/records/v1",
+  "title": "nightshift CLI records",
+  "description": "Rows the CLI prints with --json; read from the state database.",
+  "type": "object",
+  "properties": {
+    "issue": { "$ref": "#/$defs/issueRecord" },
+    "worker": { "$ref": "#/$defs/workerRecord" },
+    "question": { "$ref": "#/$defs/questionRecord" },
+    "status": { "$ref": "#/$defs/statusRecord" },
+    "diff": { "$ref": "#/$defs/diffRecord" },
+    "tests": { "$ref": "#/$defs/testsRecord" }
+  },
+  "$defs": {
+    "lifecycle": {
+      "enum": ["triage", "backlog", "ready", "running", "review", "blocked", "done", "canceled"]
+    },
+    "issueRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identifier",
+        "title",
+        "project",
+        "stage",
+        "lifecycle",
+        "status",
+        "blockers",
+        "waiting",
+        "agent",
+        "agent_state",
+        "attempt",
+        "updated_at"
+      ],
+      "properties": {
+        "identifier": { "type": "string" },
+        "title": { "type": "string" },
+        "project": { "type": ["string", "null"] },
+        "stage": { "type": ["string", "null"] },
+        "lifecycle": { "anyOf": [{ "$ref": "#/$defs/lifecycle" }, { "type": "null" }] },
+        "status": { "type": "string", "description": "Linear workflow state name" },
+        "blockers": { "type": "array", "items": { "type": "string" }, "description": "unfinished blockers" },
+        "waiting": { "type": ["string", "null"], "description": "why the issue is not running" },
+        "agent": { "type": ["string", "null"], "description": "agent of the newest run" },
+        "agent_state": { "type": ["string", "null"], "description": "state of the newest run" },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "workerRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run",
+        "issue",
+        "agent",
+        "model",
+        "profile",
+        "state",
+        "attempt",
+        "started_at",
+        "elapsed_ms",
+        "steps",
+        "tool_calls",
+        "tokens",
+        "last_tool",
+        "diff_lines"
+      ],
+      "properties": {
+        "run": { "type": "string" },
+        "issue": { "type": "string" },
+        "agent": { "type": "string" },
+        "model": { "type": "string" },
+        "profile": { "type": "string" },
+        "state": { "type": "string" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "started_at": { "type": "string" },
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "steps": { "type": "integer", "minimum": 0 },
+        "tool_calls": { "type": "integer", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "last_tool": { "type": ["string", "null"] },
+        "diff_lines": { "type": ["integer", "null"] }
+      }
+    },
+    "questionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "comment", "run", "asked_to", "asked_at", "question", "url"],
+      "properties": {
+        "issue": { "type": "string" },
+        "comment": { "type": "string", "description": "Linear comment id of the question" },
+        "run": { "type": ["string", "null"] },
+        "asked_to": { "enum": ["lead", "user"] },
+        "asked_at": { "type": "string" },
+        "question": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"], "description": "Linear link of the question comment" }
+      }
+    },
+    "statusRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supervisor",
+        "dispatch",
+        "gateway",
+        "profile",
+        "restart_required",
+        "held",
+        "covered",
+        "workers",
+        "waiting",
+        "questions",
+        "failures"
+      ],
+      "properties": {
+        "supervisor": { "enum": ["running", "down"] },
+        "dispatch": { "enum": ["running", "paused"] },
+        "gateway": { "enum": ["ok", "unavailable", null] },
+        "signal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "description": "Signal channel; absent when not configured",
+          "properties": {
+            "state": { "enum": ["ok", "unavailable", "unpaired"] },
+            "detail": { "type": "string" },
+            "since": { "type": "string" }
+          }
+        },
+        "profile": { "type": ["string", "null"] },
+        "restart_required": { "type": "boolean" },
+        "held": { "type": "array", "items": { "type": "string" } },
+        "covered": { "type": "array", "items": { "type": "string" } },
+        "workers": { "type": "array", "items": { "$ref": "#/$defs/workerRecord" } },
+        "waiting": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["identifier", "reason"],
+            "properties": { "identifier": { "type": "string" }, "reason": { "type": "string" } }
+          }
+        },
+        "questions": { "type": "array", "items": { "$ref": "#/$defs/questionRecord" } },
+        "failures": {
+          "type": "array",
+          "items": { "type": "object" },
+          "description": "FAILURE_CLASSIFIED events"
+        }
+      }
+    },
+    "diffRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "issue", "base", "head", "files"],
+      "properties": {
+        "run": { "type": "string" },
+        "issue": { "type": "string" },
+        "base": { "type": "string" },
+        "head": { "type": "string" },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "added", "deleted"],
+            "properties": {
+              "path": { "type": "string" },
+              "added": { "type": ["integer", "null"], "description": "null for binary files" },
+              "deleted": { "type": ["integer", "null"] }
+            }
+          }
+        },
+        "patch": { "type": "string" }
+      }
+    },
+    "testsRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run", "issue", "checks", "review"],
+      "properties": {
+        "run": { "type": "string" },
+        "issue": { "type": "string" },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["check", "passed", "exit_code", "duration_ms"],
+            "properties": {
+              "check": { "type": "string" },
+              "passed": { "type": "boolean" },
+              "exit_code": { "type": "integer" },
+              "duration_ms": { "type": "integer", "minimum": 0 },
+              "output_tail": { "type": "string" },
+              "artifact": { "type": "string" }
+            }
+          }
+        },
+        "review": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["verdict", "findings"],
+              "properties": {
+                "verdict": { "enum": ["pass", "fail"] },
+                "model": { "type": "string" },
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["severity", "file", "message"],
+                    "properties": {
+                      "severity": { "enum": ["BLOCKER", "SUGGESTION"] },
+                      "file": { "type": "string" },
+                      "lines": { "type": "string" },
+                      "message": { "type": "string" },
+                      "evidence": { "type": "string" },
+                      "confidence": { "type": "number" }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

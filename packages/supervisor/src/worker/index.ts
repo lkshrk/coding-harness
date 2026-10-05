@@ -1,0 +1,51 @@
+export {
+  type CommandOptions,
+  type CommandResult,
+  type DockerCli,
+  DockerSandbox,
+  type DockerSandboxOptions,
+  dockerCli,
+  memoryMb,
+} from './docker'
+export {
+  branchOf,
+  CA_MOUNT,
+  failureReason,
+  GRACE_MESSAGE,
+  parseDuration,
+  parseTokens,
+  REPO_MOUNT,
+  shellJoin,
+  type WorkerCallbacks,
+  WorkerExecutor,
+  type WorkerExecutorDeps,
+  workdirOf,
+} from './executor'
+export {
+  argsDigest,
+  EventMapper,
+  FINISH_FILE,
+  fileSessionStore,
+  GATEWAY_KEY_ENV,
+  memorySessionStore,
+  modelRef,
+  OPENCODE_CONFIG_DIR,
+  OPENCODE_PORT,
+  OpenCodeDriver,
+  type OpenCodeDriverOptions,
+  opencodeConfig,
+  PROVIDER,
+  type SessionConnection,
+  type SessionStore,
+  WORKER_HOME,
+} from './opencode'
+export { OpenCodeClient, OpenCodeError } from './opencode-client'
+export {
+  type CapReason,
+  type Progress,
+  type StallSignal,
+  WATCH_DEFAULTS,
+  type WatchAction,
+  Watcher,
+  type WatchThresholds,
+} from './watch'

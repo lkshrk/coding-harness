@@ -1,0 +1,13 @@
+{
+  "name": "@nightshift/supervisor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@nightshift/core": "workspace:*",
+    "@typesafe-ai/sdk": "0.6.0"
+  }
+}

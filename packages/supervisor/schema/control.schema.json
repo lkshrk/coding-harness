@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nightshift.local/schema/control/v1",
+  "title": "nightshift control API",
+  "description": "JSON over HTTP on the supervisor's Unix socket <paths.state>/nightshift.sock (mode 0600).",
+  "type": "object",
+  "properties": {
+    "error": { "$ref": "#/$defs/errorResponse" },
+    "health": { "$ref": "#/$defs/health" },
+    "ok": { "$ref": "#/$defs/ok" },
+    "pause": { "$ref": "#/$defs/pauseRequest" },
+    "cover": { "$ref": "#/$defs/coverRequest" },
+    "send": { "$ref": "#/$defs/sendRequest" },
+    "answer": { "$ref": "#/$defs/answerRequest" },
+    "stop": { "$ref": "#/$defs/stopRequest" },
+    "retry": { "$ref": "#/$defs/retryRequest" },
+    "run": { "$ref": "#/$defs/runResponse" },
+    "attach": { "$ref": "#/$defs/attachInfo" }
+  },
+  "$defs": {
+    "target": {
+      "type": "string",
+      "pattern": "^([A-Z][A-Z0-9]{1,6}-[1-9][0-9]*|[0-9A-HJKMNP-TV-Z]{26})$",
+      "description": "Linear identifier (the issue's newest run) or run id (ULID)"
+    },
+    "issue": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,6}-[1-9][0-9]*$" },
+    "errorCode": { "enum": ["bad_request", "not_found", "refused", "internal"] },
+    "errorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": { "code": { "$ref": "#/$defs/errorCode" }, "message": { "type": "string" } }
+        }
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dispatch", "gateway", "version"],
+      "properties": {
+        "dispatch": { "enum": ["running", "paused"] },
+        "gateway": { "enum": ["ok", "unavailable"] },
+        "version": { "type": "string" }
+      }
+    },
+    "ok": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok"],
+      "properties": { "ok": { "const": true } }
+    },
+    "pauseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "issue": { "$ref": "#/$defs/issue" } }
+    },
+    "coverRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "covered"],
+      "properties": { "issue": { "$ref": "#/$defs/issue" }, "covered": { "type": "boolean" } }
+    },
+    "sendRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "message"],
+      "properties": {
+        "target": { "$ref": "#/$defs/target" },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "answerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "text"],
+      "properties": { "issue": { "$ref": "#/$defs/issue" }, "text": { "type": "string", "minLength": 1 } }
+    },
+    "stopRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target"],
+      "properties": { "target": { "$ref": "#/$defs/target" }, "reason": { "type": "string" } }
+    },
+    "retryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target"],
+      "properties": {
+        "target": { "$ref": "#/$defs/target" },
+        "agent": { "type": "string" },
+        "profile": { "type": "string" },
+        "continue": {
+          "type": "boolean",
+          "description": "continue from the commit of the latest attempt that has one, whatever its failure class"
+        }
+      }
+    },
+    "runResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run"],
+      "properties": { "run": { "type": "string" } }
+    },
+    "attachInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "password", "session", "workdir", "fallback", "shell"],
+      "properties": {
+        "url": { "type": "string", "description": "OpenCode server on host loopback" },
+        "password": {
+          "type": "string",
+          "description": "server password; pass to the TUI through its environment only"
+        },
+        "session": { "type": "string" },
+        "workdir": { "type": "string" },
+        "fallback": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "command that runs the TUI inside the sandbox"
+        },
+        "shell": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "command that opens a shell in the sandbox"
+        }
+      }
+    }
+  }
+}

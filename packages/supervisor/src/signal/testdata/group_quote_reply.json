@@ -1,0 +1,34 @@
+{
+  "envelope": {
+    "source": "+490000000000",
+    "sourceNumber": "+490000000000",
+    "sourceUuid": "00000000-0000-4000-8000-000000000001",
+    "sourceName": "Tester",
+    "sourceDevice": 5,
+    "timestamp": 1786852700000,
+    "serverReceivedTimestamp": 1786852700100,
+    "serverDeliveredTimestamp": 1786852700150,
+    "dataMessage": {
+      "timestamp": 1786852700000,
+      "message": "B, keep the old API",
+      "expiresInSeconds": 0,
+      "isExpirationUpdate": false,
+      "viewOnce": false,
+      "quote": {
+        "id": 1786852650000,
+        "author": "+490000000001",
+        "authorNumber": "+490000000001",
+        "authorUuid": "00000000-0000-4000-8000-0000000000bb",
+        "text": "XXX-1: question for the user: A or B?",
+        "attachments": []
+      },
+      "groupInfo": {
+        "groupId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "groupName": "h-cloud admin",
+        "revision": 0,
+        "type": "DELIVER"
+      }
+    }
+  },
+  "account": "+490000000001"
+}
