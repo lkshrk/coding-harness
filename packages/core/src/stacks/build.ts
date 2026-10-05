@@ -13,7 +13,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import type { Config } from '../config/generated/config'
 import { expandHome } from '../config/semantic'
-import { environmentHash, gitTree, matchesFile, type RepoTree, selectStacks } from './detect'
+import { environmentHash, gitTree, matchesFile, type RepoTree, selectStacks, versionValues } from './detect'
 import { featureDigest, type LspEntry, loadStacks, type Stack } from './load'
 
 export type RepoImage = {
@@ -64,6 +64,7 @@ export const DEFAULT_DEVCONTAINER = {
 const FEATURES_DIR = '.nightshift'
 const PACKAGE_MANAGERS_OPTION = 'packageManagers'
 const PLAYWRIGHT_VERSION_OPTION = 'playwrightVersion'
+const PYTHON_VERSION_OPTION = 'pythonVersion'
 
 const PLAYWRIGHT_LOCKS: Record<string, (text: string) => string[]> = {
   'pnpm-lock.yaml': (t) =>
@@ -92,6 +93,28 @@ export async function playwrightVersion(tree: RepoTree): Promise<string> {
     }
   }
   return [...found].sort(Bun.semver.order).at(-1) ?? ''
+}
+
+export async function pythonVersion(tree: RepoTree, python: Stack): Promise<string> {
+  const values = await versionValues(tree, [python])
+  const depth = (key: string) => key.split('/').length
+  const pick = (suffix: string) =>
+    [...values]
+      .filter(([key]) => key.endsWith(suffix))
+      .sort(([a], [b]) => depth(a) - depth(b) || a.localeCompare(b))
+      .map(([, value]) => value)
+  const pinned = pick('.python-version')
+    .map(
+      (text) =>
+        text
+          .split('\n')
+          .find((l) => l.trim() && !l.trim().startsWith('#'))
+          ?.trim() ?? '',
+    )
+    .find(Boolean)
+  if (pinned) return pinned
+  const required = pick('#project.requires-python')[0]
+  return required === undefined ? '' : String(JSON.parse(required))
 }
 
 async function pipeLines(
@@ -335,6 +358,8 @@ export class DevcontainerEnvironmentBuilder implements EnvironmentBuilder {
         options[PACKAGE_MANAGERS_OPTION] = await this.packageManagers(plan.tree)
       if (feature.options?.[PLAYWRIGHT_VERSION_OPTION])
         options[PLAYWRIGHT_VERSION_OPTION] = await playwrightVersion(plan.tree)
+      if (feature.options?.[PYTHON_VERSION_OPTION])
+        options[PYTHON_VERSION_OPTION] = await pythonVersion(plan.tree, stack)
       out[`./${FEATURES_DIR}/${name}`] = options
     }
     cpSync(join(this.o.root, 'features', 'agent-layer'), join(devDir, FEATURES_DIR, 'agent-layer'), {

@@ -1,0 +1,19 @@
+{
+  "id": "stack-python",
+  "version": "0.1.0",
+  "name": "nightshift python stack",
+  "description": "uv, the repository's Python installed by uv, ruff and the ty language server, installed at build time for offline workers.",
+  "options": {
+    "pythonVersion": {
+      "type": "string",
+      "default": "",
+      "description": "Python request from the repository's .python-version or requires-python; empty uses the version pinned in tools.sh."
+    }
+  },
+  "containerEnv": {
+    "UV_CACHE_DIR": "/var/cache/nightshift/uv",
+    "UV_PYTHON_INSTALL_DIR": "/opt/nightshift/stack-python/python",
+    "UV_LINK_MODE": "copy"
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

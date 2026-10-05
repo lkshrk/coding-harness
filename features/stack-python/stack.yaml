@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../packages/core/schema/stack.schema.json
+id: python
+markers:
+  - file: uv.lock
+  - file: pyproject.toml
+version_files:
+  - .python-version
+  - pyproject.toml#project.requires-python
+lsp:
+  python:
+    command: [ty, server]
+    extensions: [.py, .pyi]
+  ruff:
+    command: [ruff, server]
+    extensions: [.py, .pyi]
+checks:
+  - name: sync
+    run: uv sync --frozen --offline
+  - name: lint
+    run: uv run --frozen --offline ruff check . && uv run --frozen --offline ruff format --check .
+  - name: test
+    run: uv run --frozen --offline pytest -q
+egress: [pypi.org, files.pythonhosted.org]
+env:
+  UV_CACHE_DIR: /var/cache/nightshift/uv
+  UV_PYTHON_INSTALL_DIR: /opt/nightshift/stack-python/python
+  UV_LINK_MODE: copy
+nested_docker: false

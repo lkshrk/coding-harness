@@ -20,7 +20,10 @@
         "frontend/pnpm-workspace.yaml",
         "frontend/.npmrc",
         "frontend/patches/**",
-        "frontend/project.inlang/settings.json"
+        "frontend/project.inlang/settings.json",
+        "backend/pyproject.toml",
+        "backend/uv.lock",
+        "backend/.python-version"
       ]
     }
   }

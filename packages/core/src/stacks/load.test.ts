@@ -148,6 +148,12 @@ describe('loadStacks', () => {
       WOW_LUACHECKRC: '/var/cache/nightshift/wow/luacheckrc',
       WOW_INTERFACE: '120100',
     })
-    expect([...stacks.keys()].sort()).toEqual(['browser', 'bun', 'node', 'wow'])
+    const python = stacks.get('python')
+    expect(python?.markers).toEqual([{ file: 'uv.lock' }, { file: 'pyproject.toml' }])
+    expect(python?.versionFiles).toEqual(['.python-version', 'pyproject.toml#project.requires-python'])
+    expect(python?.env.UV_CACHE_DIR).toBe('/var/cache/nightshift/uv')
+    expect(python?.env.UV_PYTHON_INSTALL_DIR).toStartWith('/opt/nightshift/')
+    expect(python?.checks.map((c) => c.name)).toEqual(['sync', 'lint', 'test'])
+    expect([...stacks.keys()].sort()).toEqual(['browser', 'bun', 'node', 'python', 'wow'])
   })
 })

@@ -41,3 +41,19 @@ falls back to `project.inlang/cache/plugins/` when the CDN is unreachable, so of
 ```
 pnpm install --offline --frozen-lockfile && mkdir -p project.inlang/cache && cp -R /var/cache/nightshift/inlang/plugins project.inlang/cache/
 ```
+
+It also warms the backend: `uv sync --frozen` of `backend/pyproject.toml` and `backend/uv.lock` into the
+uv cache at `/var/cache/nightshift/uv`, with h5py built from source against the image's
+`libhdf5-dev` (`UV_NO_BINARY_PACKAGE=h5py` stays set in the image). The `stack-python` Feature brings
+`uv`, the repository's Python, `ruff` and `ty`. The backend checks for `repositories.routivo.checks`:
+
+```yaml
+- name: backend-sync
+  run: cd backend && uv sync --frozen --offline
+- name: backend-lint
+  run: cd backend && uv run --frozen --offline ruff check . && uv run --frozen --offline ruff format --check .
+- name: backend-types
+  run: cd backend && uv run --frozen --offline mypy app
+- name: backend-test
+  run: cd backend && uv run --frozen --offline pytest -q
+```

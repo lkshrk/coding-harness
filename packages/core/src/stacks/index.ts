@@ -8,6 +8,7 @@ export {
   lspConfig,
   type Plan,
   playwrightVersion,
+  pythonVersion,
   type RepoImage,
   type Run,
   type RunResult,

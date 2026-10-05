@@ -18,6 +18,7 @@ import {
   ImageBuildError,
   lspConfig,
   playwrightVersion,
+  pythonVersion,
   type Run,
   UnknownRepositoryError,
   workerImageFor,
@@ -35,7 +36,8 @@ symlinkSync(join(NIGHTSHIFT_ROOT, 'features'), join(bareRoot, 'features'))
 const routivo = {
   'frontend/package.json': '{"packageManager":"pnpm@11.8.0"}',
   'frontend/pnpm-lock.yaml': 'lockfileVersion: 9\n',
-  'backend/pyproject.toml': '[project]\n',
+  'backend/pyproject.toml': '[project]\nrequires-python = ">=3.14"\n',
+  'backend/uv.lock': 'version = 1\n',
   '.nvmrc': '24\n',
   'README.md': '',
 }
@@ -108,7 +110,7 @@ describe('DevcontainerEnvironmentBuilder', () => {
     const s = setup(routivo)
     const image = await s.builder.build('routivo')
     expect(image.tag).toMatch(/^nightshift\/env-routivo:[0-9a-f]{12}$/)
-    expect(image.stacks).toEqual(['node'])
+    expect(image.stacks).toEqual(['node', 'python'])
     expect(s.calls[0]?.cmd.slice(0, 5)).toEqual(['git', '-C', '/src/routivo', 'archive', '--format=tar'])
     expect(s.calls[0]?.cmd.at(-1)).toBe('origin/main')
     const build = s.builds()[0] as Call
@@ -116,14 +118,20 @@ describe('DevcontainerEnvironmentBuilder', () => {
     expect(build.cmd[build.cmd.indexOf('--image-name') + 1]).toBe(image.tag)
     expect(build.cmd[build.cmd.indexOf('--workspace-folder') + 1]).toEndWith('/workspace')
     const features = JSON.parse(build.cmd[build.cmd.indexOf('--additional-features') + 1] as string)
-    expect(Object.keys(features)).toEqual(['./.nightshift/stack-node', './.nightshift/agent-layer'])
+    expect(Object.keys(features)).toEqual([
+      './.nightshift/stack-node',
+      './.nightshift/stack-python',
+      './.nightshift/agent-layer',
+    ])
     expect(features['./.nightshift/stack-node']).toEqual({ packageManagers: 'pnpm@11.8.0' })
+    expect(features['./.nightshift/stack-python']).toEqual({ pythonVersion: '>=3.14' })
     const devcontainer = JSON.parse(build.devcontainer as string)
     expect(devcontainer.image).toStartWith('debian:trixie@sha256:')
     expect(devcontainer.overrideFeatureInstallOrder).toEqual([
       'ghcr.io/devcontainers/features/common-utils',
       'ghcr.io/devcontainers/features/node',
       './.nightshift/stack-node',
+      './.nightshift/stack-python',
     ])
     const meta = JSON.parse(readFileSync(join(s.cache, 'images/routivo.json'), 'utf8'))
     expect(meta).toMatchObject({
@@ -142,6 +150,7 @@ describe('DevcontainerEnvironmentBuilder', () => {
     expect(used.overrideFeatureInstallOrder).toEqual([
       'ghcr.io/devcontainers/features/node',
       './.nightshift/stack-node',
+      './.nightshift/stack-python',
     ])
   })
 
@@ -152,18 +161,24 @@ describe('DevcontainerEnvironmentBuilder', () => {
       'frontend/patches/a.patch': 'diff\n',
       'frontend/project.inlang/settings.json': '{"modules":[]}',
       'frontend/src/app.ts': 'export {}\n',
+      'backend/app/main.py': 'app = 1\n',
+      'backend/tests/test_main.py': 'def test_x():\n    pass\n',
     }
     const s = setup(files, { root: NIGHTSHIFT_ROOT })
     const first = await s.builder.build('routivo')
     const build = s.builds()[0] as Call
     const devcontainer = JSON.parse(build.devcontainer as string)
     expect(devcontainer.build).toEqual({ dockerfile: 'Dockerfile', context: '..' })
-    expect(devcontainer.overrideFeatureInstallOrder.at(-1)).toBe('./.nightshift/stack-node')
+    expect(devcontainer.overrideFeatureInstallOrder.at(-1)).toBe('./.nightshift/stack-python')
 
     s.tree.files['frontend/src/app.ts'] = 'export const x = 1\n'
+    s.tree.files['backend/app/main.py'] = 'app = 2\n'
+    s.tree.files['backend/tests/test_main.py'] = 'def test_y():\n    pass\n'
     s.tree.files['README.md'] = 'changed'
     expect(await s.builder.current('routivo')).toEqual(first)
     for (const [path, content] of [
+      ['backend/uv.lock', 'version = 1\nrevision = 3\n'],
+      ['backend/pyproject.toml', '[project]\nrequires-python = ">=3.14"\ndependencies = ["x"]\n'],
       ['frontend/pnpm-lock.yaml', 'lockfileVersion: 9\npackages: {}\n'],
       ['frontend/pnpm-workspace.yaml', 'allowBuilds:\n  esbuild: false\n'],
       ['frontend/patches/a.patch', 'diff2\n'],
@@ -241,8 +256,9 @@ describe('DevcontainerEnvironmentBuilder', () => {
     const s = setup(routivo)
     const worker = await workerImageFor(s.builder, 'routivo')
     expect(worker.image).toMatch(/^nightshift\/env-routivo:/)
-    expect(Object.keys(worker.lsp).sort()).toEqual(['eslint', 'typescript'])
-    expect(worker.egress).toEqual(['registry.npmjs.org'])
+    expect(Object.keys(worker.lsp).sort()).toEqual(['eslint', 'python', 'ruff', 'typescript'])
+    expect(worker.lsp.python?.command).toEqual(['ty', 'server'])
+    expect(worker.egress).toEqual(['files.pythonhosted.org', 'pypi.org', 'registry.npmjs.org'])
   })
 })
 
@@ -352,6 +368,30 @@ describe('browser stack', () => {
     ['none', { 'package-lock.json': '{}' }, ''],
   ])('playwrightVersion reads %s lockfiles', async (_name, files, expected) => {
     expect(await playwrightVersion(memoryTree(files))).toBe(expected)
+  })
+})
+
+describe('python stack', () => {
+  const python = loadStacks(join(NIGHTSHIFT_ROOT, 'features')).stacks.get('python') as Stack
+
+  test.each<[string, Record<string, string>, string]>([
+    ['requires-python', { 'backend/pyproject.toml': '[project]\nrequires-python = ">=3.14"\n' }, '>=3.14'],
+    [
+      '.python-version wins over requires-python',
+      { 'pyproject.toml': '[project]\nrequires-python = ">=3.12"\n', '.python-version': '# pin\n3.13\n' },
+      '3.13',
+    ],
+    [
+      'the shallowest project wins',
+      {
+        'pyproject.toml': '[project]\nrequires-python = ">=3.13"\n',
+        'tools/x/pyproject.toml': '[project]\nrequires-python = ">=3.11"\n',
+      },
+      '>=3.13',
+    ],
+    ['none', { 'uv.lock': 'version = 1\n', 'pyproject.toml': '[tool.ruff]\n' }, ''],
+  ])('pythonVersion reads %s', async (_name, files, expected) => {
+    expect(await pythonVersion(memoryTree(files), python)).toBe(expected)
   })
 })
 

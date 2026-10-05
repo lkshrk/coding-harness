@@ -110,6 +110,54 @@ describe('browser add-on', () => {
   })
 })
 
+describe('real python stack', () => {
+  test.each<[string, Record<string, string>, string[]]>([
+    ['uv.lock', { 'uv.lock': 'version = 1\n' }, ['python']],
+    ['pyproject.toml', { 'pyproject.toml': '[project]\nname = "x"\n' }, ['python']],
+    [
+      'uv backend next to a pnpm frontend',
+      {
+        'frontend/package.json': '{}',
+        'frontend/pnpm-lock.yaml': '',
+        'backend/pyproject.toml': '[project]\n',
+        'backend/uv.lock': 'version = 1\n',
+      },
+      ['node', 'python'],
+    ],
+    ['vendored pyproject', { 'vendor/x/pyproject.toml': '' }, []],
+    ['plain Python sources', { 'main.py': 'print(1)\n', 'requirements.txt': 'x\n' }, []],
+  ])('%s', async (_name, files, expected) => {
+    expect(await detectStacks(memoryTree(files), real)).toEqual(expected)
+  })
+
+  const backend = {
+    'backend/pyproject.toml': '[project]\nname = "routivo"\nrequires-python = ">=3.14"\n',
+    'backend/uv.lock': 'version = 1\nrevision = 3\n',
+    'backend/app/main.py': 'app = 1\n',
+  }
+  const python = [real.get('python') as Stack]
+  const hashOf = (files: Record<string, string>) => environmentHash(memoryTree(files), python, extra)
+
+  test('backend/uv.lock changes the environment hash', async () => {
+    expect(await hashOf({ ...backend, 'backend/uv.lock': 'version = 1\nrevision = 4\n' })).not.toBe(
+      await hashOf(backend),
+    )
+  })
+
+  test.each<[string, Record<string, string>]>([
+    ['requires-python', { 'backend/pyproject.toml': '[project]\nrequires-python = ">=3.15"\n' }],
+    ['a new .python-version', { 'backend/.python-version': '3.14\n' }],
+  ])('%s changes the environment hash', async (_name, change) => {
+    expect(await hashOf({ ...backend, ...change })).not.toBe(await hashOf(backend))
+  })
+
+  test('backend source changes keep the environment hash', async () => {
+    expect(
+      await hashOf({ ...backend, 'backend/app/main.py': 'app = 2\n', 'backend/tests/test_x.py': '' }),
+    ).toBe(await hashOf(backend))
+  })
+})
+
 describe('selectStacks', () => {
   test('no marker names the repository setting', async () => {
     await expect(
