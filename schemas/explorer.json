@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["files", "symbols", "facts", "open_questions"],
+  "properties": {
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "why"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "why": { "type": "string", "minLength": 1, "maxLength": 300 }
+        }
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer", "minimum": 1 },
+          "note": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "source", "basis"],
+        "properties": {
+          "claim": { "type": "string", "minLength": 1, "maxLength": 400 },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "path:line, a symbol, or a command and what it printed"
+          },
+          "basis": { "enum": ["observed", "inferred"] }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 600 }
+    }
+  }
+}

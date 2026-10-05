@@ -1,0 +1,8 @@
+id: bun
+markers:
+  - file: bun.lock
+version_files: [package.json#packageManager, .bun-version]
+lsp:
+  typescript:
+    command: [typescript-language-server, --stdio]
+    extensions: [.ts]

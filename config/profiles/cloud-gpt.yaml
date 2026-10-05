@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=../../packages/core/schema/config.schema.json#/properties/profiles/additionalProperties
+# Cloud profile with OpenAI workers; review crosses to Anthropic.
+roles:
+  lead: claude-fable
+  planner: claude-fable
+  worker: gpt-astra
+  explorer: gpt-astra
+  reviewer: claude-fable
+  acceptor: claude-opus
+  classifier: gpt-sol
+  selector: claude-sonnet
+  intake: gpt-sol
+  judge: claude-sonnet
+  ingester: claude-opus
+models:
+  claude-fable: { model: claude-fable, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+  claude-opus: { model: claude-opus, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+  claude-sonnet: { model: claude-sonnet, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+  gpt-astra: { model: gpt-astra, family: openai, size_gb: 0, phases: [planning, implementation] }
+  gpt-sol: { model: gpt-sol, family: openai, size_gb: 0, phases: [planning, implementation] }

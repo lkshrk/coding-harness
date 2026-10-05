@@ -1,0 +1,53 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action", "reason"],
+  "properties": {
+    "action": {
+      "enum": ["split", "create_blocker", "escalate_lead"],
+      "description": "split: replace the issue by sub_issues; create_blocker: a new issue that must land first; escalate_lead: the lead re-plans"
+    },
+    "sub_issues": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "blocker": { "$ref": "#/$defs/issue" },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "why this action, citing the failure evidence"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "action": { "const": "split" } } },
+      "then": { "required": ["sub_issues"], "not": { "required": ["blocker"] } }
+    },
+    {
+      "if": { "properties": { "action": { "const": "create_blocker" } } },
+      "then": { "required": ["blocker"], "not": { "required": ["sub_issues"] } }
+    },
+    {
+      "if": { "properties": { "action": { "const": "escalate_lead" } } },
+      "then": { "not": { "anyOf": [{ "required": ["sub_issues"] }, { "required": ["blocker"] }] } }
+    }
+  ],
+  "$defs": {
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "markdown in the issue template, every section present"
+        }
+      }
+    }
+  }
+}

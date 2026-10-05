@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nightshift.local/schema/finish/v1",
+  "title": "worker finish payload",
+  "description": "Argument of the 'finish' tool every worker must call exactly once. 'report' is validated against the agent's own output schema when the agent declares one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "evidence"],
+  "properties": {
+    "status": {
+      "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT"],
+      "description": "DONE: acceptance criteria met and verified; DONE_WITH_CONCERNS: met, with doubts listed in concerns; BLOCKED: cannot proceed, see blocker; NEEDS_CONTEXT: information missing, see blocker.question"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 400,
+      "description": "one to three sentences a human can read in Linear"
+    },
+    "evidence": {
+      "type": "array",
+      "description": "what was run or checked; the supervisor re-runs gates itself and never trusts this alone",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref", "result"],
+        "properties": {
+          "kind": { "enum": ["command", "test", "file", "observation"] },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "command line, test id, file path, or what was looked at"
+          },
+          "result": { "enum": ["pass", "fail", "info"] },
+          "detail": { "type": "string", "maxLength": 1000 }
+        }
+      }
+    },
+    "changed_files": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "concerns": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["needs", "reason"],
+      "properties": {
+        "needs": { "enum": ["context", "decision", "dependency", "permission", "environment"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "question": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "the exact question for the lead or you"
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "description": "fixed answers to choose from, when the question has them"
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "description": "agent-specific result, validated against nightshift.output of the agent"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["BLOCKED", "NEEDS_CONTEXT"] } } },
+      "then": { "required": ["blocker"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "DONE_WITH_CONCERNS" } } },
+      "then": { "required": ["concerns"], "properties": { "concerns": { "type": "array", "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "DONE" } } },
+      "then": { "properties": { "evidence": { "type": "array", "minItems": 1 } } }
+    }
+  ]
+}

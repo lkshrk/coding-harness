@@ -1,0 +1,75 @@
+version: 1
+paths:
+  state: ~/.local/state/nightshift
+  cache: ~/.cache/nightshift
+  vault: ~/Dev/vault
+gateway:
+  base_url: https://llm.example.test
+  api_key: env:NIGHTSHIFT_GATEWAY_KEY
+  worker_key: env:NS_WORKER_KEY
+linear:
+  auth:
+    mode: api_key
+    api_key: env:NIGHTSHIFT_LINEAR_KEY
+  teams:
+    - key: FRG
+      statuses:
+        triage: Triage
+        backlog: Backlog
+        ready: Todo
+        running: In Progress
+        review: In Review
+        blocked: Blocked
+        done: Done
+        canceled: Canceled
+github:
+  accounts:
+    personal:
+      token: env:GH_TOKEN
+repositories:
+  omni:
+    path: ~/Dev/omni
+    checks:
+      - name: test
+        run: bun test
+projects:
+  - match:
+      team: FRG
+      project: Omni
+    repositories: [omni]
+    pipeline: feature
+pipelines:
+  feature: [implementation]
+stages:
+  implementation:
+    automatic: true
+selection:
+  - when:
+      stage: implementation
+    agent: implementer
+profiles:
+  active: default
+  memory_budget_gb: 220
+  default:
+    roles:
+      worker: ns/worker
+    models:
+      ns/worker:
+        model: qwen3.8-flash-next
+        family: qwen
+        size_gb: 112
+        phases: [implementation]
+limits:
+  concurrency: 3
+  worker:
+    wall_clock: 45m
+    tokens: 2M
+    steps: 200
+  repair_rounds: 2
+  best_of: 2
+policies:
+  deny:
+    bash: ['git push --force *']
+sandbox:
+  driver: docker
+notifications: {}

@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nightshift.local/schema/stack/v1",
+  "title": "nightshift stack",
+  "description": "features/stack-<id>/stack.yaml: how nightshift detects a stack and what the worker image gets from its Feature.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "markers"],
+  "properties": {
+    "id": {
+      "description": "equals the directory suffix of features/stack-<id>",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "markers": {
+      "description": "any matching marker selects the stack; matched at any depth outside node_modules, vendor, .git and third_party",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/marker"
+      },
+      "minItems": 1
+    },
+    "addon": {
+      "description": "an add-on stack is selected only next to a detected primary stack and may omit lsp",
+      "type": "boolean",
+      "default": false
+    },
+    "version_files": {
+      "description": "hashed for rebuilds, matched like file markers; file#key reads one JSON or TOML key (dotted path)",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[^#\\s]+(#[A-Za-z0-9_.-]+)?$"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "lsp": {
+      "description": "rendered into the worker's OpenCode config lsp section",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/lsp"
+      },
+      "minProperties": 1,
+      "errorMessage": {
+        "minProperties": "at least one language server required"
+      }
+    },
+    "checks": {
+      "description": "defaults suggested for repositories; repositories.<name>.checks wins",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      },
+      "default": []
+    },
+    "egress": {
+      "description": "hosts the stack needs for dependency install",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "hostname"
+      },
+      "uniqueItems": true,
+      "default": []
+    },
+    "env": {
+      "description": "cache pinning baked into the image; must equal the Feature's containerEnv entries",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {}
+    },
+    "nested_docker": {
+      "description": "true when the stack needs a sandbox driver with nested Docker",
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "$defs": {
+    "marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "path suffix matched at a path-segment boundary",
+          "type": "string",
+          "minLength": 1
+        },
+        "glob": {
+          "description": "glob over repository paths, e.g. **/*.toc",
+          "type": "string",
+          "minLength": 1
+        },
+        "contains": {
+          "description": "regex (multiline) the content of a matched file must match; such files are hashed",
+          "type": "string",
+          "format": "regex"
+        },
+        "not": {
+          "description": "markers that exclude the stack when any of them matches",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/marker"
+          },
+          "minItems": 1
+        }
+      },
+      "if": {
+        "required": ["file"]
+      },
+      "then": {
+        "not": {
+          "required": ["glob"]
+        },
+        "errorMessage": {
+          "not": "file and glob are exclusive"
+        }
+      },
+      "else": {
+        "required": ["glob"],
+        "errorMessage": {
+          "required": "file or glob required"
+        }
+      }
+    },
+    "lsp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "extensions"],
+      "properties": {
+        "command": {
+          "description": "explicit command installed by the Feature; no auto-download",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^\\.[A-Za-z0-9._-]+$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "initialization": {
+          "type": "object"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "run"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "addon": {
+        "const": true
+      }
+    },
+    "required": ["addon"]
+  },
+  "then": {},
+  "else": {
+    "required": ["lsp"],
+    "errorMessage": {
+      "required": "at least one language server required"
+    }
+  }
+}

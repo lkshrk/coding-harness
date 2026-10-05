@@ -1,0 +1,185 @@
+version: 1
+paths:
+  state: /var/lib/nightshift
+  cache: ~/.cache/nightshift
+  vault: ~/Dev/vault
+gateway:
+  base_url: https://llm.example.test/v1
+  api_key: rbw:gateway/litellm#master_key
+  worker_key: env:NS_WORKER_KEY
+  ca_bundle: /etc/ssl/private-ca.pem
+  otel_endpoint: http://otel.example.test:4318
+  phoenix_url: https://phoenix.example.test
+linear:
+  auth:
+    mode: app
+    client_id: rbw:linear/nightshift#client_id
+    client_secret: rbw:linear/nightshift#client_secret
+    scopes: [read, write]
+  exclude_labels: [business]
+  teams:
+    - key: FRG
+      statuses:
+        triage: Triage
+        backlog: Backlog
+        ready: Todo
+        running: In Progress
+        review: In Review
+        blocked: Blocked
+        done: Done
+        canceled: Canceled
+    - key: CIV
+      statuses:
+        triage: Triage
+        backlog: Backlog
+        ready: Ready
+        running: Doing
+        review: Review
+        blocked: Blocked
+        done: Done
+        canceled: Canceled
+github:
+  default: work
+  accounts:
+    work:
+      token: env:GH_WORK_TOKEN
+    personal:
+      token: rbw:github#token
+    agent:
+      octo_sts:
+        url: https://sts.example.com
+        token_url: https://auth.example.com/application/o/token/
+        client_id: octo-sts
+        identity: nightshift-host
+        password: rbw:octo-sts#nightshift-host
+repositories:
+  omni:
+    path: ~/Dev/omni
+    remote: upstream
+    base: develop
+    stacks: [node, go]
+    checks:
+      - name: lint
+        run: bun run lint
+      - name: test
+        run: bun test
+        timeout: 20m
+    risk_paths: ['migrations/**', '.github/**']
+    macos_only: false
+  wow-addon:
+    path: /Users/me/Dev/wow-addon
+    stacks: auto
+    checks:
+      - name: check
+        run: make check
+    macos_only: true
+projects:
+  - match:
+      team: FRG
+      initiative: Platform
+    repositories: [omni]
+    pipeline: feature
+    profile: default
+  - match:
+      team: CIV
+      label: addon
+    repositories: [wow-addon, omni]
+    pipeline: bug
+pipelines:
+  feature: [intake, design, implementation, verification]
+  bug: [intake, implementation, verification]
+stages:
+  intake:
+    automatic: true
+  design:
+    automatic: false
+    human_checkpoint: after
+  implementation:
+    automatic: true
+    human_checkpoint: none
+  verification:
+    automatic: true
+    human_checkpoint: before
+selection:
+  - when:
+      stage: intake
+    agent: intake
+  - when:
+      stage: verification
+    agent: reviewer
+  - when:
+      stage: [implementation]
+      failure_class: implementation_defect
+      attempt: '>=2'
+    agent: repairer
+  - when:
+      failure_class: [task_too_large, missing_dependency]
+    agent: replanner
+  - when:
+      stage: implementation
+      issue_type: [bug, regression]
+    agent: fixer
+  - when:
+      stage: implementation
+    agent: implementer
+profiles:
+  active: default
+  memory_budget_gb: 220
+  default:
+    roles:
+      worker: ns/worker
+      reviewer: ns/reviewer
+      lead: ns/lead
+    models:
+      ns/worker:
+        model: qwen3.8-flash-next
+        family: qwen
+        size_gb: 112
+        phases: [implementation]
+      ns/reviewer:
+        model: gemma-5-60b
+        family: gemma
+        size_gb: 60
+        phases: [implementation]
+      ns/lead:
+        model: glm-5.3-flash
+        family: glm
+        size_gb: 181
+        phases: [planning]
+  cloud:
+    roles:
+      worker: claude-opus
+      reviewer: gpt-sol
+      lead: claude-opus
+    models:
+      claude-opus: { model: anthropic/claude-opus-5-5, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+      gpt-sol: { model: openai/gpt-6.1-sol, family: openai, size_gb: 0, phases: [implementation] }
+limits:
+  concurrency: 4
+  worker:
+    wall_clock: 1h
+    tokens: 500k
+    steps: 150
+  repair_rounds: 0
+  best_of: 1
+policies:
+  deny:
+    bash: ['git push --force *', 'git filter-branch *', 'kubectl *']
+    webfetch: ['http://169.254.169.254/*']
+    external_directory: ['/etc/*']
+sandbox:
+  driver: sbx
+  resources:
+    cpus: 8
+    memory: 16g
+notifications:
+  macos: false
+  ntfy: https://ntfy.sh/nightshift-example
+  signal:
+    url: https://signal.h-cloud.lan
+    api_key: env:NIGHTSHIFT_SIGNAL_API_KEY
+    group: h-cloud admin
+    user: 00000000-0000-4000-8000-000000000001
+    ca_bundle: ~/.config/nightshift/ca.pem
+secrets:
+  rbw_profile: nightshift-test

@@ -1,0 +1,570 @@
+{
+  "$comment": "Generated from config.schema.json by `bun run gen`; do not edit.",
+  "$id": "https://nightshift.local/schema/config/v1/layer",
+  "title": "nightshift configuration layer",
+  "description": "One layer (defaults or user file); every key is optional, the merged result must be complete.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "paths": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "state": { "$ref": "#/$defs/path", "description": "SQLite event log and leases" },
+        "cache": { "$ref": "#/$defs/path", "description": "code-graph indexes, image metadata" },
+        "vault": { "$ref": "#/$defs/path", "description": "knowledge vault checkout" }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_url": { "$ref": "#/$defs/url", "description": "OpenAI-compatible LiteLLM endpoint" },
+        "api_key": {
+          "$ref": "#/$defs/secretRef",
+          "description": "the supervisor's own key (reviewer, classifier, token counting); never given to workers"
+        },
+        "worker_key": {
+          "$ref": "#/$defs/secretRef",
+          "description": "dedicated key handed to workers, restricted in LiteLLM to the worker models"
+        },
+        "ca_bundle": {
+          "$ref": "#/$defs/path",
+          "description": "PEM bundle for a private CA in front of the gateway"
+        },
+        "otel_endpoint": {
+          "$ref": "#/$defs/url",
+          "description": "OTLP traces endpoint reachable from sandboxes"
+        },
+        "phoenix_url": { "$ref": "#/$defs/url" }
+      }
+    },
+    "linear": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auth": {
+          "description": "'app': nightshift's own OAuth application, client-credentials grant; 'api_key': tests and fallback",
+          "type": "object",
+          "discriminator": { "propertyName": "mode" },
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": { "const": "app" },
+                "client_id": { "$ref": "#/$defs/secretRef" },
+                "client_secret": { "$ref": "#/$defs/secretRef" },
+                "scopes": {
+                  "description": "fixed set; requesting different scopes revokes all existing app tokens",
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "mode": { "const": "api_key" }, "api_key": { "$ref": "#/$defs/secretRef" } }
+            }
+          ]
+        },
+        "act_on": {
+          "description": "which issues nightshift acts on; all teams are read",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "delegated": {
+              "description": "act on issues delegated or assigned to the nightshift app",
+              "type": "boolean"
+            },
+            "labels": {
+              "description": "act on issues carrying any of these labels",
+              "type": "array",
+              "items": { "$ref": "#/$defs/name" },
+              "uniqueItems": true
+            }
+          }
+        },
+        "exclude_labels": { "type": "array", "items": { "$ref": "#/$defs/name" }, "uniqueItems": true },
+        "statuses": { "$ref": "#/$defs/statuses" },
+        "teams": {
+          "description": "per-team status overrides",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "key": { "$ref": "#/$defs/teamKey", "description": "team key as in issue identifiers" },
+              "statuses": { "$ref": "#/$defs/statuses" }
+            }
+          }
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/id",
+          "description": "account for every repository without its own `github`; required with several accounts"
+        },
+        "accounts": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/githubAccount" },
+          "minProperties": 1
+        }
+      }
+    },
+    "repositories": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/repository" },
+      "minProperties": 1
+    },
+    "projects": { "type": "array", "items": { "$ref": "#/$defs/project" }, "minItems": 1 },
+    "pipelines": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/ids" },
+      "minProperties": 1
+    },
+    "stages": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/stage" },
+      "properties": {
+        "intake": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "automatic": {
+              "type": "boolean",
+              "description": "false: the stage runs as a lead session with you"
+            },
+            "human_checkpoint": { "enum": ["none", "before", "after"] },
+            "duplicate": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "judge": { "enum": ["typed", "llm"] },
+                "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+                "max_candidates": { "type": "integer", "minimum": 1, "maximum": 10 },
+                "closed_within_days": { "type": "integer", "minimum": 1, "maximum": 365 }
+              }
+            }
+          }
+        },
+        "closeout": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "automatic": {
+              "type": "boolean",
+              "description": "false: the stage runs as a lead session with you"
+            },
+            "human_checkpoint": { "enum": ["none", "before", "after"] },
+            "ingest": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "selection": {
+      "description": "first rule whose 'when' matches wins",
+      "type": "array",
+      "items": { "$ref": "#/$defs/selectionRule" },
+      "minItems": 1
+    },
+    "profiles": {
+      "type": "object",
+      "properties": {
+        "active": { "$ref": "#/$defs/id" },
+        "memory_budget_gb": { "type": "integer", "minimum": 1 }
+      },
+      "propertyNames": {
+        "pattern": "^(active|memory_budget_gb|[a-z][a-z0-9-]*)$",
+        "errorMessage": { "pattern": "profile names must be lowercase kebab-case" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/profile" }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": { "type": "integer", "minimum": 1, "maximum": 32 },
+        "worker": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "wall_clock": { "$ref": "#/$defs/duration" },
+            "tokens": { "$ref": "#/$defs/tokenCount" },
+            "steps": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "repair_rounds": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "best_of": { "type": "integer", "minimum": 1, "maximum": 8 }
+      }
+    },
+    "policies": { "$ref": "#/$defs/policy" },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "driver": { "enum": ["docker", "sbx"] },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpus": { "type": "integer", "minimum": 1 },
+            "memory": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*[mg]$",
+              "errorMessage": { "pattern": "must be like 512m or 8g" }
+            }
+          }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "macos": { "type": "boolean" },
+        "ntfy": {
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/url" }],
+          "errorMessage": "must be null or an http(s) URL"
+        },
+        "signal": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Signal group for notifications and replies, via signal-cli-rest-api in json-rpc mode",
+          "properties": {
+            "url": { "$ref": "#/$defs/url", "description": "signal-cli-rest-api base URL" },
+            "api_key": { "$ref": "#/$defs/secretRef", "description": "sent as the x-api-key header" },
+            "group": {
+              "type": "string",
+              "minLength": 1,
+              "description": "group name, raw group id or group.<base64> id"
+            },
+            "user": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "description": "Signal account uuid allowed to reply; unset uses the one paired with ns signal pair"
+            },
+            "ca_bundle": {
+              "$ref": "#/$defs/path",
+              "description": "PEM bundle for a private CA in front of signal-cli-rest-api"
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rbw_profile": {
+          "description": "RBW_PROFILE for every rbw: reference; nightshift's own Vaultwarden account",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "cli": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "ssh host that read, watch and control commands run on (ssh -t <host> -- ns …); 'local' runs them here",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "errorMessage": { "pattern": "must be lowercase kebab-case ([a-z][a-z0-9-]*)" }
+    },
+    "ids": { "type": "array", "items": { "$ref": "#/$defs/id" }, "uniqueItems": true, "minItems": 1 },
+    "oneOrManyIds": {
+      "anyOf": [{ "$ref": "#/$defs/id" }, { "$ref": "#/$defs/ids" }],
+      "errorMessage": "must be an id or a list of unique ids"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "path": {
+      "type": "string",
+      "pattern": "^(~|/)",
+      "errorMessage": { "pattern": "must start with ~ or /" }
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https?://",
+      "errorMessage": { "pattern": "must be an http(s) URL" }
+    },
+    "glob": { "type": "string", "minLength": 1 },
+    "secretRef": {
+      "description": "env:NAME, or rbw:[folder/]item[#field] read with secrets.rbw_profile",
+      "type": "string",
+      "pattern": "^(env:[A-Z_][A-Z0-9_]*|rbw:([^/#]+/)?[^/#]+(#[^#]+)?)$",
+      "errorMessage": { "pattern": "secrets must be references (env:NAME)" }
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*(s|m|h)$",
+      "errorMessage": { "pattern": "must be a duration like 30s, 15m, 2h" }
+    },
+    "tokenCount": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*(k|M)?$",
+      "errorMessage": { "pattern": "must be a token count like 500k, 2M" }
+    },
+    "modelAlias": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9./-]*$",
+      "errorMessage": { "pattern": "must be a gateway model alias" }
+    },
+    "teamKey": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]{1,6}$",
+      "errorMessage": { "pattern": "must be a Linear team key (A-Z, 2-7 characters)" }
+    },
+    "failureClass": {
+      "enum": [
+        "environment",
+        "implementation_defect",
+        "insufficient_context",
+        "task_too_large",
+        "missing_dependency",
+        "architectural_conflict",
+        "capability_limit",
+        "unknown"
+      ]
+    },
+    "statuses": {
+      "description": "lifecycle state → status name; in linear.statuses for every team, in a team overriding linear.statuses",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "triage": { "$ref": "#/$defs/name" },
+        "backlog": { "$ref": "#/$defs/name" },
+        "ready": { "$ref": "#/$defs/name" },
+        "running": { "$ref": "#/$defs/name" },
+        "review": { "$ref": "#/$defs/name" },
+        "blocked": { "$ref": "#/$defs/name" },
+        "done": { "$ref": "#/$defs/name" },
+        "canceled": { "$ref": "#/$defs/name" }
+      }
+    },
+    "octoSts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/url",
+          "description": "octo-sts base URL; tokens come from <url>/sts/exchange per repository owner"
+        },
+        "token_url": {
+          "$ref": "#/$defs/url",
+          "description": "Authentik token endpoint for the client-credentials grant"
+        },
+        "client_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Authentik OAuth client whose tokens octo-sts accepts"
+        },
+        "identity": {
+          "$ref": "#/$defs/name",
+          "description": "Authentik machine identity; names <owner>/.github/.github/chainguard/<identity>.sts.yaml"
+        },
+        "password": { "$ref": "#/$defs/secretRef", "description": "app password of the identity" }
+      }
+    },
+    "githubAccount": {
+      "description": "exactly one of token, octo_sts",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token": { "$ref": "#/$defs/secretRef", "description": "static token" },
+        "octo_sts": {
+          "$ref": "#/$defs/octoSts",
+          "description": "short-lived installation tokens from octo-sts"
+        }
+      },
+      "minProperties": 1,
+      "maxProperties": 1,
+      "errorMessage": {
+        "minProperties": "needs exactly one of token, octo_sts",
+        "maxProperties": "needs exactly one of token, octo_sts"
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/id" },
+        "run": { "type": "string", "minLength": 1 },
+        "timeout": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/path", "description": "your checkout; nightshift only fetches here" },
+        "remote": { "type": "string" },
+        "base": { "type": "string" },
+        "stacks": {
+          "anyOf": [{ "const": "auto" }, { "$ref": "#/$defs/ids" }],
+          "errorMessage": "must be auto or a list of unique stack names"
+        },
+        "checks": {
+          "description": "run in a fresh sandbox, in order, stop at the first failure",
+          "type": "array",
+          "items": { "$ref": "#/$defs/check" },
+          "minItems": 1
+        },
+        "risk_paths": { "type": "array", "items": { "$ref": "#/$defs/glob" }, "uniqueItems": true },
+        "macos_only": { "type": "boolean" },
+        "github": {
+          "$ref": "#/$defs/id",
+          "description": "GitHub account for this repository instead of github.default"
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "team": { "$ref": "#/$defs/teamKey" },
+                "initiative": { "$ref": "#/$defs/name" }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "team": { "$ref": "#/$defs/teamKey" }, "project": { "$ref": "#/$defs/name" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": { "team": { "$ref": "#/$defs/teamKey" }, "label": { "$ref": "#/$defs/name" } }
+            }
+          ],
+          "errorMessage": "needs team and exactly one of initiative, project, label"
+        },
+        "repositories": { "$ref": "#/$defs/ids" },
+        "pipeline": { "$ref": "#/$defs/id" },
+        "profile": { "$ref": "#/$defs/id" }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "automatic": { "type": "boolean", "description": "false: the stage runs as a lead session with you" },
+        "human_checkpoint": { "enum": ["none", "before", "after"] }
+      }
+    },
+    "selectionRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "stage": { "$ref": "#/$defs/oneOrManyIds" },
+            "issue_type": { "$ref": "#/$defs/oneOrManyIds" },
+            "failure_class": {
+              "anyOf": [
+                { "$ref": "#/$defs/failureClass" },
+                {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/failureClass" },
+                  "uniqueItems": true,
+                  "minItems": 1
+                }
+              ],
+              "errorMessage": "must be a failure class or a list of unique failure classes"
+            },
+            "attempt": {
+              "type": "string",
+              "pattern": "^(>=|<=|==)[1-9][0-9]*$",
+              "errorMessage": { "pattern": "must be >=n, <=n or ==n" }
+            }
+          },
+          "minProperties": 1
+        },
+        "agent": { "$ref": "#/$defs/id" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "description": "concrete model behind the alias" },
+        "family": { "$ref": "#/$defs/id" },
+        "size_gb": { "type": "number", "minimum": 0 },
+        "phases": {
+          "type": "array",
+          "items": { "enum": ["planning", "implementation"] },
+          "uniqueItems": true,
+          "minItems": 1
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roles": {
+          "description": "role → gateway alias",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": { "$ref": "#/$defs/modelAlias" },
+          "minProperties": 1
+        },
+        "models": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/modelAlias" },
+          "additionalProperties": { "$ref": "#/$defs/model" }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deny": {
+          "description": "OpenCode permission key → patterns denied in every agent; an agent allow never overrides them",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_*-]*$",
+            "errorMessage": { "pattern": "must be an OpenCode permission key like bash or webfetch" }
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/glob" },
+            "uniqueItems": true,
+            "minItems": 1
+          }
+        }
+      }
+    }
+  }
+}

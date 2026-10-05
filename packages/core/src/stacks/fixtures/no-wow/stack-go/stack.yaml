@@ -1,0 +1,8 @@
+id: go
+markers:
+  - file: go.mod
+version_files: [go.mod, .tool-versions]
+lsp:
+  go:
+    command: [gopls]
+    extensions: [.go]

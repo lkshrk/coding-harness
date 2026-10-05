@@ -1,0 +1,101 @@
+# yaml-language-server: $schema=../packages/core/schema/config.layer.schema.json
+version: 1
+
+pipelines:
+  feature: [intake, discovery, design, decomposition, implementation, verification, integration, acceptance]
+  improvement: [intake, design, decomposition, implementation, verification, integration, acceptance]
+  bug: [intake, implementation, verification, integration]
+  chore: [intake, implementation, verification, integration]
+
+stages:
+  intake:
+    automatic: true
+    duplicate:
+      threshold: 0.9
+      max_candidates: 10
+      closed_within_days: 90
+  discovery:
+    automatic: false
+  design:
+    automatic: false
+    human_checkpoint: after
+  decomposition:
+    automatic: false
+    human_checkpoint: after
+  implementation:
+    automatic: true
+  verification:
+    automatic: true
+  integration:
+    automatic: true
+  acceptance:
+    automatic: true
+    human_checkpoint: after
+  release:
+    automatic: true
+
+# First matching rule wins.
+selection:
+  - when: { stage: intake }
+    agent: intake
+  - when: { stage: verification }
+    agent: reviewer
+  - when: { stage: acceptance }
+    agent: acceptor
+  - when: { stage: implementation, failure_class: implementation_defect }
+    agent: repairer
+  - when: { stage: implementation, failure_class: insufficient_context }
+    agent: explorer
+  - when: { stage: implementation, failure_class: [task_too_large, missing_dependency, architectural_conflict] }
+    agent: replanner
+  - when: { stage: implementation, issue_type: investigation }
+    agent: explorer
+  - when: { stage: implementation, issue_type: bug }
+    agent: fixer
+  - when: { stage: implementation, issue_type: refactor }
+    agent: refactorer
+  - when: { stage: implementation, issue_type: [migration, dependency-upgrade] }
+    agent: migrator
+  - when: { stage: implementation }
+    agent: implementer
+
+limits:
+  concurrency: 3
+  worker:
+    wall_clock: 45m
+    tokens: 2M
+    steps: 200
+  repair_rounds: 2
+  best_of: 2
+
+# OpenCode permission key → patterns denied in every rendered agent.
+policies:
+  deny:
+    bash:
+      - git push --force *
+      - git push --force-with-lease *
+      - git push -f *
+      - git push * --force
+      - git push * -f
+      - git filter-branch *
+      - git filter-repo *
+      - rm -rf /*
+      - rm -rf ~*
+      - rm -rf ..*
+      - gh pr merge *
+      - kubectl *
+      - helm *
+      - flux *
+
+sandbox:
+  driver: docker
+  resources:
+    cpus: 4
+    memory: 8g
+
+notifications:
+  macos: true
+  ntfy: null
+
+secrets:
+  rbw_profile: nightshift

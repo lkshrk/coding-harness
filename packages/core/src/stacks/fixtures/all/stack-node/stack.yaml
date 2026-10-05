@@ -1,0 +1,9 @@
+id: node
+markers:
+  - file: package-lock.json
+  - file: pnpm-lock.yaml
+version_files: [.nvmrc, .node-version, package.json#packageManager, package.json#engines.node]
+lsp:
+  typescript:
+    command: [typescript-language-server, --stdio]
+    extensions: [.ts]

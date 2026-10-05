@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../packages/core/schema/config.schema.json#/properties/profiles/additionalProperties
+# Cloud profile: Anthropic and OpenAI models served by the h-cloud LiteLLM gateway (subscription via
+# CLIProxyAPI). Tiers follow the gateway's own auto-router: haiku/luna < sonnet/terra < opus/sol < fable/astra.
+# Strongest model per role; one tier lower only where a role runs on every dispatch (selector).
+roles:
+  lead: claude-fable
+  planner: claude-fable
+  worker: claude-opus
+  explorer: claude-opus
+  reviewer: gpt-astra
+  acceptor: gpt-sol
+  classifier: gpt-sol
+  selector: claude-sonnet
+  intake: gpt-sol
+  judge: claude-sonnet
+  ingester: claude-opus
+models:
+  claude-fable: { model: claude-fable, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+  claude-opus: { model: claude-opus, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+  claude-sonnet: { model: claude-sonnet, family: anthropic, size_gb: 0, phases: [planning, implementation] }
+  gpt-astra: { model: gpt-astra, family: openai, size_gb: 0, phases: [planning, implementation] }
+  gpt-sol: { model: gpt-sol, family: openai, size_gb: 0, phases: [planning, implementation] }

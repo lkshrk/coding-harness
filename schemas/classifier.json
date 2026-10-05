@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["class", "evidence"],
+  "properties": {
+    "class": {
+      "enum": [
+        "environment",
+        "implementation_defect",
+        "insufficient_context",
+        "task_too_large",
+        "missing_dependency",
+        "architectural_conflict",
+        "capability_limit",
+        "unknown"
+      ],
+      "description": "the one failure class the evidence supports; unknown when none fits"
+    },
+    "evidence": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600,
+      "description": "the quoted line or fact that decided the class"
+    }
+  }
+}

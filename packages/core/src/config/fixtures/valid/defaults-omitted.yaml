@@ -1,0 +1,38 @@
+version: 1
+paths: { state: ~/s, cache: ~/c, vault: ~/v }
+gateway: { base_url: 'http://localhost:4000', api_key: env:KEY, worker_key: env:WORKER_KEY }
+linear:
+  auth: { mode: app, client_id: env:LINEAR_CLIENT_ID, client_secret: env:LINEAR_CLIENT_SECRET }
+  teams:
+    - key: AB
+      statuses: { triage: T, backlog: B, ready: R, running: Ru, review: Re, blocked: Bl, done: D, canceled: C }
+github:
+  accounts:
+    a: { token: rbw:gh }
+repositories:
+  r:
+    path: /r
+    checks: [{ name: c, run: 'true' }]
+projects:
+  - match: { team: AB, label: nightshift }
+    repositories: [r]
+    pipeline: p
+pipelines: { p: [s] }
+stages: { s: { automatic: true } }
+selection:
+  - when: { stage: s, issue_type: feature, failure_class: unknown, attempt: '==1' }
+    agent: a
+profiles:
+  active: p
+  memory_budget_gb: 1
+  p:
+    roles: { worker: w }
+    models: {}
+limits:
+  concurrency: 32
+  worker: { wall_clock: 30s, tokens: '1000', steps: 1 }
+  repair_rounds: 10
+  best_of: 8
+policies: { deny: {} }
+sandbox: { driver: docker }
+notifications: { ntfy: null }

@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "findings"],
+  "properties": {
+    "verdict": {
+      "enum": ["pass", "fail"],
+      "description": "fail exactly when findings hold at least one BLOCKER"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "file", "message", "evidence", "confidence"],
+        "properties": {
+          "severity": { "enum": ["BLOCKER", "SUGGESTION"] },
+          "file": { "type": "string", "minLength": 1, "description": "path as it appears in the diff" },
+          "lines": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*(-[1-9][0-9]*)?$",
+            "description": "line or range in the new file, e.g. 12 or 12-18"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600,
+            "description": "what is wrong and why it matters"
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "quoted changed line, gate output or a concrete failing input"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "how sure the finding is real"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "fail" } } },
+      "then": {
+        "properties": { "findings": { "contains": { "properties": { "severity": { "const": "BLOCKER" } } } } }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "pass" } } },
+      "then": {
+        "properties": { "findings": { "items": { "properties": { "severity": { "const": "SUGGESTION" } } } } }
+      }
+    }
+  ]
+}

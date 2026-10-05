@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=../packages/core/schema/config.layer.schema.json
+# Example user config; copy to ~/.config/nightshift/config.yaml (or $XDG_CONFIG_HOME/nightshift/config.yaml).
+# Secrets are references only: env:NAME or rbw:[folder/]item[#field] from nightshift's own rbw profile.
+
+paths:
+  state: ~/.local/state/nightshift
+  cache: ~/.cache/nightshift
+  vault: ~/knowledge
+
+gateway:
+  base_url: https://llm.example.com/v1
+  api_key: rbw:nightshift/litellm#master_key
+  worker_key: rbw:nightshift/litellm-worker
+  otel_endpoint: https://otel.example.com
+  phoenix_url: https://phoenix.example.com
+
+linear:
+  auth:
+    mode: app
+    client_id: rbw:nightshift/linear-app#client_id
+    client_secret: rbw:nightshift/linear-app#client_secret
+  act_on:
+    delegated: true
+    labels: [autopilot]
+  exclude_labels: [business]
+  teams:
+    - key: CIV
+      statuses:
+        blocked: Waiting
+
+github:
+  default: agent
+  accounts:
+    agent:
+      octo_sts:
+        url: https://sts.example.com
+        token_url: https://auth.example.com/application/o/token/
+        client_id: octo-sts
+        identity: nightshift-host
+        password: rbw:octo-sts#nightshift-host
+    personal:
+      token: env:GH_PERSONAL_TOKEN
+
+repositories:
+  omni:
+    path: ~/Dev/omni
+    base: main
+    checks:
+      - name: lint
+        run: bun run lint
+      - name: test
+        run: bun test
+        timeout: 20m
+    risk_paths: ['migrations/**', '.github/workflows/**']
+  litellm:
+    path: ~/Dev/litellm
+    github: personal
+    checks:
+      - name: test
+        run: make test
+
+projects:
+  - match:
+      team: FRG
+      project: Omni
+    repositories: [omni]
+    pipeline: feature
+  - match:
+      team: FRG
+      label: bug
+    repositories: [omni]
+    pipeline: bug
+
+profiles:
+  active: cloud
+  memory_budget_gb: 220
+
+notifications:
+  ntfy: https://ntfy.sh/your-topic

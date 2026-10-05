@@ -1,0 +1,109 @@
+# Each case patches valid/minimal.yaml: `set` assigns dotted paths (numeric segments index lists), `unset` deletes them.
+- { name: version 2, set: { version: 2 } }
+- { name: unknown top-level key, set: { repositoris: {} } }
+- { name: missing paths, unset: [paths] }
+- { name: relative path, set: { paths.state: state } }
+- { name: unknown paths key, set: { paths.logs: ~/logs } }
+- { name: raw gateway key, set: { gateway.api_key: sk-123 } }
+- { name: lowercase env ref, set: { gateway.api_key: env:lower } }
+- { name: gateway url scheme, set: { gateway.base_url: ftp://llm } }
+- { name: otel url, set: { gateway.otel_endpoint: otel:4318 } }
+- { name: app auth without secret, set: { linear.auth: { mode: app, client_id: env:ID } } }
+- { name: api_key auth with client id, set: { linear.auth: { mode: api_key, api_key: env:K, client_id: env:ID } } }
+- { name: unknown auth mode, set: { linear.auth: { mode: oauth, api_key: env:K } } }
+- { name: app scopes not strings, set: { linear.auth: { mode: app, client_id: env:A, client_secret: env:B, scopes: [1] } } }
+- { name: lowercase team key, set: { linear.teams.0.key: frg } }
+- { name: long team key, set: { linear.teams.0.key: ABCDEFGH } }
+- { name: unknown act_on key, set: { linear.act_on.assigned: true } }
+- { name: unknown status, set: { linear.teams.0.statuses.triaged: Triage } }
+- { name: empty status name, set: { linear.teams.0.statuses.done: '' } }
+- { name: duplicate exclude labels, set: { linear.exclude_labels: [business, business] } }
+- { name: empty exclude label, set: { linear.exclude_labels: [''] } }
+- { name: no github accounts, set: { github.accounts: {} } }
+- { name: account name not id, set: { github.accounts.Personal: { token: env:GH_X } } }
+- { name: raw github token, set: { github.accounts.personal.token: ghp_abc } }
+- { name: owners no longer exist, set: { github.accounts.personal.owners: [acme] } }
+- { name: account with neither token nor octo_sts, set: { github.accounts.personal: {} } }
+- { name: account with token and octo_sts, set: { github.accounts.personal.octo_sts: { url: https://sts.x, token_url: https://auth.x/token/, client_id: octo-sts, identity: ns, password: env:P } } }
+- { name: unknown octo_sts key, set: { github.accounts.personal: { octo_sts: { url: https://sts.x, token_url: https://auth.x/token/, client_id: octo-sts, identity: ns, password: env:P, scope: acme } } } }
+- { name: raw octo_sts password, set: { github.accounts.personal: { octo_sts: { url: https://sts.x, token_url: https://auth.x/token/, client_id: octo-sts, identity: ns, password: hunter2 } } } }
+- { name: octo_sts without identity, set: { github.accounts.personal: { octo_sts: { url: https://sts.x, token_url: https://auth.x/token/, client_id: octo-sts, password: env:P } } } }
+- { name: repository account not id, set: { repositories.omni.github: Personal } }
+- { name: no repositories, set: { repositories: {} } }
+- { name: repository name not id, set: { repositories.Omni: { path: /x, checks: [{ name: t, run: t }] } } }
+- { name: repository without checks, unset: [repositories.omni.checks] }
+- { name: empty checks, set: { repositories.omni.checks: [] } }
+- { name: check name not id, set: { repositories.omni.checks.0.name: Test } }
+- { name: empty check command, set: { repositories.omni.checks.0.run: '' } }
+- { name: check timeout without unit, set: { repositories.omni.checks.0.timeout: '15' } }
+- { name: check timeout zero, set: { repositories.omni.checks.0.timeout: 0m } }
+- { name: stacks keyword, set: { repositories.omni.stacks: manual } }
+- { name: empty stacks, set: { repositories.omni.stacks: [] } }
+- { name: duplicate stacks, set: { repositories.omni.stacks: [node, node] } }
+- { name: empty risk path, set: { repositories.omni.risk_paths: [''] } }
+- { name: macos_only string, set: { repositories.omni.macos_only: 'yes' } }
+- { name: unknown repository key, set: { repositories.omni.branch: main } }
+- { name: no projects, set: { projects: [] } }
+- { name: match project and label, set: { projects.0.match.label: nightshift } }
+- { name: match without target, unset: [projects.0.match.project] }
+- { name: match lowercase team, set: { projects.0.match.team: frg } }
+- { name: match without team, unset: [projects.0.match.team] }
+- { name: project without repositories, set: { projects.0.repositories: [] } }
+- { name: project duplicate repositories, set: { projects.0.repositories: [omni, omni] } }
+- { name: project without pipeline, unset: [projects.0.pipeline] }
+- { name: project profile not id, set: { projects.0.profile: Fast } }
+- { name: no pipelines, set: { pipelines: {} } }
+- { name: empty pipeline, set: { pipelines.feature: [] } }
+- { name: duplicate pipeline stage, set: { pipelines.feature: [implementation, implementation] } }
+- { name: pipeline name not id, set: { pipelines.Feature: [implementation] } }
+- { name: stage without automatic, set: { stages.implementation: { human_checkpoint: none } } }
+- { name: unknown checkpoint, set: { stages.implementation.human_checkpoint: during } }
+- { name: no selection rules, set: { selection: [] } }
+- { name: empty when, set: { selection.0.when: {} } }
+- { name: unknown when key, set: { selection.0.when.priority: 1 } }
+- { name: unknown failure class, set: { selection.0.when.failure_class: flaky } }
+- { name: empty failure class list, set: { selection.0.when.failure_class: [] } }
+- { name: attempt without operator, set: { selection.0.when.attempt: '2' } }
+- { name: attempt zero, set: { selection.0.when.attempt: '>=0' } }
+- { name: empty stage list, set: { selection.0.when.stage: [] } }
+- { name: agent not id, set: { selection.0.agent: Implementer } }
+- { name: missing memory budget, unset: [profiles.memory_budget_gb] }
+- { name: zero memory budget, set: { profiles.memory_budget_gb: 0 } }
+- { name: fractional memory budget, set: { profiles.memory_budget_gb: 1.5 } }
+- { name: profile name not id, set: { profiles.Fast: { roles: { worker: ns/worker }, models: {} } } }
+- { name: active not id, set: { profiles.active: Default } }
+- { name: empty roles, set: { profiles.default.roles: {} } }
+- { name: role name not id, set: { profiles.default.roles.Worker: ns/worker } }
+- { name: alias uppercase, set: { profiles.default.roles.worker: NS/Worker } }
+- { name: model alias key uppercase, set: { profiles.default.models.NS/x: { model: m, family: f, size_gb: 1, phases: [planning] } } }
+- { name: model without phases, unset: [profiles.default.models.ns/worker.phases] }
+- { name: unknown phase, set: { profiles.default.models.ns/worker.phases: [training] } }
+- { name: empty phases, set: { profiles.default.models.ns/worker.phases: [] } }
+- { name: negative size, set: { profiles.default.models.ns/worker.size_gb: -1 } }
+- { name: empty model, set: { profiles.default.models.ns/worker.model: '' } }
+- { name: unknown profile key, set: { profiles.default.temperature: 0.2 } }
+- { name: zero concurrency, set: { limits.concurrency: 0 } }
+- { name: concurrency above 32, set: { limits.concurrency: 33 } }
+- { name: token unit, set: { limits.worker.tokens: 2G } }
+- { name: numeric tokens, set: { limits.worker.tokens: 2000 } }
+- { name: zero wall clock, set: { limits.worker.wall_clock: 0m } }
+- { name: zero steps, set: { limits.worker.steps: 0 } }
+- { name: repair rounds above 10, set: { limits.repair_rounds: 11 } }
+- { name: best of above 8, set: { limits.best_of: 9 } }
+- { name: missing limits worker, unset: [limits.worker] }
+- { name: missing policies, unset: [policies] }
+- { name: missing policies deny, unset: [policies.deny] }
+- { name: unknown policies key, set: { policies.allow: {} } }
+- { name: deny tool key uppercase, set: { policies.deny.Bash: ['rm -rf /*'] } }
+- { name: deny tool key wildcard only, set: { policies.deny.*: ['x'] } }
+- { name: empty deny list, set: { policies.deny.bash: [] } }
+- { name: empty deny pattern, set: { policies.deny.bash: [''] } }
+- { name: duplicate deny patterns, set: { policies.deny.bash: [x, x] } }
+- { name: deny patterns not a list, set: { policies.deny.bash: 'git push --force *' } }
+- { name: unknown driver, set: { sandbox.driver: podman } }
+- { name: memory unit uppercase, set: { sandbox.resources: { memory: 8G } } }
+- { name: zero cpus, set: { sandbox.resources: { cpus: 0 } } }
+- { name: ntfy not url, set: { notifications.ntfy: ntfy.sh/topic } }
+- { name: macos not boolean, set: { notifications.macos: 'on' } }
+- { name: empty rbw profile, set: { secrets.rbw_profile: '' } }
+- { name: unknown secrets key, set: { secrets.vault: x } }

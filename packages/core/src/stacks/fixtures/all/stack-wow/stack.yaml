@@ -1,0 +1,8 @@
+id: wow
+markers:
+  - glob: "**/*.toc"
+    contains: "^## Interface"
+lsp:
+  lua:
+    command: [lua-language-server]
+    extensions: [.lua]

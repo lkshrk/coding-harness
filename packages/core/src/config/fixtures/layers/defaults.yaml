@@ -1,0 +1,42 @@
+version: 1
+pipelines:
+  feature: [intake, design, implementation, verification]
+  bug: [intake, implementation, verification]
+stages:
+  intake:
+    automatic: true
+  design:
+    automatic: false
+  implementation:
+    automatic: true
+  verification:
+    automatic: true
+selection:
+  - when:
+      stage: intake
+    agent: intake
+  - when:
+      stage: implementation
+      failure_class: implementation_defect
+    agent: repairer
+  - when:
+      stage: implementation
+    agent: implementer
+  - when:
+      stage: verification
+    agent: reviewer
+limits:
+  concurrency: 3
+  worker:
+    wall_clock: 45m
+    tokens: 2M
+    steps: 200
+  repair_rounds: 2
+  best_of: 2
+policies:
+  deny:
+    bash: ['git push --force *', 'gh pr merge *']
+sandbox:
+  driver: docker
+notifications:
+  macos: true

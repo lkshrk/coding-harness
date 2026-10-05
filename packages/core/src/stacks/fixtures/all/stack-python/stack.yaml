@@ -1,0 +1,8 @@
+id: python
+markers:
+  - file: pyproject.toml
+version_files: [.python-version, pyproject.toml#project.requires-python]
+lsp:
+  python:
+    command: [basedpyright-langserver, --stdio]
+    extensions: [.py]

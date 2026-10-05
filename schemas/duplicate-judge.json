@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "confidence", "shared_outcome"],
+  "properties": {
+    "verdict": {
+      "enum": ["duplicate", "related", "unrelated"],
+      "description": "duplicate: both ask for the same outcome; related: same area, different outcome; unrelated: neither"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "probability that the verdict is right"
+    },
+    "shared_outcome": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 300,
+      "description": "the outcome both issues ask for, in one sentence; null unless the verdict is duplicate"
+    }
+  }
+}

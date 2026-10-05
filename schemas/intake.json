@@ -1,0 +1,61 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "type", "project", "priority", "duplicate_of", "group_with", "missing_info"],
+  "properties": {
+    "decision": {
+      "enum": ["accept", "duplicate", "needs_info", "propose_decline"],
+      "description": "accept: ready for the project's pipeline; duplicate: same request as duplicate_of; needs_info: missing_info must be answered first; propose_decline: the user decides, nothing is cancelled"
+    },
+    "type": {
+      "enum": [
+        "feature",
+        "improvement",
+        "bug",
+        "chore",
+        "investigation",
+        "refactor",
+        "migration",
+        "dependency-upgrade"
+      ]
+    },
+    "project": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "project name exactly as listed in PROJECTS; null when none fits"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Linear priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low"
+    },
+    "duplicate_of": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Z][A-Z0-9]*-[1-9][0-9]*$",
+      "description": "identifier from SIMILAR this issue duplicates"
+    },
+    "group_with": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9]*-[1-9][0-9]*$" },
+      "description": "identifiers from SIMILAR about the same area but not the same request"
+    },
+    "missing_info": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 },
+      "description": "questions the reporter must answer, one per entry"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "decision": { "const": "duplicate" } } },
+      "then": { "properties": { "duplicate_of": { "type": "string" } } },
+      "else": { "properties": { "duplicate_of": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "decision": { "const": "needs_info" } } },
+      "then": { "properties": { "missing_info": { "minItems": 1 } } }
+    }
+  ]
+}
