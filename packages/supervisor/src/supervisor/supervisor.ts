@@ -1,96 +1,49 @@
 import {
   type Config,
   formatError,
-  GatewayError,
   type LoadResult,
   NIGHTSHIFT_VERSION,
-  profileEntries,
   validateAgainstWorkspace,
 } from '@nightshift/core'
-import { ControlError } from '../control/socket/errors'
 import { changedPaths, restartRequired } from '../policy/config'
 import { planDispatch } from '../policy/ready'
 import { RetryQueue } from '../policy/retry'
-import { selectAgent } from '../policy/selection'
-import {
-  decide,
-  IMPLEMENTATION,
-  INTEGRATION,
-  type IssueView,
-  lifecycleOf,
-  nextStage,
-  VERIFICATION,
-  viewIssue,
-} from '../policy/stages'
-import type {
-  Awaiting,
-  CiState,
-  Classification,
-  Classifier,
-  ExecutorStart,
-  GateResult,
-  IssueSnapshot,
-  SandboxHandle,
-} from '../ports'
+import { decide, type IssueView, VERIFICATION, viewIssue } from '../policy/stages'
+import type { Awaiting, GateResult, IssueSnapshot } from '../ports'
 import type { By } from '../ports/control'
 import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
-import { TaskTooLargeError } from '../stages/context'
-import { type GateEventData, gateComment, gateEventData } from '../stages/gates/report'
-import { blockerSummary, type ReviewOutcome, reviewComment } from '../stages/gates/review'
-import { CiFailureStore, type PullRequestRecord, PullRequestStore } from '../stages/integration/records'
-import { type Event, EventLog, EventValidationError } from '../state/events'
+import type { GateEventData } from '../stages/gates/report'
+import type { ReviewOutcome } from '../stages/gates/review'
+import { type PullRequestRecord, PullRequestStore } from '../stages/integration/records'
+import { EventLog } from '../state/events'
 import { LeaseStore } from '../state/leases'
-import { isTerminal, type Run, RunStore } from '../state/runs'
+import { type Run, RunStore } from '../state/runs'
 import { readStatus, type SupervisorStatus, type Waiting } from '../state/status'
-import { activeRun, isIssueRef, resolveRun } from '../state/targets'
+import { resolveRun } from '../state/targets'
 import { createUlid } from '../state/ulid'
+import { Dispatcher } from './dispatch'
+import { type Modules, runFlow } from './flow'
 import { Holds } from './holds'
 import { Ingest } from './ingest'
 import { Leases } from './leases'
 import { LinearSync } from './linear-sync'
+import { PullRequestWatch } from './pr-watch'
 import { Questions } from './questions'
-import { type FinishLike, INGEST_AGENT, type SupervisorDeps, SupervisorRuntime } from './runtime'
+import { Remediation } from './remediation'
+import { RunLifecycle } from './run-lifecycle'
+import { type RecoveryReport, type SupervisorDeps, SupervisorRuntime } from './runtime'
+import { Verification } from './verification'
 
 export type { By } from '../ports/control'
-export type { SupervisorDeps } from './runtime'
-
-type DispatchOverride = { agent?: string; profile?: string; by?: By; continueFrom?: Run }
+export type { SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
+export { fallbackClassifier } from './remediation'
+export type { RecoveryReport, SupervisorDeps } from './runtime'
 
 const LEASE_TTL_MS = 180_000
 const RETENTION_MS = 90 * 24 * 3600_000
-const ENVIRONMENT_STREAK_PAUSE = 3
 const RBW_LOCKED = 'rbw locked'
-const ENVIRONMENT_REASONS = ['sandbox_error', 'gateway_error', 'supervisor_restart']
-const NO_FINISH_REASONS = ['step_cap', 'time_cap', 'token_cap', 'no_finish']
-const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed']
-
-const STAGE_FAILURE_LIMIT = 3
-
-const TASK_TOO_LARGE_CLASS: Classification = { class: 'task_too_large', action: 'split' }
-
-export const fallbackClassifier: Classifier = {
-  async classify(f) {
-    if (ENVIRONMENT_REASONS.includes(f.reason)) return { class: 'environment', action: 'retry_same' }
-    if (CHECKED_REASONS.includes(f.reason))
-      return { class: 'implementation_defect', action: 'retry_same', evidence: f.detail ?? f.reason }
-    return { class: 'unknown', action: 'escalate_user', fallback: true }
-  },
-}
 
 export type TickReport = { dispatched: string[]; unblocked: string[]; stopped: string[]; waiting: Waiting[] }
-
-export type RecoveryReport = {
-  reattached: string[]
-  resumed: string[]
-  failed: string[]
-  stopped: string[]
-  answered: string[]
-  lost: string[]
-  orphanSandboxes: string[]
-  orphanOutboxes: string[]
-}
-
-export type { SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 
 export class Supervisor {
   readonly log: EventLog
@@ -103,20 +56,11 @@ export class Supervisor {
   private readonly now: () => Date
   private readonly retry: RetryQueue
   private readonly cache = new Map<string, IssueSnapshot>()
-  private readonly stalls = new Map<string, number>()
-  private readonly roleInFlight = new Set<string>()
-  private readonly roleFailures = new Map<string, number>()
-  private readonly reviewRefused = new Set<string>()
   private readonly steps = new Map<string, Promise<void>>()
   private paused = false
   private stopped = false
-  private environmentStreak = 0
   private readonly rt: SupervisorRuntime
-  private readonly linearSync: LinearSync
-  private readonly holds: Holds
-  private readonly leasing: Leases
-  private readonly questions: Questions
-  private readonly ingest: Ingest
+  private readonly m: Modules
 
   constructor(deps: SupervisorDeps) {
     this.d = deps
@@ -133,7 +77,7 @@ export class Supervisor {
     })
     this.retry = new RetryQueue(deps.retry ?? { baseMs: 30_000, maxMs: 600_000 })
     this.pullRequests = new PullRequestStore(deps.db)
-    this.rt = new SupervisorRuntime(
+    const rt = new SupervisorRuntime(
       deps,
       () => this.cfg,
       this.log,
@@ -142,27 +86,28 @@ export class Supervisor {
       this.cache,
       this.now,
     )
-    this.holds = new Holds(this.rt, { writeStatus: (id, change) => this.linearSync.writeStatus(id, change) })
-    this.linearSync = new LinearSync(this.rt, {
-      coveredSet: () => this.holds.coveredSet(),
-      uncover: (issue) => this.holds.uncover(issue),
-      viewOptions: (issue) => this.holds.viewOptions(issue),
-      stopRun: (runId, reason) => this.stopRun(runId, reason),
+    const flow = runFlow({
+      stopped: () => this.stopped,
+      paused: () => this.paused,
+      pause: (reason, by) => this.pause(reason, by),
+      schedule: (run) => this.schedule(run),
+      gatewayReachable: (reachable, reason) => this.gatewayReachable(reachable, reason),
+      resolveRun: (target) => this.resolveRun(target),
+      modules: () => this.m,
     })
-    this.leasing = new Leases(this.rt, this.leases, this.instanceId, {
-      recoverRun: (run) => this.recoverRun(run, { reattached: [], resumed: [], failed: [], stopped: [] }),
-    })
-    this.questions = new Questions(this.rt, {
-      requireActive: (target) => this.requireActive(target),
-      awaiting: (issue) => this.holds.awaiting(issue),
-      writeStatus: (id, change) => this.linearSync.writeStatus(id, change),
-      refresh: (id) => this.linearSync.refresh(id),
-    })
-    this.ingest = new Ingest(this.rt, {
-      profileFor: (view) => this.profileFor(view),
-      end: (runId, to, cause) => this.end(runId, to, cause),
-      forgetStalls: (runId) => this.stalls.delete(runId),
-    })
+    this.rt = rt
+    this.m = {
+      holds: new Holds(rt, flow),
+      linearSync: new LinearSync(rt, flow),
+      leasing: new Leases(rt, this.leases, this.instanceId, flow),
+      questions: new Questions(rt, flow),
+      ingest: new Ingest(rt, flow),
+      lifecycle: new RunLifecycle(rt, flow),
+      verification: new Verification(rt, flow),
+      prWatch: new PullRequestWatch(rt, flow),
+      dispatcher: new Dispatcher(rt, this.leases, this.retry, flow),
+      remediation: new Remediation(rt, this.retry, flow),
+    }
   }
 
   get config(): Config {
@@ -180,8 +125,8 @@ export class Supervisor {
     this.paused = this.rt.meta('dispatch') === 'paused'
     this.retain()
     this.log.append({ type: 'SUPERVISOR_STARTED', data: { version: NIGHTSHIFT_VERSION } })
-    await this.linearSync.sync()
-    const report = await this.recover()
+    await this.m.linearSync.sync()
+    const report = await this.m.lifecycle.recover()
     return report
   }
 
@@ -190,11 +135,6 @@ export class Supervisor {
     this.stopped = true
     this.d.executor.detach?.()
     this.log.append({ type: 'SUPERVISOR_STOPPED', data: { reason } })
-  }
-
-  private late(runId: string, what: string): boolean {
-    if (this.stopped) console.error(`run ${runId}: ${what} after supervisor stop ignored`)
-    return this.stopped
   }
 
   async idle(): Promise<void> {
@@ -210,7 +150,9 @@ export class Supervisor {
     if (this.steps.has(key)) return
     const job = this.d.executor
       .runStep(run)
-      .catch((e: unknown) => this.workerFailed(run.id, 'crash', `${run.state}: ${(e as Error).message}`))
+      .catch((e: unknown) =>
+        this.m.lifecycle.workerFailed(run.id, 'crash', `${run.state}: ${(e as Error).message}`),
+      )
       .catch(() => undefined)
       .finally(() => this.steps.delete(key))
     this.steps.set(key, job)
@@ -218,30 +160,30 @@ export class Supervisor {
 
   async tick(): Promise<TickReport> {
     const report: TickReport = { dispatched: [], unblocked: [], stopped: [], waiting: [] }
-    this.leasing.renewLeases()
-    for (const lease of this.leases.expired(this.now())) await this.leasing.expireLease(lease)
-    await this.linearSync.sync()
-    await this.questions.checkQuestions()
-    await this.watchPullRequests()
+    this.m.leasing.renewLeases()
+    for (const lease of this.leases.expired(this.now())) await this.m.leasing.expireLease(lease)
+    await this.m.linearSync.sync()
+    await this.m.questions.checkQuestions()
+    await this.m.prWatch.watchPullRequests()
     const views = [...this.cache.values()].flatMap(
-      (i) => viewIssue(i, this.cfg, this.holds.viewOptions(i.identifier)) ?? [],
+      (i) => viewIssue(i, this.cfg, this.m.holds.viewOptions(i.identifier)) ?? [],
     )
-    report.stopped = await this.linearSync.enforceLinear()
-    await this.launchQueued()
+    report.stopped = await this.m.linearSync.enforceLinear()
+    await this.m.dispatcher.launchQueued()
 
     const active = new Set(this.runs.active().map((r) => r.issue))
-    const held = new Set(this.holds.held())
+    const held = new Set(this.m.holds.held())
     const candidates: IssueView[] = []
     for (const view of views) {
       const id = view.snapshot.identifier
       const decision = decide(view, this.cfg, { agentKind: this.d.agentKind })
-      if (decision.kind === 'enter') await this.enterStage(view, decision.stage, decision.from)
-      else if (decision.kind === 'advance') await this.advance(view)
-      else if (decision.kind === 'release') this.holds.setAwaiting(id, null)
+      if (decision.kind === 'enter') await this.m.verification.enterStage(view, decision.stage, decision.from)
+      else if (decision.kind === 'advance') await this.m.verification.advance(view)
+      else if (decision.kind === 'release') this.m.holds.setAwaiting(id, null)
       else if (decision.kind === 'role' && view.stage === VERIFICATION) {
         const idle = view.lifecycle === 'ready' || view.lifecycle === 'backlog'
-        if (!active.has(id) && idle) await this.backToImplementation(id)
-      } else if (decision.kind === 'role') this.runRole(view, decision.stage, decision.agent)
+        if (!active.has(id) && idle) await this.m.verification.backToImplementation(id)
+      } else if (decision.kind === 'role') this.m.dispatcher.runRole(view, decision.stage, decision.agent)
       else if (decision.kind === 'dispatch' && !active.has(id)) {
         const retry = this.retry.has(id) && !this.retry.due(this.now().getTime()).some((e) => e.issue === id)
         if (held.has(id)) report.waiting.push({ identifier: id, reason: 'held' })
@@ -262,17 +204,17 @@ export class Supervisor {
     for (const { view, by } of plan.unblocked) {
       const id = view.snapshot.identifier
       if (by.length) this.log.append({ type: 'DEPENDENCY_UNBLOCKED', issue: id, data: { by } })
-      await this.linearSync.writeStatus(id, { status: 'ready' })
+      await this.m.linearSync.writeStatus(id, { status: 'ready' })
       report.unblocked.push(id)
     }
     for (const view of plan.dispatch) {
-      if (await this.dispatch(view)) report.dispatched.push(view.snapshot.identifier)
+      if (await this.m.dispatcher.dispatch(view)) report.dispatched.push(view.snapshot.identifier)
     }
     const reason = (w: Waiting) =>
       this.paused && w.reason === 'concurrency limit reached' ? { ...w, reason: 'dispatch paused' } : w
     report.waiting.push(...plan.waiting.map(reason))
     this.rt.setMeta('ready_queue', JSON.stringify(report.waiting))
-    this.linearSync.snapshotIssues(report.waiting)
+    this.m.linearSync.snapshotIssues(report.waiting)
     return report
   }
 
@@ -290,7 +232,7 @@ export class Supervisor {
   resume(reason: string, by: By = 'supervisor'): void {
     if (!this.paused) return
     this.paused = false
-    this.environmentStreak = 0
+    this.m.remediation.resetStreak()
     this.rt.setMeta('dispatch', 'running')
     this.rt.setMeta('dispatch_reason', '')
     this.log.append({ type: 'DISPATCH_RESUMED', data: { reason, by } })
@@ -317,52 +259,6 @@ export class Supervisor {
     } else if (!locked && lockPaused) this.resume('rbw unlocked')
   }
 
-  covered(): string[] {
-    return this.holds.covered()
-  }
-
-  cover(issue: string, by: By = 'supervisor'): void {
-    this.holds.cover(issue, by)
-  }
-
-  uncover(issue: string, by: By = 'supervisor'): void {
-    this.holds.uncover(issue, by)
-  }
-
-  awaiting(issue: string): Awaiting | null {
-    return this.holds.awaiting(issue)
-  }
-
-  held(): string[] {
-    return this.holds.held()
-  }
-
-  hold(issue: string, by: By = 'supervisor'): void {
-    this.holds.hold(issue, by)
-  }
-
-  unhold(issue: string, by: By = 'supervisor'): void {
-    this.holds.unhold(issue, by)
-  }
-
-  gateway(): 'ok' | 'unavailable' {
-    const last = this.log.since(null, { types: ['GATEWAY_UNAVAILABLE', 'GATEWAY_RECOVERED'] }).at(-1)
-    return last?.type === 'GATEWAY_UNAVAILABLE' ? 'unavailable' : 'ok'
-  }
-
-  gatewayReachable(reachable: boolean, reason: string): void {
-    if ((this.gateway() === 'ok') === reachable) return
-    this.log.append({ type: reachable ? 'GATEWAY_RECOVERED' : 'GATEWAY_UNAVAILABLE', data: { reason } })
-  }
-
-  status(): SupervisorStatus {
-    return readStatus(this.d.db)
-  }
-
-  escalationCount(issue: string): number {
-    return this.runs.forIssue(issue).filter((r) => r.failure !== null && r.failure !== 'environment').length
-  }
-
   async reloadConfig(result: LoadResult): Promise<void> {
     if (!result.ok) {
       const errors = result.errors.map(formatError)
@@ -383,874 +279,71 @@ export class Supervisor {
     this.log.append({ type: 'CONFIG_RELOADED', data: { changed, restart_required: restart } })
     if (restart) this.rt.setMeta('restart_required', 'true')
     this.rt.setMeta('active_profile', this.cfg.profiles.active)
-    for (const id of [...this.reviewRefused]) {
-      this.reviewRefused.delete(id)
-      const run = this.runs.get(id)
-      if (run?.state === 'reviewing') this.schedule(run)
-    }
+    this.m.verification.rescheduleRefused()
   }
 
-  async completeStage(identifier: string): Promise<void> {
-    const issue = await this.d.linear.issue(identifier)
-    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(issue.identifier))
-    if (!view?.stage) return
-    const def = this.cfg.stages[view.stage]
-    if (def?.human_checkpoint === 'after' && view.awaiting?.kind !== 'after') {
-      await this.holds.holdForYou(identifier, { kind: 'after', stage: view.stage })
-      await this.rt.notify(`${view.stage} finished and waits for your check`, identifier, {
-        kind: 'blocked',
-        action: `Check the result, then \`ns resume ${identifier}\` to continue`,
-      })
-      return
-    }
-    await this.advance(view)
+  gateway(): 'ok' | 'unavailable' {
+    const last = this.log.since(null, { types: ['GATEWAY_UNAVAILABLE', 'GATEWAY_RECOVERED'] }).at(-1)
+    return last?.type === 'GATEWAY_UNAVAILABLE' ? 'unavailable' : 'ok'
   }
 
-  async sandboxCreated(runId: string, info: SandboxCreatedInfo): Promise<void> {
-    if (this.late(runId, 'sandbox created')) return
-    this.log.append({ type: 'SANDBOX_CREATED', run: runId, data: info })
+  gatewayReachable(reachable: boolean, reason: string): void {
+    if ((this.gateway() === 'ok') === reachable) return
+    this.log.append({ type: reachable ? 'GATEWAY_RECOVERED' : 'GATEWAY_UNAVAILABLE', data: { reason } })
   }
 
-  async workerProgress(runId: string, progress: Progress): Promise<void> {
-    if (this.late(runId, 'progress')) return
-    this.log.append({ type: 'WORKER_PROGRESS', run: runId, data: progress })
-  }
-
-  async workerStarted(runId: string, info: WorkerStartedInfo): Promise<void> {
-    if (this.late(runId, 'start')) return
-    const run = this.runs.update(runId, { sandbox: info.sandbox, session: info.session })
-    const event = this.log.append({
-      type: 'WORKER_STARTED',
-      issue: run.issue,
-      run: run.id,
-      data: { sandbox: info.sandbox, session: info.session, ...(info.attach ? { attach: info.attach } : {}) },
-    })
-    this.runs.transition(run.id, 'running', event)
-    this.gatewayReachable(true, `worker started for run ${run.id}`)
-    if (info.attach) {
-      await this.rt.postOnce(
-        run.issue,
-        event.id,
-        `Worker \`${run.agent}\` started (attempt ${run.attempt}). Attach: \`${info.attach}\``,
-      )
-    }
-  }
-
-  async workerStalled(runId: string, signal: string, detail?: string): Promise<void> {
-    if (this.late(runId, `stall ${signal}`)) return
-    const run = this.rt.requireRun(runId)
-    if (isTerminal(run.state)) return
-    this.log.append({
-      type: 'WORKER_STALLED',
-      issue: run.issue,
-      run: run.id,
-      data: { signal, ...(detail ? { detail } : {}) },
-    })
-    const count = (this.stalls.get(runId) ?? 0) + 1
-    this.stalls.set(runId, count)
-    if (count === 1) {
-      await this.d.executor.nudge(
-        run,
-        `nightshift: no progress detected (${signal}); continue or call finish`,
-      )
-      return
-    }
-    await this.d.executor.stop(run, `stalled: ${signal}`)
-    await this.workerFailed(runId, 'stopped', `stalled: ${signal}`)
-  }
-
-  async workerFinished(runId: string, payload: unknown): Promise<void> {
-    if (this.late(runId, 'finish')) return
-    const run = this.rt.requireRun(runId)
-    if (isTerminal(run.state)) return
-    let event: Event
-    try {
-      event = this.log.append({
-        type: 'WORKER_FINISHED',
-        issue: run.issue,
-        run: run.id,
-        data: payload as Record<string, unknown>,
-      })
-    } catch (e) {
-      if (!(e instanceof EventValidationError)) throw e
-      await this.workerFailed(runId, 'no_finish', e.errors.join('; '))
-      return
-    }
-    this.runs.update(runId, { finish: payload })
-    const finish = payload as FinishLike
-    if (run.agent === INGEST_AGENT) {
-      await this.ingest.ingestFinished(run, event, finish)
-      return
-    }
-    if (finish.status === 'DONE' || finish.status === 'DONE_WITH_CONCERNS') {
-      const gating = this.runs.transition(runId, 'gating', event)
-      await this.enterVerification(run.issue)
-      this.schedule(gating)
-      return
-    }
-    await this.preserveHead(runId)
-    await this.end(runId, 'failed', event)
-    this.leasing.releaseLease(run.issue)
-    if (finish.status === 'NEEDS_CONTEXT') {
-      await this.questions.askQuestion(run, event, finish.blocker ?? {})
-      return
-    }
-    await this.remediate(this.rt.requireRun(runId), 'blocked', finish.blocker?.reason)
-  }
-
-  async workerFailed(runId: string, reason: string, detail?: string): Promise<void> {
-    if (this.late(runId, `failure ${reason}`)) return
-    const run = this.rt.requireRun(runId)
-    if (isTerminal(run.state)) return
-    if (reason === 'gateway_error') this.gatewayReachable(false, detail ?? reason)
-    if (run.agent === INGEST_AGENT) {
-      await this.ingest.ingestRunFailed(runId, detail ? `${reason}: ${detail}` : reason)
-      return
-    }
-    const event = this.log.append({
-      type: NO_FINISH_REASONS.includes(reason) ? 'WORKER_NO_FINISH' : 'WORKER_FAILED',
-      issue: run.issue,
-      run: run.id,
-      data: { reason, ...(detail ? { detail } : {}) },
-    })
-    await this.preserveHead(runId)
-    await this.end(runId, 'failed', event)
-    this.stalls.delete(runId)
-    this.leasing.releaseLease(run.issue)
-    await this.remediate(this.rt.requireRun(runId), reason, detail)
-  }
-
-  async headImported(runId: string, headSha: string): Promise<void> {
-    const run = this.runs.update(runId, { headSha })
-    await this.destroySandbox(run)
-    this.runs.update(runId, { sandbox: null })
-  }
-
-  async gatesFinished(runId: string, results: GateResult[]): Promise<void> {
-    const run = this.rt.requireRun(runId)
-    if (run.state !== 'gating') return
-    let last: Event | undefined
-    for (const r of results) {
-      last = this.log.append({
-        type: r.passed ? 'GATE_PASSED' : 'GATE_FAILED',
-        issue: run.issue,
-        run: run.id,
-        data: gateEventData(r),
-      })
-    }
-    const failed = results.find((r) => !r.passed)
-    if (!last) {
-      await this.workerFailed(runId, 'crash', 'gate runner returned no results')
-      return
-    }
-    if (!failed) {
-      const reviewing = this.runs.transition(runId, 'reviewing', last)
-      this.schedule(reviewing)
-      return
-    }
-    await this.end(runId, 'failed', last)
-    this.leasing.releaseLease(run.issue)
-    await this.rt.postOnce(run.issue, last.id, gateComment(failed))
-    await this.remediate(
-      this.rt.requireRun(runId),
-      'gate_failed',
-      `${failed.check} exited ${failed.result.exitCode}${failed.result.timedOut ? ' (timed out)' : ''}`,
-    )
-  }
-
-  gateResults(runId: string): GateEventData[] {
-    return this.log
-      .since(null, { run: runId, types: ['GATE_PASSED'] })
-      .map((e) => e.data as unknown as GateEventData)
-  }
-
-  async reviewFinished(runId: string, outcome: ReviewOutcome): Promise<void> {
-    const run = this.rt.requireRun(runId)
-    if (run.state !== 'reviewing') return
-    if (outcome.kind === 'refused') {
-      this.reviewRefused.add(runId)
-      this.log.append({ type: 'CONFIG_REJECTED', data: { errors: [outcome.error] } })
-      await this.rt.notify(`${run.issue}: review refused: ${outcome.error}`, run.issue)
-      return
-    }
-    if (outcome.kind === 'error') {
-      await this.workerFailed(runId, outcome.reason, outcome.detail)
-      return
-    }
-    if (outcome.kind === 'unreviewed') {
-      const event = this.log.append({
-        type: outcome.reason === 'invalid_output' ? 'SINGLE_CALL_INVALID' : 'INPUT_OVER_BUDGET',
-        issue: run.issue,
-        run: run.id,
-        data: {
-          agent: 'reviewer',
-          model: outcome.model,
-          ...(outcome.errors ? { errors: outcome.errors } : {}),
-          ...(outcome.tokens !== undefined ? { tokens: outcome.tokens } : {}),
-          ...(outcome.budget !== undefined ? { budget: outcome.budget } : {}),
-        },
-      })
-      const why =
-        outcome.reason === 'invalid_output'
-          ? 'the reviewer returned invalid output twice'
-          : `the review input is over the reviewer budget (${outcome.detail})`
-      this.forceManual(run.issue, why)
-      await this.rt.postOnce(
-        run.issue,
-        event.id,
-        `This change is unreviewed: ${why}. Merge mode for this issue is forced to manual.`,
-      )
-      await this.reviewPassed(runId, event)
-      return
-    }
-    const { review, model } = outcome
-    const event = this.log.append({
-      type: 'REVIEW_RECEIVED',
-      issue: run.issue,
-      run: run.id,
-      data: { verdict: review.verdict, model, findings: review.findings },
-    })
-    await this.rt.postOnce(run.issue, event.id, reviewComment(review, model))
-    if (review.verdict === 'pass') {
-      await this.reviewPassed(runId, event)
-      return
-    }
-    await this.end(runId, 'failed', event)
-    this.leasing.releaseLease(run.issue)
-    await this.remediate(this.rt.requireRun(runId), 'review_failed', blockerSummary(review))
-  }
-
-  async pullRequestOpened(record: PullRequestRecord, title: string): Promise<void> {
-    this.pullRequests.put(record)
-    const logged = this.log
-      .since(null, { issue: record.issue, types: ['PR_CREATED'] })
-      .some((e) => e.data.url === record.url)
-    if (!logged) {
-      this.log.append({
-        type: 'PR_CREATED',
-        issue: record.issue,
-        run: record.run,
-        data: {
-          url: record.url,
-          branch: record.branch,
-          account: record.account,
-          mode: record.mode,
-          ...(record.title ? { title: record.title } : {}),
-          ...(record.body ? { body: record.body } : {}),
-        },
-      })
-    }
-    await this.d.linear.attachLink(record.issue, record.url, `PR #${record.number}: ${title}`)
-    await this.linearSync.writeStatus(record.issue, { status: 'review' })
-    if (!logged) {
-      await this.rt.notify(`PR #${record.number} ready for review`, record.issue, {
-        kind: 'pr',
-        url: record.url,
-        context: this.runContext(record.run),
-        action: `Review and merge PR #${record.number}${this.forcedManual(record.issue) ? ' (unreviewed, check carefully)' : ''}`,
-      })
-    }
-  }
-
-  private async watchPullRequests(): Promise<void> {
-    const host = this.d.gitHost
-    if (!host) return
-    for (const pr of this.pullRequests.all()) {
-      const issue = this.cache.get(pr.issue)
-      const lifecycle = issue ? lifecycleOf(this.cfg, issue.team, issue.status) : null
-      if (lifecycle === 'canceled') {
-        this.pullRequests.remove(pr.issue)
-        continue
-      }
-      try {
-        const state = await host.state(pr)
-        // Linear's GitHub automation can mark the issue Done before nightshift sees the merge.
-        if (lifecycle === 'done' && state.state !== 'merged') this.pullRequests.remove(pr.issue)
-        else if (state.state === 'merged') await this.pullRequestMerged(pr)
-        else if (state.state === 'closed') await this.pullRequestClosed(pr)
-        else if (pr.ci === 'pending') await this.checkCi(pr, await host.ci(pr))
-      } catch (e) {
-        console.error(`watch ${pr.url} (${pr.issue}): ${(e as Error).message}`)
-      }
-    }
-  }
-
-  private async checkCi(pr: PullRequestRecord, ci: CiState): Promise<void> {
-    if (ci.state === 'pending') return
-    this.pullRequests.put({ ...pr, ci: ci.state })
-    if (ci.state === 'passed') {
-      this.log.append({ type: 'CI_PASSED', issue: pr.issue, run: pr.run, data: { url: ci.url } })
-      return
-    }
-    const event = this.log.append({
-      type: 'CI_FAILED',
-      issue: pr.issue,
-      run: pr.run,
-      data: {
-        url: ci.url,
-        failed_checks: ci.failedChecks,
-        failures: ci.failures.map((f) => ({ name: f.name, url: f.url })),
-      },
-    })
-    if (ci.failures.some((f) => f.log !== '')) new CiFailureStore(this.d.db).put(pr.run, ci.failures)
-    const checks = ci.failedChecks.length ? ci.failedChecks.join(', ') : 'unknown checks'
-    await this.rt.postOnce(pr.issue, event.id, `CI failed on ${pr.url}: ${checks}.`)
-    await this.rt.notify(`CI failed on PR #${pr.number}`, pr.issue, {
-      kind: 'ci',
-      url: pr.url,
-      context: [`failed checks: ${checks}`],
-      action: 'nightshift attempts a repair; check the PR if it fails again',
-    })
-    const run = this.runs.get(pr.run)
-    if (run) await this.remediate(run, 'ci_failed', `failed checks: ${checks}`)
-    await this.linearSync.refresh(pr.issue)
-  }
-
-  private async pullRequestMerged(pr: PullRequestRecord): Promise<void> {
-    this.log.append({
-      type: 'MERGED',
-      issue: pr.issue,
-      run: pr.run,
-      data: { url: pr.url, branch: pr.branch, account: pr.account, mode: pr.mode },
-    })
-    this.pullRequests.remove(pr.issue)
-    const issue = await this.d.linear.issue(pr.issue)
-    const stage = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(pr.issue))?.stage
-    if (stage === INTEGRATION) await this.completeStage(pr.issue)
-    else this.log.append({ type: 'STAGE_COMPLETED', issue: pr.issue, data: { stage: INTEGRATION } })
-    if (this.holds.awaiting(pr.issue)?.kind !== 'after')
-      await this.linearSync.writeStatus(pr.issue, { status: 'done' })
-    const dependents = [...this.cache.values()].filter((i) =>
-      i.blockedBy.some((b) => b.identifier === pr.issue),
-    )
-    for (const id of [pr.issue, ...dependents.map((i) => i.identifier)]) await this.linearSync.refresh(id)
-  }
-
-  private async pullRequestClosed(pr: PullRequestRecord): Promise<void> {
-    this.pullRequests.remove(pr.issue)
-    await this.holds.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION })
-    await this.rt.postOnce(
-      pr.issue,
-      `pr-closed-${pr.number}`,
-      `Pull request ${pr.url} was closed without merging. nightshift waits for you: move the issue to ready to push and open a new pull request.`,
-    )
-    await this.rt.notify(`PR #${pr.number} closed without merge`, pr.issue, {
-      kind: 'blocked',
-      url: pr.url,
-      action: 'Reopen the PR, move the issue to Todo for a new attempt, or cancel it in Linear',
-    })
-    await this.linearSync.refresh(pr.issue)
-  }
-
-  forcedManual(issue: string): string | null {
-    return this.rt.metaMap<string>('forced_manual')[issue] ?? null
-  }
-
-  private forceManual(issue: string, why: string): void {
-    const map = this.rt.metaMap<string>('forced_manual')
-    map[issue] = why
-    this.rt.setMeta('forced_manual', JSON.stringify(map))
-  }
-
-  private async reviewPassed(runId: string, cause: Event): Promise<void> {
-    const run = await this.end(runId, 'done', cause)
-    this.leasing.releaseLease(run.issue)
-    const issue = await this.d.linear.issue(run.issue)
-    if (issue) this.linearSync.observeIssue(issue)
-    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(issue.identifier))
-    if (view?.stage === VERIFICATION) {
-      this.log.append({ type: 'STAGE_COMPLETED', issue: run.issue, data: { stage: IMPLEMENTATION } })
-    }
-    await this.completeStage(run.issue)
-  }
-
-  private async enterVerification(identifier: string): Promise<void> {
-    const issue = this.cache.get(identifier)
-    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(identifier))
-    if (view?.stage !== IMPLEMENTATION) return
-    if (nextStage(this.cfg, view.pipeline, IMPLEMENTATION) !== VERIFICATION) return
-    await this.linearSync.relabel(identifier, VERIFICATION, IMPLEMENTATION)
-  }
-
-  private async backToImplementation(identifier: string): Promise<void> {
-    if (this.runs.active().some((r) => r.issue === identifier)) return
-    const issue = this.cache.get(identifier)
-    const stage = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(identifier))?.stage
-    if (stage !== VERIFICATION && stage !== INTEGRATION) return
-    await this.linearSync.relabel(identifier, IMPLEMENTATION, stage)
-  }
-
-  async stopRun(runId: string, reason: string, by?: By): Promise<void> {
-    const run = this.rt.requireRun(runId)
-    if (isTerminal(run.state)) return
-    await this.d.executor.stop(run, reason)
-    await this.preserveHead(runId)
-    const event = this.log.append({
-      type: 'WORKER_FAILED',
-      issue: run.issue,
-      run: run.id,
-      data: { reason: 'stopped', detail: reason, ...(by ? { by } : {}) },
-    })
-    await this.end(runId, 'stopped', event)
-    this.stalls.delete(runId)
-    await this.destroySandbox(run)
-    this.leasing.releaseLease(run.issue)
+  status(): SupervisorStatus {
+    return readStatus(this.d.db)
   }
 
   resolveRun(target: string): Run | undefined {
     return resolveRun(this.runs, target)
   }
 
-  sendMessage(target: string, text: string, by: By): Promise<Run> {
-    return this.questions.sendMessage(target, text, by)
-  }
-
-  answerQuestion(issue: string, text: string, by: By): Promise<void> {
-    return this.questions.answerQuestion(issue, text, by)
-  }
-
-  private requireActive(target: string): Run {
-    const run = activeRun(this.runs, target)
-    if (!run) throw new ControlError('not_found', `no active run for ${target}`)
-    return run
-  }
-
-  async stopForUser(target: string, reason: string | undefined, by: By): Promise<Run> {
-    const run = this.requireActive(target)
-    await this.stopRun(run.id, reason ?? 'stopped by you', by)
-    const issue = this.cache.get(run.issue) ?? (await this.d.linear.issue(run.issue))
-    const stage = (issue && viewIssue(issue, this.cfg)?.stage) ?? ''
-    await this.holds.holdForYou(run.issue, { kind: 'escalated', stage })
-    return this.rt.requireRun(run.id)
-  }
-
-  async retryRun(
+  covered = (): string[] => this.m.holds.covered()
+  cover = (issue: string, by?: By): void => this.m.holds.cover(issue, by)
+  uncover = (issue: string, by?: By): void => this.m.holds.uncover(issue, by)
+  awaiting = (issue: string): Awaiting | null => this.m.holds.awaiting(issue)
+  held = (): string[] => this.m.holds.held()
+  hold = (issue: string, by?: By): void => this.m.holds.hold(issue, by)
+  unhold = (issue: string, by?: By): void => this.m.holds.unhold(issue, by)
+  sendMessage = (target: string, text: string, by: By): Promise<Run> =>
+    this.m.questions.sendMessage(target, text, by)
+  answerQuestion = (issue: string, text: string, by: By): Promise<void> =>
+    this.m.questions.answerQuestion(issue, text, by)
+  escalationCount = (issue: string): number => this.m.remediation.escalationCount(issue)
+  completeStage = (identifier: string): Promise<void> => this.m.verification.completeStage(identifier)
+  gatesFinished = (runId: string, results: GateResult[]): Promise<void> =>
+    this.m.verification.gatesFinished(runId, results)
+  gateResults = (runId: string): GateEventData[] => this.m.verification.gateResults(runId)
+  reviewFinished = (runId: string, outcome: ReviewOutcome): Promise<void> =>
+    this.m.verification.reviewFinished(runId, outcome)
+  pullRequestOpened = (record: PullRequestRecord, title: string): Promise<void> =>
+    this.m.prWatch.pullRequestOpened(record, title)
+  forcedManual = (issue: string): string | null => this.m.prWatch.forcedManual(issue)
+  sandboxCreated = (runId: string, info: SandboxCreatedInfo): Promise<void> =>
+    this.m.lifecycle.sandboxCreated(runId, info)
+  workerProgress = (runId: string, progress: Progress): Promise<void> =>
+    this.m.lifecycle.workerProgress(runId, progress)
+  workerStarted = (runId: string, info: WorkerStartedInfo): Promise<void> =>
+    this.m.lifecycle.workerStarted(runId, info)
+  workerStalled = (runId: string, signal: string, detail?: string): Promise<void> =>
+    this.m.lifecycle.workerStalled(runId, signal, detail)
+  workerFinished = (runId: string, payload: unknown): Promise<void> =>
+    this.m.lifecycle.workerFinished(runId, payload)
+  workerFailed = (runId: string, reason: string, detail?: string): Promise<void> =>
+    this.m.lifecycle.workerFailed(runId, reason, detail)
+  headImported = (runId: string, headSha: string): Promise<void> =>
+    this.m.lifecycle.headImported(runId, headSha)
+  stopRun = (runId: string, reason: string, by?: By): Promise<void> =>
+    this.m.lifecycle.stopRun(runId, reason, by)
+  stopForUser = (target: string, reason: string | undefined, by: By): Promise<Run> =>
+    this.m.lifecycle.stopForUser(target, reason, by)
+  retryRun = (
     target: string,
     o: { agent?: string; profile?: string; continue?: boolean },
     by: By,
-  ): Promise<Run> {
-    const identifier = this.resolveRun(target)?.issue ?? (isIssueRef(target) ? target : undefined)
-    if (!identifier) throw new ControlError('not_found', `unknown target ${target}`)
-    const snapshot = await this.d.linear.issue(identifier)
-    if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
-    this.linearSync.observeIssue(snapshot)
-    const view = viewIssue(snapshot, this.cfg, this.holds.viewOptions(identifier))
-    const stage = view?.stage ?? null
-    if (!view || stage === null || view.repository === null || !this.cfg.stages[stage]?.automatic) {
-      throw new ControlError('refused', `${identifier}: stage ${stage ?? '(none)'} has no automatic role`)
-    }
-    if (view.lifecycle === 'done' || view.lifecycle === 'canceled') {
-      throw new ControlError('refused', `${identifier} is ${view.lifecycle}`)
-    }
-    if (o.profile && !profileEntries(this.cfg.profiles).some(([name]) => name === o.profile)) {
-      throw new ControlError('refused', `no profile '${o.profile}'`)
-    }
-    const runs = this.runs.forIssue(identifier)
-    const continueFrom = o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined
-    if (o.continue && !continueFrom) {
-      throw new ControlError('refused', `${identifier}: no earlier attempt has a commit to continue from`)
-    }
-    const last = runs.at(-1)
-    const agent = o.agent ?? this.selectFor(view, stage, (last?.attempt ?? 0) + 1, last)
-    if (agent === undefined || this.d.agentKind(agent) !== 'worker') {
-      throw new ControlError('refused', `${identifier}: no worker agent for stage ${stage}`)
-    }
-    const active = this.runs.active().find((r) => r.issue === identifier)
-    if (active) await this.stopRun(active.id, 'retry requested', by)
-    this.holds.setAwaiting(identifier, null)
-    const run = await this.dispatch(view, {
-      agent,
-      ...(o.profile ? { profile: o.profile } : {}),
-      ...(continueFrom ? { continueFrom } : {}),
-      by,
-    })
-    if (!run) throw new ControlError('refused', `${identifier} could not be dispatched (lease held)`)
-    await this.linearSync.refresh(identifier)
-    return this.rt.requireRun(run.id)
-  }
-
-  private async recover(): Promise<RecoveryReport> {
-    const report: RecoveryReport = {
-      reattached: [],
-      resumed: [],
-      failed: [],
-      stopped: [],
-      answered: [],
-      lost: [],
-      orphanSandboxes: [],
-      orphanOutboxes: [],
-    }
-    const withRun = new Set(this.runs.active().map((r) => r.issue))
-    const lost = [...this.cache.values()].filter((i) => {
-      const view = viewIssue(i, this.cfg, this.holds.viewOptions(i.identifier))
-      if (view?.lifecycle !== 'running' || withRun.has(i.identifier)) return false
-      return (
-        view.stage === VERIFICATION ||
-        decide(view, this.cfg, { agentKind: this.d.agentKind }).kind === 'running'
-      )
-    })
-    for (const run of this.runs.active()) await this.recoverRun(run, report)
-    report.answered = await this.questions.checkQuestions()
-
-    const active = new Set(this.runs.active().map((r) => r.id))
-    for (const handle of await this.d.sandbox.list({ nightshift: '1' })) {
-      if (active.has(handle.name)) continue
-      await this.d.sandbox.destroy(handle)
-      report.orphanSandboxes.push(handle.id)
-      if (this.runs.get(handle.name)) this.sandboxDestroyed(handle.name, handle)
-    }
-    const sandboxes = new Set((await this.d.sandbox.list({ nightshift: '1' })).map((h) => h.name))
-    for (const dir of this.d.outbox.list()) {
-      if (sandboxes.has(dir)) continue
-      this.d.outbox.remove(dir)
-      report.orphanOutboxes.push(dir)
-    }
-
-    for (const issue of lost) {
-      await this.rt.postOnce(
-        issue.identifier,
-        `lost-${issue.updatedAt}`,
-        'nightshift lost the runtime state of this run; it is dispatched again.',
-      )
-      await this.linearSync.writeStatus(issue.identifier, { status: 'ready' })
-      report.lost.push(issue.identifier)
-    }
-    return report
-  }
-
-  private async recoverRun(
-    run: Run,
-    report: Pick<RecoveryReport, 'reattached' | 'resumed' | 'failed' | 'stopped'>,
-  ) {
-    if (run.agent === INGEST_AGENT) {
-      await this.ingest.ingestRunFailed(run.id, 'interrupted by supervisor restart')
-      report.failed.push(run.id)
-      return
-    }
-    const issue = await this.d.linear.issue(run.issue)
-    if (issue) this.linearSync.observeIssue(issue)
-    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(issue.identifier))
-    if (view?.lifecycle !== 'running') {
-      await this.stopRun(run.id, 'issue changed in Linear')
-      report.stopped.push(run.id)
-      return
-    }
-    if (run.state === 'queued') {
-      this.leasing.takeLease(run)
-      report.resumed.push(run.id)
-      return
-    }
-    if (run.state === 'gating' || run.state === 'reviewing') {
-      this.leasing.takeLease(run)
-      this.schedule(run)
-      report.resumed.push(run.id)
-      return
-    }
-    if (await this.alive(run)) {
-      this.leasing.takeLease(run)
-      await this.d.executor.reattach(run)
-      report.reattached.push(run.id)
-      return
-    }
-    await this.workerFailed(run.id, 'supervisor_restart')
-    report.failed.push(run.id)
-  }
-
-  private async alive(run: Run): Promise<boolean> {
-    if (run.sandbox === null || run.session === null) return false
-    if ((await this.d.sandbox.status(this.handle(run))) !== 'running') return false
-    return this.d.worker.alive({ id: run.session, attach: [] })
-  }
-
-  private async dispatch(view: IssueView, o: DispatchOverride = {}): Promise<Run | undefined> {
-    const id = view.snapshot.identifier
-    const repository = view.repository
-    const stage = view.stage
-    if (repository === null || stage === null) return undefined
-    const last = this.runs.forIssue(id).at(-1)
-    const attempt = (last?.attempt ?? 0) + 1
-    const agent = o.agent ?? this.selectFor(view, stage, attempt, last)
-    if (agent === undefined) return undefined
-    const profile = o.profile ?? this.profileFor(view)
-    const model = this.d.modelFor(agent, profile, this.cfg)
-    const from = o.continueFrom ?? (last?.failure === 'implementation_defect' ? last : undefined)
-    const baseSha = from?.headSha && from.baseSha ? from.baseSha : await this.d.repos.baseSha(repository)
-    const run = this.runs.create({ issue: id, agent, profile, model, repository, baseSha, attempt })
-    const dispatched = this.log.append({
-      type: 'DISPATCHED',
-      issue: id,
-      run: run.id,
-      data: {
-        agent,
-        profile,
-        model,
-        attempt,
-        repository,
-        base: this.cfg.repositories[repository]?.base ?? 'main',
-        ...(o.by ? { reason: 'manual retry', by: o.by } : last?.failure ? { reason: last.failure } : {}),
-        ...(o.continueFrom ? { continues: o.continueFrom.id } : {}),
-      },
-    })
-    if (!this.leases.acquire(id, run.id)) {
-      this.runs.transition(run.id, 'stopped', dispatched)
-      return undefined
-    }
-    this.leasing.leaseEvent('LEASE_ACQUIRED', id)
-    this.retry.take(id)
-    await this.linearSync.writeStatus(id, { status: 'running' })
-    await this.launch(run, view)
-    return run
-  }
-
-  private selectFor(view: IssueView, stage: string, attempt: number, last: Run | undefined) {
-    return selectAgent(this.cfg.selection, {
-      stage,
-      issueType: view.issueType,
-      failureClass: last?.failure,
-      attempt,
-    })
-  }
-
-  private async launch(run: Run, view: IssueView): Promise<void> {
-    const started = this.runs.transition(
-      run.id,
-      'starting',
-      this.log.append({ type: 'RUN_STARTING', issue: run.issue, run: run.id, data: {} }),
-    )
-    try {
-      const repairFrom = this.continuationOf(run)
-      await this.d.executor.start({
-        run: started,
-        issue: view.snapshot,
-        files: view.files,
-        ...(repairFrom ? { repairFrom } : {}),
-      })
-      if (!isTerminal(this.rt.requireRun(run.id).state)) this.gatewayReachable(true, `run ${run.id} started`)
-    } catch (e) {
-      const reason =
-        e instanceof TaskTooLargeError
-          ? e.reason
-          : e instanceof GatewayError
-            ? 'gateway_error'
-            : 'sandbox_error'
-      await this.workerFailed(run.id, reason, (e as Error).message)
-    }
-  }
-
-  private continuationOf(run: Run): ExecutorStart['repairFrom'] {
-    const dispatched = this.log.since(null, { run: run.id, types: ['DISPATCHED'] }).at(-1)
-    const continues = dispatched?.data.continues
-    const from =
-      typeof continues === 'string'
-        ? this.runs.get(continues)
-        : this.runs
-            .forIssue(run.issue)
-            .find((r) => r.attempt === run.attempt - 1 && r.failure === 'implementation_defect')
-    return from?.headSha ? { run: from.id, headSha: from.headSha } : undefined
-  }
-
-  private async launchQueued(): Promise<void> {
-    for (const run of this.runs.active()) {
-      if (run.state !== 'queued') continue
-      const issue = this.cache.get(run.issue)
-      const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(run.issue))
-      if (view) await this.launch(run, view)
-    }
-  }
-
-  private async end(runId: string, to: 'done' | 'failed' | 'stopped', cause: Event): Promise<Run> {
-    return this.runs.transition(runId, to, cause)
-  }
-
-  private profileFor(view: IssueView): string {
-    const projectId = view.snapshot.project?.id
-    const chosen = projectId
-      ? this.d.db
-          .query<{ value: string }, [string]>(
-            "SELECT value FROM session_choices WHERE project = ? AND key = 'profile'",
-          )
-          .get(projectId)?.value
-      : undefined
-    return chosen ?? view.project.profile ?? this.cfg.profiles.active
-  }
-
-  private async remediate(run: Run, reason: string, detail?: string): Promise<void> {
-    await this.backToImplementation(run.issue)
-    const classifier =
-      CHECKED_REASONS.includes(reason) || ENVIRONMENT_REASONS.includes(reason)
-        ? fallbackClassifier
-        : (this.d.classifier ?? fallbackClassifier)
-    const c =
-      reason === 'task_too_large'
-        ? TASK_TOO_LARGE_CLASS
-        : await classifier.classify({ run, reason, ...(detail ? { detail } : {}) })
-    this.runs.update(run.id, { failure: c.class })
-    const escalate =
-      c.class !== 'environment' && this.escalationCount(run.issue) >= this.cfg.limits.repair_rounds + 2
-    const action = escalate ? 'escalate_user' : c.action
-    const event = this.log.append({
-      type: 'FAILURE_CLASSIFIED',
-      issue: run.issue,
-      run: run.id,
-      data: {
-        class: c.class,
-        action,
-        ...(c.evidence ? { evidence: c.evidence } : {}),
-        fallback: c.fallback ?? false,
-      },
-    })
-    await this.rt.postOnce(
-      run.issue,
-      event.id,
-      `Attempt ${run.attempt} (${run.agent}) failed: ${reason}${detail ? ` (${detail})` : ''}. Class \`${c.class}\`, action \`${action}\`.`,
-    )
-    this.environmentStreak = c.class === 'environment' ? this.environmentStreak + 1 : 0
-
-    if (action === 'retry_same') {
-      this.retry.schedule(run.issue, c.class, this.now().getTime())
-      await this.linearSync.writeStatus(run.issue, { status: 'ready' })
-    } else if (action === 'pause_dispatch') {
-      this.pause(`failure ${c.class} on ${run.issue}`, 'supervisor')
-      await this.rt.notify(`dispatch paused after a ${c.class} failure`, run.issue, {
-        kind: 'paused',
-        context: this.failureContext(run),
-        action: 'Fix the cause, then `ns resume`',
-      })
-    } else if (action === 'escalate_user') {
-      await this.escalateUser(run, c)
-    } else if ((await this.d.remediation?.handle(run, { ...c, action })) !== 'handled') {
-      await this.escalateUser(run, c)
-    }
-
-    if (this.environmentStreak >= ENVIRONMENT_STREAK_PAUSE && !this.paused) {
-      const why = `${ENVIRONMENT_STREAK_PAUSE} environment failures in a row`
-      this.pause(why, 'supervisor')
-      await this.rt.notify(`dispatch paused: ${why}`, undefined, {
-        kind: 'paused',
-        context: [`last: ${run.issue}: ${this.failureContext(run).join('; ')}`],
-        action: 'Check the gateway, Docker and the host, then `ns resume`',
-      })
-    }
-  }
-
-  private async escalateUser(run: Run, c: Classification): Promise<void> {
-    const issue = this.cache.get(run.issue)
-    await this.holds.holdForYou(run.issue, {
-      kind: 'escalated',
-      stage: (issue && viewIssue(issue, this.cfg)?.stage) ?? '',
-    })
-    await this.rt.notify(`run failed and needs you (${c.class})`, run.issue, {
-      kind: 'failed',
-      context: this.failureContext(run),
-      action: `Clarify the issue or answer in Linear, then \`ns retry ${run.issue}\``,
-    })
-  }
-
-  private async enterStage(view: IssueView, stage: string, from?: string): Promise<void> {
-    const id = view.snapshot.identifier
-    this.log.append({ type: 'STAGE_ENTERED', issue: id, data: { stage, ...(from ? { from } : {}) } })
-    const hold = this.cfg.stages[stage]?.human_checkpoint === 'before'
-    this.holds.setAwaiting(id, hold ? { kind: 'before', stage } : null)
-    await this.linearSync.writeStatus(id, { stage, ...(hold ? { status: 'blocked' as const } : {}) })
-    if (hold)
-      await this.rt.notify(`${stage} needs your approval before it starts`, id, {
-        kind: 'blocked',
-        action: `\`ns resume ${id}\` to start ${stage}`,
-      })
-  }
-
-  private async advance(view: IssueView): Promise<void> {
-    const stage = view.stage
-    if (stage === null) return
-    const id = view.snapshot.identifier
-    this.log.append({ type: 'STAGE_COMPLETED', issue: id, data: { stage } })
-    const next = nextStage(this.cfg, view.pipeline, stage)
-    if (next) await this.enterStage(view, next, stage)
-    else {
-      this.holds.setAwaiting(id, null)
-      await this.ingest.startIngest(view)
-    }
-  }
-
-  private runRole(view: IssueView, stage: string, agent: string | undefined): void {
-    const handler = this.d.stageHandler
-    const id = view.snapshot.identifier
-    if (!handler || this.roleInFlight.has(id)) return
-    this.roleInFlight.add(id)
-    const key = `${id}:${stage}`
-    handler
-      .run({ issue: view.snapshot, stage, agent })
-      .then(() => this.roleFailures.delete(key))
-      .catch((e) => this.roleFailed(id, stage, key, (e as Error).message))
-      .finally(() => this.roleInFlight.delete(id))
-  }
-
-  private async roleFailed(id: string, stage: string, key: string, message: string): Promise<void> {
-    console.error(`stage ${stage} on ${id}: ${message}`)
-    const count = (this.roleFailures.get(key) ?? 0) + 1
-    this.roleFailures.set(key, count)
-    if (count < STAGE_FAILURE_LIMIT) return
-    this.roleFailures.delete(key)
-    await this.holds.holdForYou(id, { kind: 'escalated', stage })
-    await this.rt.notify(`${stage} failed ${count} times in a row`, id, {
-      kind: 'failed',
-      context: [message],
-      action: `Fix the cause, then move ${id} to Todo to try ${stage} again`,
-    })
-  }
-
-  private handle(run: Run): SandboxHandle {
-    return { driver: this.cfg.sandbox.driver, id: run.sandbox ?? '', name: run.id }
-  }
-
-  private async preserveHead(runId: string): Promise<void> {
-    const run = this.rt.requireRun(runId)
-    if (run.headSha !== null || run.sandbox === null || run.agent === INGEST_AGENT) return
-    try {
-      const head = await this.d.executor.captureHead?.(run)
-      if (head) this.runs.update(runId, { headSha: head })
-    } catch (e) {
-      console.error(`${run.issue}: keeping the commits of run ${run.id} failed: ${(e as Error).message}`)
-    }
-  }
-
-  private async destroySandbox(run: Run): Promise<void> {
-    if (run.sandbox === null) return
-    const handle = this.handle(run)
-    await this.d.sandbox.destroy(handle)
-    this.sandboxDestroyed(run.id, handle)
-  }
-
-  private sandboxDestroyed(runId: string, handle: SandboxHandle): void {
-    this.log.append({ type: 'SANDBOX_DESTROYED', run: runId, data: { driver: handle.driver, id: handle.id } })
-  }
-
-  private runContext(runId: string): string[] {
-    const run = this.runs.get(runId)
-    const finish = (run?.finish ?? {}) as { summary?: string; concerns?: string[] }
-    const gates = this.log.since(null, { run: runId, types: ['GATE_PASSED', 'GATE_FAILED'] })
-    const review = this.log.since(null, { run: runId, types: ['REVIEW_RECEIVED'] }).at(-1)
-    const findings = (review?.data as { verdict?: string; findings?: unknown[] } | undefined) ?? {}
-    return [
-      finish.summary ?? '',
-      ...(finish.concerns ?? []).map((c) => `concern: ${c}`),
-      gates.length
-        ? `gates: ${gates.map((g) => `${(g.data as { check: string }).check} ${g.type === 'GATE_PASSED' ? '✓' : '✗'}`).join(', ')}`
-        : '',
-      review
-        ? `review: ${findings.verdict ?? '?'}, ${findings.findings?.length ?? 0} findings`
-        : 'review: none',
-    ]
-  }
-
-  private failureContext(run: Run): string[] {
-    const failed = this.log.since(null, { run: run.id, types: ['WORKER_FAILED'] }).at(-1)
-    const data = (failed?.data ?? {}) as { reason?: string; detail?: string }
-    return [
-      `${run.agent}, attempt ${run.attempt}`,
-      data.reason ? `${data.reason}${data.detail ? `: ${data.detail.split('\n')[0]}` : ''}` : '',
-    ]
-  }
+  ): Promise<Run> => this.m.dispatcher.retryRun(target, o, by)
 
   private retain(): void {
     const cutoff = new Date(this.now().getTime() - RETENTION_MS).toISOString()

@@ -115,7 +115,7 @@ the issue and in Phoenix so issue sizing can be tuned from data.
 
 - `index.ts` — public API.
 - `runtime/` — composition, loop, and config watching.
-- `supervisor/` — orchestration and lifecycle.
+- `supervisor/` — the `Supervisor` coordinator (start, stop, tick order, public API) and its modules: `linear-sync`, `holds`, `leases`, `questions`, `ingest`, `run-lifecycle`, `verification`, `pr-watch`, `dispatch`, `remediation`. Modules share one `SupervisorRuntime` and call each other only through the `RunFlow` interface.
 - `policy/` — scheduling and decision rules.
 - `state/` — persistence, events, and projections.
 - `ports/` — shared contracts by concern.

@@ -29,8 +29,9 @@ const KNOWN_VIOLATIONS = [
   'stages/context/ingest-runtime.ts → adapters/worker/executor.ts',
   'stages/gates/step.ts → adapters/worker/executor.ts',
   'stages/integration/stage.ts → adapters/github/gh.ts',
+  'supervisor/dispatch.ts → control/socket/errors.ts',
   'supervisor/questions.ts → control/socket/errors.ts',
-  'supervisor/supervisor.ts → control/socket/errors.ts',
+  'supervisor/run-lifecycle.ts → control/socket/errors.ts',
 ]
 
 function files(dir: string): string[] {

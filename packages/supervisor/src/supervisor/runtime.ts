@@ -1,9 +1,11 @@
 import type { Config } from '@nightshift/core'
-import type { AgentKind } from '../policy/stages'
+import type { AgentKind, IssueView, ViewOptions } from '../policy/stages'
 import type {
+  Awaiting,
   Classifier,
   GitHost,
   IssueSnapshot,
+  IssueUpdate,
   LinearComment,
   LinearPort,
   Notification,
@@ -17,9 +19,10 @@ import type {
   VaultIngest,
   WorkerDriver,
 } from '../ports'
+import type { By } from '../ports/control'
 import type { PullRequestStore } from '../stages/integration/records'
 import type { Db } from '../state/db'
-import type { EventLog } from '../state/events'
+import type { Event, EventLog } from '../state/events'
 import type { Run, RunStore } from '../state/runs'
 
 export const INGEST_AGENT = 'ingester'
@@ -110,4 +113,54 @@ export class SupervisorRuntime {
       this.log.append({ type: 'NOTIFICATION_SENT', data: { channel, title, ...(issue ? { issue } : {}) } })
     }
   }
+}
+
+export type RecoveryReport = {
+  reattached: string[]
+  resumed: string[]
+  failed: string[]
+  stopped: string[]
+  answered: string[]
+  lost: string[]
+  orphanSandboxes: string[]
+  orphanOutboxes: string[]
+}
+
+export type RunFlow = {
+  stopped(): boolean
+  paused(): boolean
+  pause(reason: string, by?: By): void
+  schedule(run: Run): void
+  gatewayReachable(reachable: boolean, reason: string): void
+  viewOptions(issue: string): ViewOptions
+  awaiting(issue: string): Awaiting | null
+  setAwaiting(issue: string, value: Awaiting | null): void
+  holdForYou(issue: string, awaiting: Awaiting): Promise<void>
+  coveredSet(): Set<string>
+  uncover(issue: string): void
+  observeIssue(issue: IssueSnapshot): void
+  refresh(identifier: string): Promise<void>
+  writeStatus(identifier: string, change: IssueUpdate): Promise<void>
+  relabel(identifier: string, stage: string, from: string): Promise<void>
+  takeLease(run: Run): void
+  releaseLease(issue: string): void
+  leaseEvent(type: 'LEASE_ACQUIRED', issue: string): void
+  askQuestion(run: Run, cause: Event, blocker: NonNullable<FinishLike['blocker']>): Promise<void>
+  checkQuestions(): Promise<string[]>
+  startIngest(view: IssueView): Promise<void>
+  ingestFinished(run: Run, event: Event, finish: FinishLike): Promise<void>
+  ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void>
+  workerFailed(runId: string, reason: string, detail?: string): Promise<void>
+  stopRun(runId: string, reason: string, by?: By): Promise<void>
+  end(runId: string, to: 'done' | 'failed' | 'stopped', cause: Event): Promise<Run>
+  resolveRun(target: string): Run | undefined
+  completeStage(identifier: string): Promise<void>
+  enterVerification(identifier: string): Promise<void>
+  backToImplementation(identifier: string): Promise<void>
+  forceManual(issue: string, why: string): void
+  remediate(run: Run, reason: string, detail?: string): Promise<void>
+  recoverRun(run: Run): Promise<void>
+  requireActive(target: string): Run
+  profileFor(view: IssueView): string
+  forgetStalls(runId: string): void
 }
