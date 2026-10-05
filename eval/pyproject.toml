@@ -4,7 +4,7 @@ version = "0.0.0"
 description = "Task mining, evaluation and optimization glue for nightshift"
 requires-python = ">=3.14"
 dependencies = [
-    "harbor==0.23.0",
+    "harbor==0.24.0",
 ]
 
 [project.scripts]
