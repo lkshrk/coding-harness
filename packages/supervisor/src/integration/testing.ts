@@ -35,16 +35,22 @@ const ROLLUP: Record<string, { status: string; conclusion: string }> = {
   skipping: { status: 'COMPLETED', conclusion: 'SKIPPED' },
 }
 
-const rollupItem = (c: { name: string; bucket: string }) => ({
+export type FakeCheck = { name: string; bucket: string; run?: number; job?: number }
+
+const rollupItem = (c: FakeCheck) => ({
   __typename: 'CheckRun',
   name: c.name,
   ...ROLLUP[c.bucket],
+  ...(c.run
+    ? { detailsUrl: `https://github.com/lkshrk/omni/actions/runs/${c.run}${c.job ? `/job/${c.job}` : ''}` }
+    : {}),
 })
 
 export class FakeGh {
   readonly calls: Call[] = []
   readonly prs: FakePr[] = []
-  checks: { name: string; bucket: string }[] = []
+  checks: FakeCheck[] = []
+  logs: Record<string, string | HostCommandResult> = {}
   failNext: HostCommandResult | undefined
 
   constructor(private readonly slug = 'lkshrk/omni') {}
@@ -70,6 +76,11 @@ export class FakeGh {
       this.prs.push({ number, url, head: arg('--head'), state: 'OPEN' })
       return ok(`Creating pull request\n${url}\n`)
     }
+    if (cmd[1] === 'run' && verb === 'view' && cmd.includes('--log-failed')) {
+      const log = this.logs[cmd.includes('--job') ? `job ${arg('--job')}` : `run ${cmd[3]}`]
+      if (log === undefined) return { exitCode: 1, stdout: '', stderr: 'HTTP 404: Not Found' }
+      return typeof log === 'string' ? ok(log) : log
+    }
     if (cmd[1] === 'api' && cmd[3] === 'PATCH') return ok('{}')
     if (verb === 'edit') return ok('')
     if (verb === 'view' && arg('--json') === 'statusCheckRollup')
@@ -89,6 +100,10 @@ export class FakeGh {
 
   prUpdates(): Call[] {
     return this.calls.filter((c) => c.cmd[1] === 'api' && c.cmd[3] === 'PATCH')
+  }
+
+  logReads(): Call[] {
+    return this.calls.filter((c) => c.cmd[1] === 'run' && c.cmd.includes('--log-failed'))
   }
 
   ciReads(): Call[] {
@@ -262,5 +277,5 @@ export function integrationHarness(
     return first.runs.get(run.id) as Run
   }
 
-  return { fx, config, linear, gh, remote, handler, first, make, of, out, integrated }
+  return { fx, config, db, linear, gh, remote, handler, first, make, of, out, integrated }
 }

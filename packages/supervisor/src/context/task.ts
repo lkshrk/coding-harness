@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { type Config, expandHome, issueSpec, validateIssue } from '@nightshift/core'
 import type { Db } from '../db'
 import { EventLog } from '../events'
+import { CiFailureStore } from '../integration/records'
 import type {
   Attempt,
   BlockerOutput,
@@ -81,12 +82,14 @@ function findingsOf(run: Run, log: EventLog): string | undefined {
 export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
   const stores = { now: () => new Date(), ulid: createUlid() }
   const log = new EventLog(db, stores)
+  const ci = new CiFailureStore(db)
   return new RunStore(db, stores)
     .forIssue(issue)
     .filter((r) => r.id !== current && r.failure !== null)
     .map((r) => {
       const gateTail = gateTailOf(r, log)
       const findings = findingsOf(r, log)
+      const ciFailures = ci.get(r.id).filter((f) => f.log !== '')
       return {
         attempt: r.attempt,
         agent: r.agent,
@@ -94,6 +97,7 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
         summary: summaryOf(r, log),
         ...(gateTail ? { gateTail } : {}),
         ...(findings ? { findings } : {}),
+        ...(ciFailures.length ? { ciFailures } : {}),
       }
     })
 }
