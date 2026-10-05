@@ -2,11 +2,9 @@ import {
   type Config,
   formatError,
   GatewayError,
-  LABEL_GROUPS,
   type LoadResult,
   NIGHTSHIFT_VERSION,
   profileEntries,
-  teamStatuses,
   validateAgainstWorkspace,
 } from '@nightshift/core'
 import { ControlError } from '../control/socket/errors'
@@ -15,7 +13,6 @@ import { planDispatch } from '../policy/ready'
 import { RetryQueue } from '../policy/retry'
 import { selectAgent } from '../policy/selection'
 import {
-  type AgentKind,
   decide,
   IMPLEMENTATION,
   INTEGRATION,
@@ -23,7 +20,6 @@ import {
   lifecycleOf,
   nextStage,
   VERIFICATION,
-  type ViewOptions,
   viewIssue,
 } from '../policy/stages'
 import type {
@@ -33,22 +29,8 @@ import type {
   Classifier,
   ExecutorStart,
   GateResult,
-  GitHost,
   IssueSnapshot,
-  IssueUpdate,
-  LinearComment,
-  LinearPort,
-  Notification,
-  Notifier,
-  OutboxDirs,
-  RemediationHandler,
-  RepoInspector,
-  RunExecutor,
-  SandboxDriver,
   SandboxHandle,
-  StageHandler,
-  VaultIngest,
-  WorkerDriver,
 } from '../ports'
 import type { By } from '../ports/control'
 import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
@@ -56,16 +38,21 @@ import { TaskTooLargeError } from '../stages/context'
 import { type GateEventData, gateComment, gateEventData } from '../stages/gates/report'
 import { blockerSummary, type ReviewOutcome, reviewComment } from '../stages/gates/review'
 import { CiFailureStore, type PullRequestRecord, PullRequestStore } from '../stages/integration/records'
-import { coveredIssues, heldIssues, setCovered, setHeld } from '../state/coverage'
-import type { Db } from '../state/db'
 import { type Event, EventLog, EventValidationError } from '../state/events'
-import { type Lease, LeaseStore } from '../state/leases'
+import { LeaseStore } from '../state/leases'
 import { isTerminal, type Run, RunStore } from '../state/runs'
 import { readStatus, type SupervisorStatus, type Waiting } from '../state/status'
 import { activeRun, isIssueRef, resolveRun } from '../state/targets'
 import { createUlid } from '../state/ulid'
+import { Holds } from './holds'
+import { Ingest } from './ingest'
+import { Leases } from './leases'
+import { LinearSync } from './linear-sync'
+import { Questions } from './questions'
+import { type FinishLike, INGEST_AGENT, type SupervisorDeps, SupervisorRuntime } from './runtime'
 
 export type { By } from '../ports/control'
+export type { SupervisorDeps } from './runtime'
 
 type DispatchOverride = { agent?: string; profile?: string; by?: By; continueFrom?: Run }
 
@@ -78,7 +65,6 @@ const NO_FINISH_REASONS = ['step_cap', 'time_cap', 'token_cap', 'no_finish']
 const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed']
 
 const STAGE_FAILURE_LIMIT = 3
-const INGEST_AGENT = 'ingester'
 
 const TASK_TOO_LARGE_CLASS: Classification = { class: 'task_too_large', action: 'split' }
 
@@ -89,30 +75,6 @@ export const fallbackClassifier: Classifier = {
       return { class: 'implementation_defect', action: 'retry_same', evidence: f.detail ?? f.reason }
     return { class: 'unknown', action: 'escalate_user', fallback: true }
   },
-}
-
-export type SupervisorDeps = {
-  config: Config
-  db: Db
-  linear: LinearPort
-  executor: RunExecutor
-  sandbox: Pick<SandboxDriver, 'status' | 'list' | 'destroy'>
-  worker: Pick<WorkerDriver, 'alive'>
-  repos: RepoInspector
-  notifier: Notifier
-  outbox: OutboxDirs
-  agentKind: (agent: string) => AgentKind | undefined
-  modelFor: (agent: string, profile: string, config: Config) => string
-  classifier?: Classifier
-  remediation?: RemediationHandler
-  stageHandler?: StageHandler
-  gitHost?: GitHost
-  ingest?: VaultIngest
-  secretsLocked?: () => Promise<boolean>
-  now?: () => Date
-  instanceId?: string
-  leaseTtlMs?: number
-  retry?: { baseMs: number; maxMs: number }
 }
 
 export type TickReport = { dispatched: string[]; unblocked: string[]; stopped: string[]; waiting: Waiting[] }
@@ -130,13 +92,6 @@ export type RecoveryReport = {
 
 export type { SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 
-type FinishLike = {
-  status?: unknown
-  blocker?: { needs?: string; reason?: string; question?: string; options?: string[] }
-}
-
-type QuestionRow = { comment: string; issue: string }
-
 export class Supervisor {
   readonly log: EventLog
   readonly runs: RunStore
@@ -148,16 +103,20 @@ export class Supervisor {
   private readonly now: () => Date
   private readonly retry: RetryQueue
   private readonly cache = new Map<string, IssueSnapshot>()
-  private readonly ownWrites = new Map<string, { status: string; previous: string; before: string }>()
   private readonly stalls = new Map<string, number>()
   private readonly roleInFlight = new Set<string>()
   private readonly roleFailures = new Map<string, number>()
   private readonly reviewRefused = new Set<string>()
   private readonly steps = new Map<string, Promise<void>>()
-  private cursor: string | undefined
   private paused = false
   private stopped = false
   private environmentStreak = 0
+  private readonly rt: SupervisorRuntime
+  private readonly linearSync: LinearSync
+  private readonly holds: Holds
+  private readonly leasing: Leases
+  private readonly questions: Questions
+  private readonly ingest: Ingest
 
   constructor(deps: SupervisorDeps) {
     this.d = deps
@@ -174,6 +133,36 @@ export class Supervisor {
     })
     this.retry = new RetryQueue(deps.retry ?? { baseMs: 30_000, maxMs: 600_000 })
     this.pullRequests = new PullRequestStore(deps.db)
+    this.rt = new SupervisorRuntime(
+      deps,
+      () => this.cfg,
+      this.log,
+      this.runs,
+      this.pullRequests,
+      this.cache,
+      this.now,
+    )
+    this.holds = new Holds(this.rt, { writeStatus: (id, change) => this.linearSync.writeStatus(id, change) })
+    this.linearSync = new LinearSync(this.rt, {
+      coveredSet: () => this.holds.coveredSet(),
+      uncover: (issue) => this.holds.uncover(issue),
+      viewOptions: (issue) => this.holds.viewOptions(issue),
+      stopRun: (runId, reason) => this.stopRun(runId, reason),
+    })
+    this.leasing = new Leases(this.rt, this.leases, this.instanceId, {
+      recoverRun: (run) => this.recoverRun(run, { reattached: [], resumed: [], failed: [], stopped: [] }),
+    })
+    this.questions = new Questions(this.rt, {
+      requireActive: (target) => this.requireActive(target),
+      awaiting: (issue) => this.holds.awaiting(issue),
+      writeStatus: (id, change) => this.linearSync.writeStatus(id, change),
+      refresh: (id) => this.linearSync.refresh(id),
+    })
+    this.ingest = new Ingest(this.rt, {
+      profileFor: (view) => this.profileFor(view),
+      end: (runId, to, cause) => this.end(runId, to, cause),
+      forgetStalls: (runId) => this.stalls.delete(runId),
+    })
   }
 
   get config(): Config {
@@ -184,14 +173,14 @@ export class Supervisor {
     const workspace = await this.d.linear.workspace()
     const errors = validateAgainstWorkspace(this.cfg, workspace)
     if (errors.length) throw new Error(errors.map(formatError).join('\n'))
-    this.setMeta('instance', this.instanceId)
-    this.setMeta('linear_org', workspace.organization.urlKey)
-    this.setMeta('active_profile', this.cfg.profiles.active)
-    this.setMeta('restart_required', 'false')
-    this.paused = this.meta('dispatch') === 'paused'
+    this.rt.setMeta('instance', this.instanceId)
+    this.rt.setMeta('linear_org', workspace.organization.urlKey)
+    this.rt.setMeta('active_profile', this.cfg.profiles.active)
+    this.rt.setMeta('restart_required', 'false')
+    this.paused = this.rt.meta('dispatch') === 'paused'
     this.retain()
     this.log.append({ type: 'SUPERVISOR_STARTED', data: { version: NIGHTSHIFT_VERSION } })
-    await this.sync()
+    await this.linearSync.sync()
     const report = await this.recover()
     return report
   }
@@ -229,26 +218,26 @@ export class Supervisor {
 
   async tick(): Promise<TickReport> {
     const report: TickReport = { dispatched: [], unblocked: [], stopped: [], waiting: [] }
-    this.renewLeases()
-    for (const lease of this.leases.expired(this.now())) await this.expireLease(lease)
-    await this.sync()
-    await this.checkQuestions()
+    this.leasing.renewLeases()
+    for (const lease of this.leases.expired(this.now())) await this.leasing.expireLease(lease)
+    await this.linearSync.sync()
+    await this.questions.checkQuestions()
     await this.watchPullRequests()
     const views = [...this.cache.values()].flatMap(
-      (i) => viewIssue(i, this.cfg, this.viewOptions(i.identifier)) ?? [],
+      (i) => viewIssue(i, this.cfg, this.holds.viewOptions(i.identifier)) ?? [],
     )
-    report.stopped = await this.enforceLinear()
+    report.stopped = await this.linearSync.enforceLinear()
     await this.launchQueued()
 
     const active = new Set(this.runs.active().map((r) => r.issue))
-    const held = new Set(this.held())
+    const held = new Set(this.holds.held())
     const candidates: IssueView[] = []
     for (const view of views) {
       const id = view.snapshot.identifier
       const decision = decide(view, this.cfg, { agentKind: this.d.agentKind })
       if (decision.kind === 'enter') await this.enterStage(view, decision.stage, decision.from)
       else if (decision.kind === 'advance') await this.advance(view)
-      else if (decision.kind === 'release') this.setAwaiting(id, null)
+      else if (decision.kind === 'release') this.holds.setAwaiting(id, null)
       else if (decision.kind === 'role' && view.stage === VERIFICATION) {
         const idle = view.lifecycle === 'ready' || view.lifecycle === 'backlog'
         if (!active.has(id) && idle) await this.backToImplementation(id)
@@ -273,7 +262,7 @@ export class Supervisor {
     for (const { view, by } of plan.unblocked) {
       const id = view.snapshot.identifier
       if (by.length) this.log.append({ type: 'DEPENDENCY_UNBLOCKED', issue: id, data: { by } })
-      await this.writeStatus(id, { status: 'ready' })
+      await this.linearSync.writeStatus(id, { status: 'ready' })
       report.unblocked.push(id)
     }
     for (const view of plan.dispatch) {
@@ -282,52 +271,19 @@ export class Supervisor {
     const reason = (w: Waiting) =>
       this.paused && w.reason === 'concurrency limit reached' ? { ...w, reason: 'dispatch paused' } : w
     report.waiting.push(...plan.waiting.map(reason))
-    this.setMeta('ready_queue', JSON.stringify(report.waiting))
-    this.snapshotIssues(report.waiting)
+    this.rt.setMeta('ready_queue', JSON.stringify(report.waiting))
+    this.linearSync.snapshotIssues(report.waiting)
     return report
-  }
-
-  private snapshotIssues(waiting: Waiting[]): void {
-    const reasons = new Map(waiting.map((w) => [w.identifier, w.reason]))
-    const insert = this.d.db.query(
-      `INSERT INTO issues (identifier, title, project, stage, lifecycle, status, blockers, waiting, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    this.d.db.transaction(() => {
-      this.d.db.query('DELETE FROM issues').run()
-      for (const issue of this.cache.values()) {
-        const view = viewIssue(issue, this.cfg, this.viewOptions(issue.identifier))
-        if (!view) continue
-        const blockers = issue.blockedBy
-          .filter((b) => {
-            const state = lifecycleOf(this.cfg, b.team, b.status)
-            return state !== 'done' && state !== 'canceled'
-          })
-          .map((b) => b.identifier)
-        const awaiting = view.awaiting ? `awaiting you (${view.awaiting.kind} ${view.awaiting.stage})` : null
-        insert.run(
-          issue.identifier,
-          issue.title,
-          issue.project?.name ?? null,
-          view.stage,
-          view.lifecycle,
-          issue.status,
-          JSON.stringify(blockers),
-          reasons.get(issue.identifier) ?? awaiting,
-          issue.updatedAt,
-        )
-      }
-    })()
   }
 
   pause(reason: string, by: By = 'cli'): void {
     if (this.paused) return
     this.paused = true
-    this.setMeta('dispatch', 'paused')
-    this.setMeta('dispatch_reason', reason)
+    this.rt.setMeta('dispatch', 'paused')
+    this.rt.setMeta('dispatch_reason', reason)
     this.log.append({ type: 'DISPATCH_PAUSED', data: { reason, by } })
     if (by === 'cli' || by === 'lead') {
-      this.notify(`dispatch paused: ${reason}`, undefined, { kind: 'paused' }).catch(() => {})
+      this.rt.notify(`dispatch paused: ${reason}`, undefined, { kind: 'paused' }).catch(() => {})
     }
   }
 
@@ -335,14 +291,14 @@ export class Supervisor {
     if (!this.paused) return
     this.paused = false
     this.environmentStreak = 0
-    this.setMeta('dispatch', 'running')
-    this.setMeta('dispatch_reason', '')
+    this.rt.setMeta('dispatch', 'running')
+    this.rt.setMeta('dispatch_reason', '')
     this.log.append({ type: 'DISPATCH_RESUMED', data: { reason, by } })
   }
 
   private async probeSecrets(dispatching: boolean): Promise<void> {
     if (!this.d.secretsLocked) return
-    const lockPaused = this.paused && this.meta('dispatch_reason') === RBW_LOCKED
+    const lockPaused = this.paused && this.rt.meta('dispatch_reason') === RBW_LOCKED
     if (!lockPaused && (this.paused || !dispatching)) return
     let locked: boolean
     try {
@@ -353,7 +309,7 @@ export class Supervisor {
     if (locked && !this.paused) {
       this.pause(RBW_LOCKED, 'supervisor')
       const profile = this.cfg.secrets.rbw_profile
-      await this.notify(
+      await this.rt.notify(
         `dispatch paused: rbw profile ${profile} is locked; run RBW_PROFILE=${profile} rbw unlock`,
         undefined,
         { kind: 'paused' },
@@ -362,21 +318,31 @@ export class Supervisor {
   }
 
   covered(): string[] {
-    return coveredIssues(this.d.db)
+    return this.holds.covered()
   }
 
   cover(issue: string, by: By = 'supervisor'): void {
-    this.setCoverage(issue, true, by)
+    this.holds.cover(issue, by)
   }
 
   uncover(issue: string, by: By = 'supervisor'): void {
-    this.setCoverage(issue, false, by)
+    this.holds.uncover(issue, by)
   }
 
-  private setCoverage(issue: string, covered: boolean, by: By): void {
-    if (this.coveredSet().has(issue) === covered) return
-    setCovered(this.d.db, issue, covered)
-    this.log.append({ type: 'COVERAGE_CHANGED', issue, data: { covered, by } })
+  awaiting(issue: string): Awaiting | null {
+    return this.holds.awaiting(issue)
+  }
+
+  held(): string[] {
+    return this.holds.held()
+  }
+
+  hold(issue: string, by: By = 'supervisor'): void {
+    this.holds.hold(issue, by)
+  }
+
+  unhold(issue: string, by: By = 'supervisor'): void {
+    this.holds.unhold(issue, by)
   }
 
   gateway(): 'ok' | 'unavailable' {
@@ -387,55 +353,6 @@ export class Supervisor {
   gatewayReachable(reachable: boolean, reason: string): void {
     if ((this.gateway() === 'ok') === reachable) return
     this.log.append({ type: reachable ? 'GATEWAY_RECOVERED' : 'GATEWAY_UNAVAILABLE', data: { reason } })
-  }
-
-  private coveredSet(): Set<string> {
-    return new Set(coveredIssues(this.d.db))
-  }
-
-  private viewOptions(issue: string): ViewOptions {
-    return { covered: this.coveredSet().has(issue), awaiting: this.awaitingMap()[issue] ?? null }
-  }
-
-  awaiting(issue: string): Awaiting | null {
-    return this.awaitingMap()[issue] ?? null
-  }
-
-  private awaitingMap(): Record<string, Awaiting> {
-    return this.metaMap<Awaiting>('awaiting')
-  }
-
-  private metaMap<T>(key: string): Record<string, T> {
-    const raw = this.meta(key)
-    return raw ? (JSON.parse(raw) as Record<string, T>) : {}
-  }
-
-  private setAwaiting(issue: string, value: Awaiting | null): void {
-    const map = this.awaitingMap()
-    if (value) map[issue] = value
-    else delete map[issue]
-    this.setMeta('awaiting', JSON.stringify(map))
-  }
-
-  private async holdForYou(issue: string, awaiting: Awaiting): Promise<void> {
-    this.setAwaiting(issue, awaiting)
-    await this.writeStatus(issue, { status: 'blocked' })
-  }
-
-  held(): string[] {
-    return heldIssues(this.d.db)
-  }
-
-  hold(issue: string, by: By = 'supervisor'): void {
-    if (this.held().includes(issue)) return
-    setHeld(this.d.db, issue, true)
-    this.log.append({ type: 'DISPATCH_PAUSED', issue, data: { reason: `${issue} held`, by } })
-  }
-
-  unhold(issue: string, by: By = 'supervisor'): void {
-    if (!this.held().includes(issue)) return
-    setHeld(this.d.db, issue, false)
-    this.log.append({ type: 'DISPATCH_RESUMED', issue, data: { reason: `${issue} released`, by } })
   }
 
   status(): SupervisorStatus {
@@ -450,7 +367,7 @@ export class Supervisor {
     if (!result.ok) {
       const errors = result.errors.map(formatError)
       this.log.append({ type: 'CONFIG_REJECTED', data: { errors } })
-      await this.notify(`config rejected: ${errors.join('; ')}`)
+      await this.rt.notify(`config rejected: ${errors.join('; ')}`)
       return
     }
     const changed = changedPaths(this.cfg, result.config)
@@ -464,8 +381,8 @@ export class Supervisor {
         }
       : result.config
     this.log.append({ type: 'CONFIG_RELOADED', data: { changed, restart_required: restart } })
-    if (restart) this.setMeta('restart_required', 'true')
-    this.setMeta('active_profile', this.cfg.profiles.active)
+    if (restart) this.rt.setMeta('restart_required', 'true')
+    this.rt.setMeta('active_profile', this.cfg.profiles.active)
     for (const id of [...this.reviewRefused]) {
       this.reviewRefused.delete(id)
       const run = this.runs.get(id)
@@ -475,12 +392,12 @@ export class Supervisor {
 
   async completeStage(identifier: string): Promise<void> {
     const issue = await this.d.linear.issue(identifier)
-    const view = issue && viewIssue(issue, this.cfg, this.viewOptions(issue.identifier))
+    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(issue.identifier))
     if (!view?.stage) return
     const def = this.cfg.stages[view.stage]
     if (def?.human_checkpoint === 'after' && view.awaiting?.kind !== 'after') {
-      await this.holdForYou(identifier, { kind: 'after', stage: view.stage })
-      await this.notify(`${view.stage} finished and waits for your check`, identifier, {
+      await this.holds.holdForYou(identifier, { kind: 'after', stage: view.stage })
+      await this.rt.notify(`${view.stage} finished and waits for your check`, identifier, {
         kind: 'blocked',
         action: `Check the result, then \`ns resume ${identifier}\` to continue`,
       })
@@ -511,7 +428,7 @@ export class Supervisor {
     this.runs.transition(run.id, 'running', event)
     this.gatewayReachable(true, `worker started for run ${run.id}`)
     if (info.attach) {
-      await this.postOnce(
+      await this.rt.postOnce(
         run.issue,
         event.id,
         `Worker \`${run.agent}\` started (attempt ${run.attempt}). Attach: \`${info.attach}\``,
@@ -521,7 +438,7 @@ export class Supervisor {
 
   async workerStalled(runId: string, signal: string, detail?: string): Promise<void> {
     if (this.late(runId, `stall ${signal}`)) return
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     this.log.append({
       type: 'WORKER_STALLED',
@@ -544,7 +461,7 @@ export class Supervisor {
 
   async workerFinished(runId: string, payload: unknown): Promise<void> {
     if (this.late(runId, 'finish')) return
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     let event: Event
     try {
@@ -562,7 +479,7 @@ export class Supervisor {
     this.runs.update(runId, { finish: payload })
     const finish = payload as FinishLike
     if (run.agent === INGEST_AGENT) {
-      await this.ingestFinished(run, event, finish)
+      await this.ingest.ingestFinished(run, event, finish)
       return
     }
     if (finish.status === 'DONE' || finish.status === 'DONE_WITH_CONCERNS') {
@@ -573,21 +490,21 @@ export class Supervisor {
     }
     await this.preserveHead(runId)
     await this.end(runId, 'failed', event)
-    this.releaseLease(run.issue)
+    this.leasing.releaseLease(run.issue)
     if (finish.status === 'NEEDS_CONTEXT') {
-      await this.askQuestion(run, event, finish.blocker ?? {})
+      await this.questions.askQuestion(run, event, finish.blocker ?? {})
       return
     }
-    await this.remediate(this.requireRun(runId), 'blocked', finish.blocker?.reason)
+    await this.remediate(this.rt.requireRun(runId), 'blocked', finish.blocker?.reason)
   }
 
   async workerFailed(runId: string, reason: string, detail?: string): Promise<void> {
     if (this.late(runId, `failure ${reason}`)) return
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     if (reason === 'gateway_error') this.gatewayReachable(false, detail ?? reason)
     if (run.agent === INGEST_AGENT) {
-      await this.ingestRunFailed(runId, detail ? `${reason}: ${detail}` : reason)
+      await this.ingest.ingestRunFailed(runId, detail ? `${reason}: ${detail}` : reason)
       return
     }
     const event = this.log.append({
@@ -599,8 +516,8 @@ export class Supervisor {
     await this.preserveHead(runId)
     await this.end(runId, 'failed', event)
     this.stalls.delete(runId)
-    this.releaseLease(run.issue)
-    await this.remediate(this.requireRun(runId), reason, detail)
+    this.leasing.releaseLease(run.issue)
+    await this.remediate(this.rt.requireRun(runId), reason, detail)
   }
 
   async headImported(runId: string, headSha: string): Promise<void> {
@@ -610,7 +527,7 @@ export class Supervisor {
   }
 
   async gatesFinished(runId: string, results: GateResult[]): Promise<void> {
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (run.state !== 'gating') return
     let last: Event | undefined
     for (const r of results) {
@@ -632,10 +549,10 @@ export class Supervisor {
       return
     }
     await this.end(runId, 'failed', last)
-    this.releaseLease(run.issue)
-    await this.postOnce(run.issue, last.id, gateComment(failed))
+    this.leasing.releaseLease(run.issue)
+    await this.rt.postOnce(run.issue, last.id, gateComment(failed))
     await this.remediate(
-      this.requireRun(runId),
+      this.rt.requireRun(runId),
       'gate_failed',
       `${failed.check} exited ${failed.result.exitCode}${failed.result.timedOut ? ' (timed out)' : ''}`,
     )
@@ -648,12 +565,12 @@ export class Supervisor {
   }
 
   async reviewFinished(runId: string, outcome: ReviewOutcome): Promise<void> {
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (run.state !== 'reviewing') return
     if (outcome.kind === 'refused') {
       this.reviewRefused.add(runId)
       this.log.append({ type: 'CONFIG_REJECTED', data: { errors: [outcome.error] } })
-      await this.notify(`${run.issue}: review refused: ${outcome.error}`, run.issue)
+      await this.rt.notify(`${run.issue}: review refused: ${outcome.error}`, run.issue)
       return
     }
     if (outcome.kind === 'error') {
@@ -678,7 +595,7 @@ export class Supervisor {
           ? 'the reviewer returned invalid output twice'
           : `the review input is over the reviewer budget (${outcome.detail})`
       this.forceManual(run.issue, why)
-      await this.postOnce(
+      await this.rt.postOnce(
         run.issue,
         event.id,
         `This change is unreviewed: ${why}. Merge mode for this issue is forced to manual.`,
@@ -693,14 +610,14 @@ export class Supervisor {
       run: run.id,
       data: { verdict: review.verdict, model, findings: review.findings },
     })
-    await this.postOnce(run.issue, event.id, reviewComment(review, model))
+    await this.rt.postOnce(run.issue, event.id, reviewComment(review, model))
     if (review.verdict === 'pass') {
       await this.reviewPassed(runId, event)
       return
     }
     await this.end(runId, 'failed', event)
-    this.releaseLease(run.issue)
-    await this.remediate(this.requireRun(runId), 'review_failed', blockerSummary(review))
+    this.leasing.releaseLease(run.issue)
+    await this.remediate(this.rt.requireRun(runId), 'review_failed', blockerSummary(review))
   }
 
   async pullRequestOpened(record: PullRequestRecord, title: string): Promise<void> {
@@ -724,9 +641,9 @@ export class Supervisor {
       })
     }
     await this.d.linear.attachLink(record.issue, record.url, `PR #${record.number}: ${title}`)
-    await this.writeStatus(record.issue, { status: 'review' })
+    await this.linearSync.writeStatus(record.issue, { status: 'review' })
     if (!logged) {
-      await this.notify(`PR #${record.number} ready for review`, record.issue, {
+      await this.rt.notify(`PR #${record.number} ready for review`, record.issue, {
         kind: 'pr',
         url: record.url,
         context: this.runContext(record.run),
@@ -777,8 +694,8 @@ export class Supervisor {
     })
     if (ci.failures.some((f) => f.log !== '')) new CiFailureStore(this.d.db).put(pr.run, ci.failures)
     const checks = ci.failedChecks.length ? ci.failedChecks.join(', ') : 'unknown checks'
-    await this.postOnce(pr.issue, event.id, `CI failed on ${pr.url}: ${checks}.`)
-    await this.notify(`CI failed on PR #${pr.number}`, pr.issue, {
+    await this.rt.postOnce(pr.issue, event.id, `CI failed on ${pr.url}: ${checks}.`)
+    await this.rt.notify(`CI failed on PR #${pr.number}`, pr.issue, {
       kind: 'ci',
       url: pr.url,
       context: [`failed checks: ${checks}`],
@@ -786,7 +703,7 @@ export class Supervisor {
     })
     const run = this.runs.get(pr.run)
     if (run) await this.remediate(run, 'ci_failed', `failed checks: ${checks}`)
-    await this.refresh(pr.issue)
+    await this.linearSync.refresh(pr.issue)
   }
 
   private async pullRequestMerged(pr: PullRequestRecord): Promise<void> {
@@ -798,75 +715,49 @@ export class Supervisor {
     })
     this.pullRequests.remove(pr.issue)
     const issue = await this.d.linear.issue(pr.issue)
-    const stage = issue && viewIssue(issue, this.cfg, this.viewOptions(pr.issue))?.stage
+    const stage = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(pr.issue))?.stage
     if (stage === INTEGRATION) await this.completeStage(pr.issue)
     else this.log.append({ type: 'STAGE_COMPLETED', issue: pr.issue, data: { stage: INTEGRATION } })
-    if (this.awaiting(pr.issue)?.kind !== 'after') await this.writeStatus(pr.issue, { status: 'done' })
+    if (this.holds.awaiting(pr.issue)?.kind !== 'after')
+      await this.linearSync.writeStatus(pr.issue, { status: 'done' })
     const dependents = [...this.cache.values()].filter((i) =>
       i.blockedBy.some((b) => b.identifier === pr.issue),
     )
-    for (const id of [pr.issue, ...dependents.map((i) => i.identifier)]) await this.refresh(id)
-  }
-
-  private async refresh(identifier: string): Promise<void> {
-    const issue = await this.d.linear.issue(identifier)
-    if (issue) this.observeIssue(issue)
-  }
-
-  private observeIssue(issue: IssueSnapshot): void {
-    const own = this.ownWrites.get(issue.identifier)
-    // A read that still carries the pre-write updatedAt is Linear lagging our own write, not a change.
-    if (own && issue.updatedAt === own.before && issue.status === own.previous) {
-      this.cache.set(issue.identifier, { ...issue, status: own.status })
-      return
-    }
-    this.ownWrites.delete(issue.identifier)
-    this.cache.set(issue.identifier, issue)
-    const lifecycle = lifecycleOf(this.cfg, issue.team, issue.status)
-    if (lifecycle === 'done' || lifecycle === 'canceled') this.uncover(issue.identifier)
-  }
-
-  private async writeStatus(identifier: string, change: IssueUpdate): Promise<void> {
-    await this.d.linear.update(identifier, change)
-    const issue = this.cache.get(identifier)
-    if (!issue || change.status === undefined) return
-    const status = teamStatuses(this.cfg, issue.team)[change.status]
-    this.ownWrites.set(identifier, { status, previous: issue.status, before: issue.updatedAt })
-    this.cache.set(identifier, { ...issue, status })
+    for (const id of [pr.issue, ...dependents.map((i) => i.identifier)]) await this.linearSync.refresh(id)
   }
 
   private async pullRequestClosed(pr: PullRequestRecord): Promise<void> {
     this.pullRequests.remove(pr.issue)
-    await this.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION })
-    await this.postOnce(
+    await this.holds.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION })
+    await this.rt.postOnce(
       pr.issue,
       `pr-closed-${pr.number}`,
       `Pull request ${pr.url} was closed without merging. nightshift waits for you: move the issue to ready to push and open a new pull request.`,
     )
-    await this.notify(`PR #${pr.number} closed without merge`, pr.issue, {
+    await this.rt.notify(`PR #${pr.number} closed without merge`, pr.issue, {
       kind: 'blocked',
       url: pr.url,
       action: 'Reopen the PR, move the issue to Todo for a new attempt, or cancel it in Linear',
     })
-    await this.refresh(pr.issue)
+    await this.linearSync.refresh(pr.issue)
   }
 
   forcedManual(issue: string): string | null {
-    return this.metaMap<string>('forced_manual')[issue] ?? null
+    return this.rt.metaMap<string>('forced_manual')[issue] ?? null
   }
 
   private forceManual(issue: string, why: string): void {
-    const map = this.metaMap<string>('forced_manual')
+    const map = this.rt.metaMap<string>('forced_manual')
     map[issue] = why
-    this.setMeta('forced_manual', JSON.stringify(map))
+    this.rt.setMeta('forced_manual', JSON.stringify(map))
   }
 
   private async reviewPassed(runId: string, cause: Event): Promise<void> {
     const run = await this.end(runId, 'done', cause)
-    this.releaseLease(run.issue)
+    this.leasing.releaseLease(run.issue)
     const issue = await this.d.linear.issue(run.issue)
-    if (issue) this.observeIssue(issue)
-    const view = issue && viewIssue(issue, this.cfg, this.viewOptions(issue.identifier))
+    if (issue) this.linearSync.observeIssue(issue)
+    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(issue.identifier))
     if (view?.stage === VERIFICATION) {
       this.log.append({ type: 'STAGE_COMPLETED', issue: run.issue, data: { stage: IMPLEMENTATION } })
     }
@@ -875,33 +766,22 @@ export class Supervisor {
 
   private async enterVerification(identifier: string): Promise<void> {
     const issue = this.cache.get(identifier)
-    const view = issue && viewIssue(issue, this.cfg, this.viewOptions(identifier))
+    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(identifier))
     if (view?.stage !== IMPLEMENTATION) return
     if (nextStage(this.cfg, view.pipeline, IMPLEMENTATION) !== VERIFICATION) return
-    await this.relabel(identifier, VERIFICATION, IMPLEMENTATION)
+    await this.linearSync.relabel(identifier, VERIFICATION, IMPLEMENTATION)
   }
 
   private async backToImplementation(identifier: string): Promise<void> {
     if (this.runs.active().some((r) => r.issue === identifier)) return
     const issue = this.cache.get(identifier)
-    const stage = issue && viewIssue(issue, this.cfg, this.viewOptions(identifier))?.stage
+    const stage = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(identifier))?.stage
     if (stage !== VERIFICATION && stage !== INTEGRATION) return
-    await this.relabel(identifier, IMPLEMENTATION, stage)
-  }
-
-  private async relabel(identifier: string, stage: string, from: string): Promise<void> {
-    this.log.append({ type: 'STAGE_ENTERED', issue: identifier, data: { stage, from } })
-    await this.d.linear.update(identifier, { stage })
-    const issue = this.cache.get(identifier)
-    if (issue) {
-      const prefix = `${LABEL_GROUPS.stage}:`
-      const labels = [...issue.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${stage}`]
-      this.cache.set(identifier, { ...issue, labels })
-    }
+    await this.linearSync.relabel(identifier, IMPLEMENTATION, stage)
   }
 
   async stopRun(runId: string, reason: string, by?: By): Promise<void> {
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.d.executor.stop(run, reason)
     await this.preserveHead(runId)
@@ -914,11 +794,19 @@ export class Supervisor {
     await this.end(runId, 'stopped', event)
     this.stalls.delete(runId)
     await this.destroySandbox(run)
-    this.releaseLease(run.issue)
+    this.leasing.releaseLease(run.issue)
   }
 
   resolveRun(target: string): Run | undefined {
     return resolveRun(this.runs, target)
+  }
+
+  sendMessage(target: string, text: string, by: By): Promise<Run> {
+    return this.questions.sendMessage(target, text, by)
+  }
+
+  answerQuestion(issue: string, text: string, by: By): Promise<void> {
+    return this.questions.answerQuestion(issue, text, by)
   }
 
   private requireActive(target: string): Run {
@@ -927,39 +815,13 @@ export class Supervisor {
     return run
   }
 
-  async sendMessage(target: string, text: string, by: By): Promise<Run> {
-    const run = this.requireActive(target)
-    if (run.state !== 'running' || run.session === null) {
-      throw new ControlError('refused', `run ${run.id} of ${run.issue} is ${run.state}; it takes no messages`)
-    }
-    await this.d.executor.nudge(run, text)
-    this.log.append({ type: 'MESSAGE_SENT', issue: run.issue, run: run.id, data: { text, by } })
-    return run
-  }
-
-  async answerQuestion(issue: string, text: string, by: By): Promise<void> {
-    const q = this.d.db
-      .query<{ comment: string; run: string | null }, [string]>(
-        'SELECT comment, run FROM questions WHERE issue = ? AND answered_at IS NULL ORDER BY asked_at DESC',
-      )
-      .get(issue)
-    if (!q) throw new ControlError('not_found', `no open question on ${issue}`)
-    await this.d.linear.comment(issue, text, { parentId: q.comment })
-    this.log.append({
-      type: 'MESSAGE_SENT',
-      issue,
-      ...(q.run ? { run: q.run } : {}),
-      data: { text, by, comment: q.comment },
-    })
-  }
-
   async stopForUser(target: string, reason: string | undefined, by: By): Promise<Run> {
     const run = this.requireActive(target)
     await this.stopRun(run.id, reason ?? 'stopped by you', by)
     const issue = this.cache.get(run.issue) ?? (await this.d.linear.issue(run.issue))
     const stage = (issue && viewIssue(issue, this.cfg)?.stage) ?? ''
-    await this.holdForYou(run.issue, { kind: 'escalated', stage })
-    return this.requireRun(run.id)
+    await this.holds.holdForYou(run.issue, { kind: 'escalated', stage })
+    return this.rt.requireRun(run.id)
   }
 
   async retryRun(
@@ -971,8 +833,8 @@ export class Supervisor {
     if (!identifier) throw new ControlError('not_found', `unknown target ${target}`)
     const snapshot = await this.d.linear.issue(identifier)
     if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
-    this.observeIssue(snapshot)
-    const view = viewIssue(snapshot, this.cfg, this.viewOptions(identifier))
+    this.linearSync.observeIssue(snapshot)
+    const view = viewIssue(snapshot, this.cfg, this.holds.viewOptions(identifier))
     const stage = view?.stage ?? null
     if (!view || stage === null || view.repository === null || !this.cfg.stages[stage]?.automatic) {
       throw new ControlError('refused', `${identifier}: stage ${stage ?? '(none)'} has no automatic role`)
@@ -995,7 +857,7 @@ export class Supervisor {
     }
     const active = this.runs.active().find((r) => r.issue === identifier)
     if (active) await this.stopRun(active.id, 'retry requested', by)
-    this.setAwaiting(identifier, null)
+    this.holds.setAwaiting(identifier, null)
     const run = await this.dispatch(view, {
       agent,
       ...(o.profile ? { profile: o.profile } : {}),
@@ -1003,8 +865,8 @@ export class Supervisor {
       by,
     })
     if (!run) throw new ControlError('refused', `${identifier} could not be dispatched (lease held)`)
-    await this.refresh(identifier)
-    return this.requireRun(run.id)
+    await this.linearSync.refresh(identifier)
+    return this.rt.requireRun(run.id)
   }
 
   private async recover(): Promise<RecoveryReport> {
@@ -1020,7 +882,7 @@ export class Supervisor {
     }
     const withRun = new Set(this.runs.active().map((r) => r.issue))
     const lost = [...this.cache.values()].filter((i) => {
-      const view = viewIssue(i, this.cfg, this.viewOptions(i.identifier))
+      const view = viewIssue(i, this.cfg, this.holds.viewOptions(i.identifier))
       if (view?.lifecycle !== 'running' || withRun.has(i.identifier)) return false
       return (
         view.stage === VERIFICATION ||
@@ -1028,7 +890,7 @@ export class Supervisor {
       )
     })
     for (const run of this.runs.active()) await this.recoverRun(run, report)
-    report.answered = await this.checkQuestions()
+    report.answered = await this.questions.checkQuestions()
 
     const active = new Set(this.runs.active().map((r) => r.id))
     for (const handle of await this.d.sandbox.list({ nightshift: '1' })) {
@@ -1045,12 +907,12 @@ export class Supervisor {
     }
 
     for (const issue of lost) {
-      await this.postOnce(
+      await this.rt.postOnce(
         issue.identifier,
         `lost-${issue.updatedAt}`,
         'nightshift lost the runtime state of this run; it is dispatched again.',
       )
-      await this.writeStatus(issue.identifier, { status: 'ready' })
+      await this.linearSync.writeStatus(issue.identifier, { status: 'ready' })
       report.lost.push(issue.identifier)
     }
     return report
@@ -1061,31 +923,31 @@ export class Supervisor {
     report: Pick<RecoveryReport, 'reattached' | 'resumed' | 'failed' | 'stopped'>,
   ) {
     if (run.agent === INGEST_AGENT) {
-      await this.ingestRunFailed(run.id, 'interrupted by supervisor restart')
+      await this.ingest.ingestRunFailed(run.id, 'interrupted by supervisor restart')
       report.failed.push(run.id)
       return
     }
     const issue = await this.d.linear.issue(run.issue)
-    if (issue) this.observeIssue(issue)
-    const view = issue && viewIssue(issue, this.cfg, this.viewOptions(issue.identifier))
+    if (issue) this.linearSync.observeIssue(issue)
+    const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(issue.identifier))
     if (view?.lifecycle !== 'running') {
       await this.stopRun(run.id, 'issue changed in Linear')
       report.stopped.push(run.id)
       return
     }
     if (run.state === 'queued') {
-      this.takeLease(run)
+      this.leasing.takeLease(run)
       report.resumed.push(run.id)
       return
     }
     if (run.state === 'gating' || run.state === 'reviewing') {
-      this.takeLease(run)
+      this.leasing.takeLease(run)
       this.schedule(run)
       report.resumed.push(run.id)
       return
     }
     if (await this.alive(run)) {
-      this.takeLease(run)
+      this.leasing.takeLease(run)
       await this.d.executor.reattach(run)
       report.reattached.push(run.id)
       return
@@ -1098,40 +960,6 @@ export class Supervisor {
     if (run.sandbox === null || run.session === null) return false
     if ((await this.d.sandbox.status(this.handle(run))) !== 'running') return false
     return this.d.worker.alive({ id: run.session, attach: [] })
-  }
-
-  private async sync(): Promise<void> {
-    const issues = await this.d.linear.issues(this.cursor === undefined ? {} : { updatedSince: this.cursor })
-    const seen = new Set<string>()
-    for (const issue of issues) {
-      seen.add(issue.identifier)
-      this.observeIssue(issue)
-      if (this.cursor === undefined || issue.updatedAt > this.cursor) this.cursor = issue.updatedAt
-    }
-    // Covered and running issues may fall outside the opt-in query; re-read them so coverage and stops apply.
-    const watched = [
-      ...this.runs.active().map((r) => r.issue),
-      ...this.coveredSet(),
-      ...this.pullRequests.all().map((p) => p.issue),
-    ]
-    for (const id of new Set(watched)) {
-      if (seen.has(id)) continue
-      const issue = await this.d.linear.issue(id)
-      if (issue) this.observeIssue(issue)
-    }
-  }
-
-  private async enforceLinear(): Promise<string[]> {
-    const stopped: string[] = []
-    for (const run of this.runs.active()) {
-      const issue = this.cache.get(run.issue)
-      if (!issue || run.agent === INGEST_AGENT) continue
-      const view = viewIssue(issue, this.cfg, this.viewOptions(issue.identifier))
-      if (view?.lifecycle === 'running') continue
-      await this.stopRun(run.id, 'issue changed in Linear')
-      stopped.push(run.issue)
-    }
-    return stopped
   }
 
   private async dispatch(view: IssueView, o: DispatchOverride = {}): Promise<Run | undefined> {
@@ -1167,9 +995,9 @@ export class Supervisor {
       this.runs.transition(run.id, 'stopped', dispatched)
       return undefined
     }
-    this.leaseEvent('LEASE_ACQUIRED', id)
+    this.leasing.leaseEvent('LEASE_ACQUIRED', id)
     this.retry.take(id)
-    await this.writeStatus(id, { status: 'running' })
+    await this.linearSync.writeStatus(id, { status: 'running' })
     await this.launch(run, view)
     return run
   }
@@ -1197,7 +1025,7 @@ export class Supervisor {
         files: view.files,
         ...(repairFrom ? { repairFrom } : {}),
       })
-      if (!isTerminal(this.requireRun(run.id).state)) this.gatewayReachable(true, `run ${run.id} started`)
+      if (!isTerminal(this.rt.requireRun(run.id).state)) this.gatewayReachable(true, `run ${run.id} started`)
     } catch (e) {
       const reason =
         e instanceof TaskTooLargeError
@@ -1225,7 +1053,7 @@ export class Supervisor {
     for (const run of this.runs.active()) {
       if (run.state !== 'queued') continue
       const issue = this.cache.get(run.issue)
-      const view = issue && viewIssue(issue, this.cfg, this.viewOptions(run.issue))
+      const view = issue && viewIssue(issue, this.cfg, this.holds.viewOptions(run.issue))
       if (view) await this.launch(run, view)
     }
   }
@@ -1271,7 +1099,7 @@ export class Supervisor {
         fallback: c.fallback ?? false,
       },
     })
-    await this.postOnce(
+    await this.rt.postOnce(
       run.issue,
       event.id,
       `Attempt ${run.attempt} (${run.agent}) failed: ${reason}${detail ? ` (${detail})` : ''}. Class \`${c.class}\`, action \`${action}\`.`,
@@ -1280,10 +1108,10 @@ export class Supervisor {
 
     if (action === 'retry_same') {
       this.retry.schedule(run.issue, c.class, this.now().getTime())
-      await this.writeStatus(run.issue, { status: 'ready' })
+      await this.linearSync.writeStatus(run.issue, { status: 'ready' })
     } else if (action === 'pause_dispatch') {
       this.pause(`failure ${c.class} on ${run.issue}`, 'supervisor')
-      await this.notify(`dispatch paused after a ${c.class} failure`, run.issue, {
+      await this.rt.notify(`dispatch paused after a ${c.class} failure`, run.issue, {
         kind: 'paused',
         context: this.failureContext(run),
         action: 'Fix the cause, then `ns resume`',
@@ -1297,7 +1125,7 @@ export class Supervisor {
     if (this.environmentStreak >= ENVIRONMENT_STREAK_PAUSE && !this.paused) {
       const why = `${ENVIRONMENT_STREAK_PAUSE} environment failures in a row`
       this.pause(why, 'supervisor')
-      await this.notify(`dispatch paused: ${why}`, undefined, {
+      await this.rt.notify(`dispatch paused: ${why}`, undefined, {
         kind: 'paused',
         context: [`last: ${run.issue}: ${this.failureContext(run).join('; ')}`],
         action: 'Check the gateway, Docker and the host, then `ns resume`',
@@ -1307,94 +1135,25 @@ export class Supervisor {
 
   private async escalateUser(run: Run, c: Classification): Promise<void> {
     const issue = this.cache.get(run.issue)
-    await this.holdForYou(run.issue, {
+    await this.holds.holdForYou(run.issue, {
       kind: 'escalated',
       stage: (issue && viewIssue(issue, this.cfg)?.stage) ?? '',
     })
-    await this.notify(`run failed and needs you (${c.class})`, run.issue, {
+    await this.rt.notify(`run failed and needs you (${c.class})`, run.issue, {
       kind: 'failed',
       context: this.failureContext(run),
       action: `Clarify the issue or answer in Linear, then \`ns retry ${run.issue}\``,
     })
   }
 
-  private async askQuestion(
-    run: Run,
-    cause: Event,
-    blocker: NonNullable<FinishLike['blocker']>,
-  ): Promise<void> {
-    const to = blocker.needs === 'decision' || blocker.needs === 'permission' ? 'user' : 'lead'
-    const question = blocker.question || blocker.reason || 'the worker needs more context'
-    const options = blocker.options?.length ? blocker.options : undefined
-    const choices = options ? `\n\nOptions: ${options.join(' | ')}` : ''
-    const comment = await this.postOnce(run.issue, cause.id, `Question for the ${to}: ${question}${choices}`)
-    this.log.append({
-      type: 'QUESTION_ASKED',
-      issue: run.issue,
-      run: run.id,
-      data: { to, question, comment: comment.id, ...(options ? { options } : {}) },
-    })
-    this.d.db
-      .query(
-        'INSERT OR IGNORE INTO questions (comment, issue, run, asked_to, asked_at) VALUES (?, ?, ?, ?, ?)',
-      )
-      .run(comment.id, run.issue, run.id, to, this.now().toISOString())
-    await this.writeStatus(run.issue, { status: 'blocked' })
-    await this.notify(`question for the ${to}: ${question}`, run.issue, {
-      kind: 'question',
-      context: [
-        `asked by ${run.agent} (attempt ${run.attempt})${options ? `; options: ${options.join(' | ')}` : ''}`,
-      ],
-      question: { comment: comment.id, text: question, ...(options ? { options } : {}) },
-    })
-  }
-
-  private async checkQuestions(): Promise<string[]> {
-    const answered: string[] = []
-    const open = this.d.db
-      .query<QuestionRow, []>(
-        'SELECT comment, issue FROM questions WHERE answered_at IS NULL ORDER BY asked_at',
-      )
-      .all()
-    for (const q of open) {
-      const reply = (await this.d.linear.comments(q.issue)).find((c) => c.parentId === q.comment)
-      if (!reply) continue
-      this.d.db
-        .query('UPDATE questions SET answered_at = ?, answer = ? WHERE comment = ?')
-        .run(this.now().toISOString(), reply.body, q.comment)
-      this.log.append({
-        type: 'QUESTION_ANSWERED',
-        issue: q.issue,
-        data: { comment: q.comment, answer: reply.body, by: reply.by },
-      })
-      answered.push(q.issue)
-      await this.resumeAnswered(q.issue)
-    }
-    return answered
-  }
-
-  private async resumeAnswered(identifier: string): Promise<void> {
-    const stillOpen = this.d.db
-      .query<{ n: number }, [string]>(
-        'SELECT COUNT(*) AS n FROM questions WHERE issue = ? AND answered_at IS NULL',
-      )
-      .get(identifier)
-    if (stillOpen?.n || this.awaiting(identifier) || this.runs.active().some((r) => r.issue === identifier))
-      return
-    const issue = this.cache.get(identifier)
-    if (!issue || lifecycleOf(this.cfg, issue.team, issue.status) !== 'blocked') return
-    await this.writeStatus(identifier, { status: 'ready' })
-    await this.refresh(identifier)
-  }
-
   private async enterStage(view: IssueView, stage: string, from?: string): Promise<void> {
     const id = view.snapshot.identifier
     this.log.append({ type: 'STAGE_ENTERED', issue: id, data: { stage, ...(from ? { from } : {}) } })
     const hold = this.cfg.stages[stage]?.human_checkpoint === 'before'
-    this.setAwaiting(id, hold ? { kind: 'before', stage } : null)
-    await this.writeStatus(id, { stage, ...(hold ? { status: 'blocked' as const } : {}) })
+    this.holds.setAwaiting(id, hold ? { kind: 'before', stage } : null)
+    await this.linearSync.writeStatus(id, { stage, ...(hold ? { status: 'blocked' as const } : {}) })
     if (hold)
-      await this.notify(`${stage} needs your approval before it starts`, id, {
+      await this.rt.notify(`${stage} needs your approval before it starts`, id, {
         kind: 'blocked',
         action: `\`ns resume ${id}\` to start ${stage}`,
       })
@@ -1408,102 +1167,9 @@ export class Supervisor {
     const next = nextStage(this.cfg, view.pipeline, stage)
     if (next) await this.enterStage(view, next, stage)
     else {
-      this.setAwaiting(id, null)
-      await this.startIngest(view)
+      this.holds.setAwaiting(id, null)
+      await this.ingest.startIngest(view)
     }
-  }
-
-  private readonly ingesting = new Set<string>()
-
-  private async startIngest(view: IssueView): Promise<void> {
-    const ingest = this.d.ingest
-    const id = view.snapshot.identifier
-    if (!ingest || this.cfg.stages.closeout?.ingest === false || this.ingesting.has(id)) return
-    if (this.log.since(null, { issue: id, types: ['VAULT_INGEST_STARTED'] }).length) return
-    this.ingesting.add(id)
-    try {
-      const started = this.log.append({ type: 'VAULT_INGEST_STARTED', issue: id, data: {} })
-      let prepared: Awaited<ReturnType<VaultIngest['prepare']>>
-      try {
-        prepared = await ingest.prepare({
-          issue: view.snapshot,
-          repository: view.repository ?? '',
-          date: this.now().toISOString().slice(0, 10),
-          events: this.log.since(null, { issue: id }),
-          pr: this.pullRequests.get(id) ?? null,
-        })
-      } catch (e) {
-        await this.ingestFailed(id, `prepare: ${(e as Error).message}`)
-        return
-      }
-      const profile = this.profileFor(view)
-      const run = this.runs.create({
-        issue: id,
-        agent: INGEST_AGENT,
-        profile,
-        model: this.d.modelFor(INGEST_AGENT, profile, this.cfg),
-        repository: prepared.repository,
-        baseSha: prepared.baseSha,
-        attempt: 1,
-      })
-      const starting = this.runs.transition(run.id, 'starting', started)
-      try {
-        await this.d.executor.start({
-          run: starting,
-          issue: view.snapshot,
-          files: prepared.files,
-          sourceFiles: prepared.sourceFiles,
-        })
-      } catch (e) {
-        await this.ingestRunFailed(run.id, `start: ${(e as Error).message}`)
-      }
-    } finally {
-      this.ingesting.delete(id)
-    }
-  }
-
-  private async ingestFinished(run: Run, event: Event, finish: FinishLike): Promise<void> {
-    if (finish.status !== 'DONE' && finish.status !== 'DONE_WITH_CONCERNS') {
-      await this.ingestRunFailed(run.id, `${finish.status}: ${finish.blocker?.reason ?? 'no reason'}`, event)
-      return
-    }
-    // Publishing is the ingest gate (vault lints, rebase, push); there is no code review stage.
-    this.runs.transition(run.id, 'gating', event)
-    let commits: string[]
-    try {
-      commits = await (this.d.ingest as VaultIngest).publish(this.requireRun(run.id))
-    } catch (e) {
-      await this.ingestRunFailed(run.id, `publish: ${(e as Error).message}`, event)
-      return
-    }
-    this.runs.transition(run.id, 'reviewing', event)
-    await this.end(run.id, 'done', event)
-    this.log.append({ type: 'VAULT_INGESTED', issue: run.issue, data: { commits } })
-  }
-
-  private async ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void> {
-    const run = this.requireRun(runId)
-    if (!isTerminal(run.state)) {
-      await this.end(
-        runId,
-        'failed',
-        cause ??
-          this.log.append({
-            type: 'WORKER_FAILED',
-            issue: run.issue,
-            run: run.id,
-            data: { reason: 'crash', detail: reason },
-          }),
-      )
-    }
-    this.stalls.delete(runId)
-    await this.ingestFailed(run.issue, reason)
-  }
-
-  private async ingestFailed(issue: string, reason: string): Promise<void> {
-    if (this.log.since(null, { issue, types: ['VAULT_INGEST_FAILED', 'VAULT_INGESTED'] }).length) return
-    this.log.append({ type: 'VAULT_INGEST_FAILED', issue, data: { reason } })
-    await this.notify('Vault ingest failed', issue, { kind: 'info', context: [reason] })
   }
 
   private runRole(view: IssueView, stage: string, agent: string | undefined): void {
@@ -1525,54 +1191,12 @@ export class Supervisor {
     this.roleFailures.set(key, count)
     if (count < STAGE_FAILURE_LIMIT) return
     this.roleFailures.delete(key)
-    await this.holdForYou(id, { kind: 'escalated', stage })
-    await this.notify(`${stage} failed ${count} times in a row`, id, {
+    await this.holds.holdForYou(id, { kind: 'escalated', stage })
+    await this.rt.notify(`${stage} failed ${count} times in a row`, id, {
       kind: 'failed',
       context: [message],
       action: `Fix the cause, then move ${id} to Todo to try ${stage} again`,
     })
-  }
-
-  private renewLeases(): void {
-    for (const run of this.runs.active()) {
-      if (this.leases.get(run.issue)?.holder === this.instanceId) this.leases.renew(run.issue)
-    }
-  }
-
-  private async expireLease(lease: Lease): Promise<void> {
-    this.log.append({
-      type: 'LEASE_EXPIRED',
-      issue: lease.issue,
-      data: { holder: lease.holder, expires: lease.expiresAt },
-    })
-    const run = this.runs.get(lease.run)
-    if (run && !isTerminal(run.state)) {
-      await this.recoverRun(run, { reattached: [], resumed: [], failed: [], stopped: [] })
-    } else {
-      this.leases.release(lease.issue)
-    }
-  }
-
-  private takeLease(run: Run): void {
-    this.leases.release(run.issue)
-    this.leases.acquire(run.issue, run.id)
-    this.leaseEvent('LEASE_ACQUIRED', run.issue)
-  }
-
-  private releaseLease(issue: string): void {
-    const lease = this.leases.get(issue)
-    if (!lease) return
-    this.leases.release(issue)
-    this.log.append({
-      type: 'LEASE_RELEASED',
-      issue,
-      data: { holder: lease.holder, expires: lease.expiresAt },
-    })
-  }
-
-  private leaseEvent(type: 'LEASE_ACQUIRED', issue: string): void {
-    const lease = this.leases.get(issue)
-    if (lease) this.log.append({ type, issue, data: { holder: lease.holder, expires: lease.expiresAt } })
   }
 
   private handle(run: Run): SandboxHandle {
@@ -1580,7 +1204,7 @@ export class Supervisor {
   }
 
   private async preserveHead(runId: string): Promise<void> {
-    const run = this.requireRun(runId)
+    const run = this.rt.requireRun(runId)
     if (run.headSha !== null || run.sandbox === null || run.agent === INGEST_AGENT) return
     try {
       const head = await this.d.executor.captureHead?.(run)
@@ -1599,12 +1223,6 @@ export class Supervisor {
 
   private sandboxDestroyed(runId: string, handle: SandboxHandle): void {
     this.log.append({ type: 'SANDBOX_DESTROYED', run: runId, data: { driver: handle.driver, id: handle.id } })
-  }
-
-  private async postOnce(identifier: string, marker: string, body: string): Promise<LinearComment> {
-    const tag = `<!-- nightshift:${marker} -->`
-    const existing = (await this.d.linear.comments(identifier)).find((c) => c.body.includes(tag))
-    return existing ?? this.d.linear.comment(identifier, `${body}\n\n${tag}`)
   }
 
   private runContext(runId: string): string[] {
@@ -1634,23 +1252,6 @@ export class Supervisor {
     ]
   }
 
-  private async notify(
-    title: string,
-    issue?: string,
-    extra: Omit<Notification, 'title' | 'issue'> = {},
-  ): Promise<void> {
-    const subject = issue ? this.cache.get(issue)?.title : undefined
-    const channel = await this.d.notifier.notify({
-      title,
-      ...(issue ? { issue } : {}),
-      ...(subject ? { subject } : {}),
-      ...extra,
-    })
-    if (channel) {
-      this.log.append({ type: 'NOTIFICATION_SENT', data: { channel, title, ...(issue ? { issue } : {}) } })
-    }
-  }
-
   private retain(): void {
     const cutoff = new Date(this.now().getTime() - RETENTION_MS).toISOString()
     const open = "SELECT id FROM runs WHERE state NOT IN ('done','failed','stopped')"
@@ -1668,24 +1269,5 @@ export class Supervisor {
          AND id NOT IN (SELECT run FROM questions WHERE run IS NOT NULL)`,
       )
       .run(cutoff)
-  }
-
-  private requireRun(id: string): Run {
-    const run = this.runs.get(id)
-    if (!run) throw new Error(`no run ${id}`)
-    return run
-  }
-
-  private meta(key: string): string | undefined {
-    return this.d.db.query<{ value: string }, [string]>('SELECT value FROM meta WHERE key = ?').get(key)
-      ?.value
-  }
-
-  private setMeta(key: string, value: string): void {
-    this.d.db
-      .query(
-        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-      )
-      .run(key, value)
   }
 }

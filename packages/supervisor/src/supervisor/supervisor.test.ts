@@ -6,91 +6,9 @@ import type { Config } from '@nightshift/core'
 import type { Classifier, ExecResult, FailureSignal, GateResult } from '../ports'
 import { attemptsOf, TaskTooLargeError } from '../stages/context'
 import { integrationHarness } from '../stages/integration/testing'
-import { openState } from '../state/db'
-import type { EventType } from '../state/event-schema'
-import {
-  FakeExecutor,
-  FakeLinear,
-  FakeNotifier,
-  FakeOutbox,
-  FakeSandbox,
-  FakeWorker,
-  issueBody,
-  snapshot,
-  testConfig,
-} from '../testing/testing'
-import { Supervisor, type SupervisorDeps } from './supervisor'
+import { issueBody, snapshot, testConfig } from '../testing/testing'
 
-const KINDS: Record<string, 'worker' | 'single_call'> = {
-  intake: 'single_call',
-  reviewer: 'single_call',
-  acceptor: 'single_call',
-  implementer: 'worker',
-  'implementer-strong': 'worker',
-  fixer: 'worker',
-  repairer: 'worker',
-}
-
-const files = (...f: string[]) => issueBody(f)
-
-function harness(over: Partial<SupervisorDeps> = {}) {
-  let t = Date.parse('2026-10-04T10:00:00.000Z')
-  const now = () => new Date(t)
-  const config = testConfig()
-  const db = openState(':memory:')
-  const linear = new FakeLinear(config, now)
-  const executor = new FakeExecutor()
-  const sandbox = new FakeSandbox()
-  const worker = new FakeWorker()
-  const notifier = new FakeNotifier()
-  const outbox = new FakeOutbox()
-  const make = (more: Partial<SupervisorDeps> = {}) =>
-    new Supervisor({
-      config,
-      db,
-      linear,
-      executor,
-      sandbox,
-      worker,
-      notifier,
-      outbox,
-      repos: { baseSha: async () => 'base1' },
-      agentKind: (a) => KINDS[a],
-      modelFor: (agent, profile) => `${profile}/${agent}`,
-      now,
-      instanceId: 'inst-1',
-      retry: { baseMs: 1000, maxMs: 8000 },
-      ...over,
-      ...more,
-    })
-  const sup = make()
-  const types = (s = sup) => s.log.since(null).map((e) => e.type)
-  const of = (type: EventType, s = sup) => s.log.since(null, { types: [type] })
-  return {
-    sup,
-    make,
-    config,
-    db,
-    linear,
-    executor,
-    sandbox,
-    worker,
-    notifier,
-    outbox,
-    types,
-    of,
-    advance: (ms: number) => (t += ms),
-  }
-}
-
-async function dispatchOne(h: ReturnType<typeof harness>, identifier = 'FOR-1') {
-  h.linear.put(snapshot({ identifier }))
-  await h.sup.start()
-  await h.sup.tick()
-  const run = h.sup.runs.forIssue(identifier).at(-1)
-  if (!run) throw new Error('not dispatched')
-  return run
-}
+import { dispatchOne, files, harness } from './testing'
 
 describe('start', () => {
   test('records SUPERVISOR_STARTED and the instance id', async () => {
@@ -195,16 +113,6 @@ describe('poll and dispatch', () => {
     expect((await h.sup.tick()).dispatched).toEqual(['FOR-1'])
     expect(h.types()).toContain('DISPATCH_PAUSED')
     expect(h.types()).toContain('DISPATCH_RESUMED')
-  })
-
-  test('a held issue is skipped', async () => {
-    const h = harness()
-    h.linear.put(snapshot({ identifier: 'FOR-1' }))
-    await h.sup.start()
-    h.sup.hold('FOR-1')
-    expect((await h.sup.tick()).dispatched).toEqual([])
-    h.sup.unhold('FOR-1')
-    expect((await h.sup.tick()).dispatched).toEqual(['FOR-1'])
   })
 
   test('only changed issues are fetched after the first sweep', async () => {
@@ -336,182 +244,6 @@ describe('stage engine', () => {
   })
 })
 
-describe('vault ingest lifecycle', () => {
-  function setup() {
-    const prepared: unknown[] = []
-    const published: string[] = []
-    const ingest = {
-      prepare: async (input: unknown) => {
-        prepared.push(input)
-        return {
-          repository: 'nightshift-vault',
-          baseSha: 'vault-base',
-          files: ['raw/linear/2026-10-04-FOR-1.md'],
-          sourceFiles: [{ path: 'raw/linear/2026-10-04-FOR-1.md', content: 'source' }],
-        }
-      },
-      publish: async (run: { id: string }) => {
-        published.push(run.id)
-        return ['vault-commit']
-      },
-    }
-    const h = harness({ ingest })
-    h.config.stages.acceptance = { automatic: true, human_checkpoint: 'none' }
-    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['ai-stage:acceptance'] }))
-    return { ...h, ingest, prepared, published }
-  }
-
-  test.each(['feature', 'improvement', 'bug', 'chore'])(
-    'last stage ingests once for %s',
-    async (pipeline) => {
-      const h = setup()
-      h.config.pipelines[pipeline] = ['implementation', 'acceptance']
-      h.linear.patch('FOR-1', { labels: ['ai-stage:acceptance', `type:${pipeline}`] })
-      await h.sup.start()
-      await Promise.all([h.sup.completeStage('FOR-1'), h.sup.completeStage('FOR-1')])
-      expect(h.prepared).toHaveLength(1)
-      expect(h.executor.starts).toHaveLength(1)
-      expect(h.executor.starts[0]).toMatchObject({
-        run: { agent: 'ingester', repository: 'nightshift-vault', state: 'starting' },
-        files: ['raw/linear/2026-10-04-FOR-1.md'],
-        sourceFiles: [{ path: 'raw/linear/2026-10-04-FOR-1.md', content: 'source' }],
-      })
-      await h.sup.tick()
-      expect(h.executor.ops('stop')).toEqual([])
-      expect(h.linear.get('FOR-1').status).toBe('Done')
-    },
-  )
-
-  test('non-final and disabled closeout start no ingest', async () => {
-    const h = setup()
-    await h.sup.start()
-    h.linear.patch('FOR-1', { labels: ['ai-stage:verification'] })
-    await h.sup.completeStage('FOR-1')
-    h.config.stages.closeout = { automatic: true, human_checkpoint: 'none', ingest: false }
-    h.linear.patch('FOR-1', { labels: ['ai-stage:acceptance'] })
-    await h.sup.completeStage('FOR-1')
-    expect(h.prepared).toEqual([])
-    expect(h.executor.starts).toEqual([])
-  })
-
-  test('publishes success and restart never repeats a completed ingest', async () => {
-    const h = setup()
-    await h.sup.start()
-    await h.sup.completeStage('FOR-1')
-    const run = h.executor.starts[0]?.run
-    if (!run) throw new Error('ingester not started')
-    await h.sup.workerStarted(run.id, { sandbox: 'vault-sandbox', session: 'vault-session' })
-    await h.sup.workerFinished(run.id, {
-      status: 'DONE',
-      summary: 'Ingested',
-      evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
-    })
-    expect(h.published).toEqual([run.id])
-    expect(h.of('VAULT_INGESTED')[0]?.data).toEqual({ commits: ['vault-commit'] })
-    expect(h.sup.runs.get(run.id)?.state).toBe('done')
-    const restarted = h.make()
-    await restarted.start()
-    await restarted.completeStage('FOR-1')
-    expect(h.executor.starts).toHaveLength(1)
-    expect(h.sup.awaiting('FOR-1')).toBeNull()
-    expect(h.linear.updates).toEqual([])
-  })
-
-  test.each(['blocked', 'crash', 'publish'])('%s failure only logs and notifies once', async (failure) => {
-    const h = setup()
-    await h.sup.start()
-    await h.sup.completeStage('FOR-1')
-    const run = h.executor.starts[0]?.run
-    if (!run) throw new Error('ingester not started')
-    await h.sup.workerStarted(run.id, { sandbox: 'vault-sandbox', session: 'vault-session' })
-    if (failure === 'crash') await h.sup.workerFailed(run.id, 'sandbox_error', 'missing tooling')
-    else {
-      if (failure === 'publish')
-        h.ingest.publish = async () => {
-          throw new Error('push rejected')
-        }
-      await h.sup.workerFinished(
-        run.id,
-        failure === 'blocked'
-          ? {
-              status: 'BLOCKED',
-              summary: 'No lint',
-              blocker: { needs: 'environment', reason: 'missing tooling' },
-            }
-          : {
-              status: 'DONE',
-              summary: 'Ingested',
-              evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
-            },
-      )
-    }
-    await h.sup.workerFailed(run.id, 'crash', 'duplicate callback')
-    expect(h.of('VAULT_INGEST_FAILED')).toHaveLength(1)
-    expect(h.notifier.sent.filter((n) => n.kind === 'info')).toHaveLength(1)
-    expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
-    expect(h.linear.updates).toEqual([])
-    expect(h.linear.get('FOR-1').status).toBe('Done')
-    expect(h.sup.awaiting('FOR-1')).toBeNull()
-    const restarted = h.make()
-    await restarted.start()
-    await restarted.completeStage('FOR-1')
-    expect(h.executor.starts).toHaveLength(1)
-  })
-
-  test('preparation failure and interrupted starts are not retried', async () => {
-    const h = setup()
-    h.ingest.prepare = async () => {
-      throw new Error('vault missing')
-    }
-    await h.sup.start()
-    await h.sup.completeStage('FOR-1')
-    expect(h.of('VAULT_INGEST_FAILED')).toHaveLength(1)
-    const restarted = h.make()
-    await restarted.start()
-    await restarted.completeStage('FOR-1')
-    expect(h.executor.starts).toEqual([])
-    expect(h.linear.updates).toEqual([])
-  })
-
-  test('restart of active ingest fails it without changing issue or starting another', async () => {
-    const h = setup()
-    await h.sup.start()
-    await h.sup.completeStage('FOR-1')
-    const restarted = h.make()
-    await restarted.start()
-    await restarted.completeStage('FOR-1')
-    expect(h.executor.starts).toHaveLength(1)
-    expect(h.of('VAULT_INGEST_FAILED')).toHaveLength(1)
-    expect(h.linear.updates).toEqual([])
-    expect(restarted.awaiting('FOR-1')).toBeNull()
-  })
-})
-
-describe('own Linear writes', () => {
-  test('a stale read after dispatch does not stop the fresh run', async () => {
-    const h = harness()
-    h.linear.put(snapshot({ identifier: 'FOR-1' }))
-    await h.sup.start()
-    h.linear.freezeReads()
-    await h.sup.tick()
-    const run = h.sup.runs.forIssue('FOR-1').at(-1)
-    if (!run) throw new Error('not dispatched')
-    await h.sup.tick()
-    await h.sup.tick()
-    expect(h.sup.runs.get(run.id)?.state).not.toBe('stopped')
-    expect(h.of('WORKER_FAILED')).toEqual([])
-  })
-
-  test('an external status change newer than our write still stops the run', async () => {
-    const h = harness()
-    const run = await dispatchOne(h)
-    h.advance(60_000)
-    h.linear.patch('FOR-1', { status: 'Todo' })
-    await h.sup.tick()
-    expect(h.sup.runs.get(run.id)?.state).toBe('stopped')
-  })
-})
-
 describe('worker lifecycle', () => {
   test('WORKER_STARTED moves the run to running and posts the attach command once', async () => {
     const h = harness()
@@ -618,23 +350,6 @@ describe('worker lifecycle', () => {
     expect(h.of('WORKER_FAILED').map((e) => (e.data as { detail?: string }).detail)).toEqual([
       'gating: docker gone',
     ])
-  })
-
-  test('NEEDS_CONTEXT fails the run, asks the lead, and runs no gate', async () => {
-    const h = harness()
-    const run = await dispatchOne(h)
-    await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
-    await h.sup.workerFinished(run.id, {
-      status: 'NEEDS_CONTEXT',
-      summary: 'missing',
-      evidence: [],
-      blocker: { needs: 'context', reason: 'which API?', question: 'Which API version?' },
-    })
-    expect(h.sup.runs.get(run.id)?.state).toBe('failed')
-    expect(h.of('QUESTION_ASKED')[0]?.data).toMatchObject({ to: 'lead', question: 'Which API version?' })
-    expect(h.executor.ops('runStep')).toEqual([])
-    expect(h.linear.get('FOR-1')).toMatchObject({ status: 'Blocked', labels: ['ai-stage:implementation'] })
-    expect(h.db.query('SELECT asked_to FROM questions').all()).toEqual([{ asked_to: 'lead' }])
   })
 
   test('an invalid finish payload counts as no finish', async () => {
@@ -1016,108 +731,6 @@ describe('manual retry', () => {
   })
 })
 
-describe('Linear wins', () => {
-  test('an issue canceled in Linear stops its run, destroys the sandbox and releases the lease', async () => {
-    const h = harness()
-    const run = await dispatchOne(h)
-    h.sandbox.add(run.id)
-    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
-    h.linear.patch('FOR-1', { status: 'Canceled' })
-    await h.sup.tick()
-    expect(h.sup.runs.get(run.id)?.state).toBe('stopped')
-    expect(h.executor.ops('stop')).toEqual([run.id])
-    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
-    expect(h.sup.leases.get('FOR-1')).toBeUndefined()
-    expect(h.types()).toContain('SANDBOX_DESTROYED')
-  })
-  test('withdrawing the opt-in stops a running issue even though it no longer matches the query', async () => {
-    const h = harness()
-    const run = await dispatchOne(h)
-    h.sandbox.add(run.id)
-    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
-    h.linear.patch('FOR-1', { delegated: false })
-    await h.sup.tick()
-    expect(h.sup.runs.get(run.id)?.state).toBe('stopped')
-    expect(h.executor.ops('stop')).toEqual([run.id])
-  })
-
-  test('an issue that is not opted in is never dispatched', async () => {
-    const h = harness()
-    h.linear.put(snapshot({ identifier: 'FOR-30', delegated: false, labels: ['ai-stage:implementation'] }))
-    await h.sup.start()
-    await h.sup.tick()
-    expect(h.executor.ops('start')).toEqual([])
-  })
-})
-
-describe('explicit coverage', () => {
-  const manual = (h: ReturnType<typeof harness>) =>
-    h.make({
-      config: { ...h.config, linear: { ...h.config.linear, act_on: { delegated: false, labels: [] } } },
-    })
-
-  for (const status of ['Done', 'Canceled']) {
-    test(`sync removes coverage when an issue is manually ${status}`, async () => {
-      const h = harness()
-      const sup = manual(h)
-      h.linear.put(snapshot({ identifier: 'FOR-40', delegated: false }))
-      await sup.start()
-      sup.cover('FOR-40')
-      h.linear.patch('FOR-40', { status })
-      await sup.tick()
-      await sup.tick()
-      expect(sup.covered()).toEqual([])
-      expect(h.of('COVERAGE_CHANGED', sup).map((e) => e.data)).toEqual([
-        { covered: true, by: 'supervisor' },
-        { covered: false, by: 'supervisor' },
-      ])
-    })
-
-    test(`restart drops ${status} coverage and retains nonterminal issues`, async () => {
-      const h = harness()
-      h.linear.put(
-        snapshot({ identifier: 'FOR-40', status, delegated: false }),
-        snapshot({ identifier: 'FOR-41', status: 'In Review', delegated: false }),
-      )
-      h.sup.cover('FOR-40')
-      h.sup.cover('FOR-41')
-      const restarted = manual(h)
-      await restarted.start()
-      expect(restarted.covered()).toEqual(['FOR-41'])
-    })
-  }
-
-  test('in manual mode only issues you cover are dispatched, and coverage survives a restart', async () => {
-    const h = harness()
-    const sup = manual(h)
-    h.linear.put(snapshot({ identifier: 'FOR-40', delegated: false }))
-    h.linear.put(snapshot({ identifier: 'FOR-41', delegated: false }))
-    await sup.start()
-    await sup.tick()
-    expect(h.executor.ops('start')).toEqual([])
-    sup.cover('FOR-40')
-    await sup.tick()
-    expect(h.executor.ops('start').length).toBe(1)
-    expect(manual(h).covered()).toEqual(['FOR-40'])
-  })
-
-  test('uncovering a running issue stops it', async () => {
-    const h = harness()
-    const sup = manual(h)
-    h.linear.put(snapshot({ identifier: 'FOR-42', delegated: false }))
-    await sup.start()
-    sup.cover('FOR-42')
-    await sup.tick()
-    const run = sup.runs.active()[0]
-    if (!run) throw new Error('not dispatched')
-    h.sandbox.add(run.id)
-    await sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
-    sup.uncover('FOR-42')
-    await sup.tick()
-    expect(sup.runs.get(run.id)?.state).toBe('stopped')
-  })
-})
-
 describe('config reload', () => {
   const reloaded = (config: Config) => ({ ok: true as const, config, sources: [] })
 
@@ -1393,29 +1006,6 @@ describe('recovery', () => {
     expect(h.executor.ops('runStep')).toEqual([run.id, run.id])
   })
 
-  test('an answer posted while nightshift was down emits QUESTION_ANSWERED', async () => {
-    const h = harness()
-    const run = await dispatchOne(h)
-    await h.sup.workerStarted(run.id, { sandbox: 'sb-x', session: 's-1' })
-    await h.sup.workerFinished(run.id, {
-      status: 'NEEDS_CONTEXT',
-      summary: 's',
-      evidence: [],
-      blocker: { needs: 'decision', reason: 'r', question: 'A or B?' },
-    })
-    const asked = h.of('QUESTION_ASKED')[0]
-    expect(asked?.data).toMatchObject({ to: 'user' })
-    h.linear.reply('FOR-1', String(asked?.data.comment), 'B')
-    const restarted = h.make({ instanceId: 'inst-2' })
-    const report = await restarted.start()
-    expect(report.answered).toEqual(['FOR-1'])
-    expect(h.of('QUESTION_ANSWERED', restarted)[0]?.data).toEqual({
-      comment: asked?.data.comment,
-      answer: 'B',
-      by: 'you',
-    })
-  })
-
   test('orphaned sandboxes and outboxes are removed', async () => {
     const h = harness()
     h.sandbox.add('01J9ZQ3W5C8XKQG4M2N7P6R1ST')
@@ -1448,25 +1038,6 @@ describe('recovery', () => {
     const report2 = await h.make({ instanceId: 'inst-3' }).start()
     expect(report2).toMatchObject({ lost: [], reattached: [run.id] })
     expect((await h.linear.comments('FOR-1')).length).toBe(1)
-  })
-
-  test('an expired lease emits LEASE_EXPIRED and recovers that issue', async () => {
-    const h = harness()
-    const run = await dispatchOne(h)
-    h.sandbox.add(run.id)
-    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
-    h.db.query("UPDATE leases SET holder = 'dead', expires_at = '2026-10-04T09:00:00.000Z'").run()
-    await h.sup.tick()
-    expect(h.of('LEASE_EXPIRED')[0]).toMatchObject({ issue: 'FOR-1', data: { holder: 'dead' } })
-    expect(h.sup.runs.get(run.id)?.state).toBe('failed')
-  })
-
-  test('leases of active runs are renewed on every tick', async () => {
-    const h = harness()
-    await dispatchOne(h)
-    h.advance(150_000)
-    await h.sup.tick()
-    expect(h.sup.leases.get('FOR-1')?.expiresAt).toBe('2026-10-04T10:05:30.000Z')
   })
 })
 
