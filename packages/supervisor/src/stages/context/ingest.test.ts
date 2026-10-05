@@ -81,7 +81,7 @@ test('review and failure sources preserve event evidence with fixed content', ()
     [paths[1], events[0]],
     [paths[2], events[1]],
   ] as const) {
-    expect(readFileSync(join(dir, path!), 'utf8')).toBe(`# FOR-1\n\n${JSON.stringify(event, null, 2)}\n`)
+    expect(readFileSync(join(dir, path ?? ''), 'utf8')).toBe(`# FOR-1\n\n${JSON.stringify(event, null, 2)}\n`)
   }
 })
 
@@ -109,7 +109,7 @@ function bundleFixture() {
     repository: 'omni',
     events: [],
   })
-  const source = readFileSync(join(dir, sources[0]!), 'utf8')
+  const source = readFileSync(join(dir, sources[0] ?? ''), 'utf8')
   git(dir, 'add', 'raw')
   git(dir, 'commit', '-m', `ingest: ${sources[0]}`)
   const bundle = join(temporary(), 'worker.bundle')
@@ -141,18 +141,18 @@ for (const rejected of [0, 1, 2])
       authEnv: (token) => ({ AUTH: token }),
       command: (args, options) => {
         const cmd = args.join(' ')
-        if (args[0] !== 'git' || ['pull', 'push'].includes(args[1]!)) {
+        if (args[0] !== 'git' || ['pull', 'push'].includes(args[1] ?? '')) {
           calls.push(cmd)
           if (args[0] === 'git') expect(options.env.AUTH).toBe('token')
           if (args[1] === 'push' && ++pushes <= rejected) throw new Error('push rejected')
           return ''
         }
-        return git(options.cwd, ...args.slice(1)) + '\n'
+        return `${git(options.cwd, ...args.slice(1))}\n`
       },
     })
     if (rejected === 2) {
       await expect(promise).rejects.toThrow('push rejected')
-      expect(readFileSync(join(fixture.dir, fixture.sources[0]!), 'utf8')).toBe(fixture.source)
+      expect(readFileSync(join(fixture.dir, fixture.sources[0] ?? ''), 'utf8')).toBe(fixture.source)
     } else expect(await promise).toHaveLength(1)
     expect(calls.slice(0, 3)).toEqual([
       'bun scripts/lint.ts',

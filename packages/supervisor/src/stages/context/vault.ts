@@ -89,8 +89,7 @@ export function selectVaultPages(vault: string, repository: string, touch: reado
   const ranked = files(vault)
     .map((f) => parsePage(vault, f))
     .filter(
-      (p): p is Parsed =>
-        p !== undefined && p.repo.includes(repository) && !EXCLUDED_LIFECYCLES.has(p.lifecycle),
+      (p): p is Parsed => p?.repo.includes(repository) === true && !EXCLUDED_LIFECYCLES.has(p.lifecycle),
     )
     .map((p) => {
       const touched = p.paths.length > 0 && touch.length > 0 && overlaps(p.paths, touch)

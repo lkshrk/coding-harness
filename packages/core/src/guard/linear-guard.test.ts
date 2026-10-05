@@ -180,7 +180,7 @@ const cases: [string, GuardDecision][] = [
   ['L=linear; $L issue delete XXX-1', UNPARSEABLE],
   ['$L issue delete XXX-1', UNPARSEABLE],
   ['"$L" issue update XXX-1 --state Done', UNPARSEABLE],
-  ['${L} issue delete XXX-1', UNPARSEABLE],
+  [`\${L} issue delete XXX-1`, UNPARSEABLE],
   ['$HOME/bin/linear issue delete XXX-1', UNPARSEABLE],
   ['rtk $L issue delete XXX-1', UNPARSEABLE],
   ['env FOO=1 $L issue delete XXX-1', UNPARSEABLE],
