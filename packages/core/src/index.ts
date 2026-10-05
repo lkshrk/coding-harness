@@ -1,6 +1,7 @@
 export const NIGHTSHIFT_VERSION = '0.0.0'
 export * from './agents'
 export * from './config'
+export * from './guard'
 export * from './host'
 export * from './issues'
 export * from './linear'

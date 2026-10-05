@@ -28,13 +28,14 @@ export type { DuplicateJudgeOutput } from './generated/duplicate-judge'
 export type { IntakeOutput } from './generated/intake'
 export { lintAgent } from './lint'
 export { checkAgents, formatAgentError, type LoadAgentsOptions, loadAgents, parseAgent } from './load'
-export { buildFinishPlugin } from './opencode-plugin/build'
+export { buildFinishPlugin, buildGuardPlugin } from './opencode-plugin/build'
 export { FINISH_PATH_ENV, type FinishPluginOptions } from './opencode-plugin/finish'
 export {
   type ActiveProfile,
   AgentConfigError,
   activeProfile,
   FINISH_PLUGIN_DIR,
+  GUARD_PLUGIN_DIR,
   type OpenCodeAgentConfig,
   type OpenCodePluginEntry,
   type PermissionObject,
@@ -43,6 +44,7 @@ export {
   renderAgentConfig,
   renderContext,
   renderFinishPlugin,
+  renderGuardPlugin,
   resolveAlias,
 } from './render'
 export {

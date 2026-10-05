@@ -14,6 +14,7 @@ import {
   renderAgentConfig,
   renderContext,
   renderFinishPlugin,
+  renderGuardPlugin,
 } from './render'
 import type { AgentDef } from './types'
 
@@ -173,5 +174,25 @@ describe('renderFinishPlugin', () => {
 
   test('installs nothing without a worker', () => {
     expect(renderFinishPlugin([lead, classifier], '/host/opencode', 'x')).toBeUndefined()
+  })
+})
+
+describe('renderGuardPlugin', () => {
+  test('installs linear-guard for the lead', () => {
+    const out = renderGuardPlugin([fixer, lead], '/host/opencode/', 'export default {}', {
+      allowNoDesign: true,
+    })
+    expect(out?.files.map((f) => f.path)).toEqual([
+      'plugins/linear-guard/package.json',
+      'plugins/linear-guard/index.js',
+    ])
+    expect(out?.plugin).toEqual({
+      package: '/host/opencode/plugins/linear-guard',
+      options: { allowNoDesign: true },
+    })
+  })
+
+  test('installs nothing without the lead', () => {
+    expect(renderGuardPlugin([fixer, classifier], '/host/opencode', 'x')).toBeUndefined()
   })
 })
