@@ -120,7 +120,10 @@ describe('GhGitHost pull requests', () => {
     const again = await host.openPullRequest({ ...o, body: 'b2' })
     expect(again).toEqual(first)
     expect(gh.gh('create')).toHaveLength(1)
-    expect(gh.gh('edit').map((c) => c.stdin)).toEqual(['b2'])
+    expect(gh.gh('edit')).toHaveLength(0)
+    expect(gh.prUpdates().map((c) => [c.cmd[4], JSON.parse(c.stdin ?? '')])).toEqual([
+      ['repos/lkshrk/omni/pulls/1', { title: 't', body: 'b2' }],
+    ])
   })
 
   test('reads checks and merge state', async () => {

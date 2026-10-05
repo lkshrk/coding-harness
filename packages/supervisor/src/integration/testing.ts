@@ -70,6 +70,7 @@ export class FakeGh {
       this.prs.push({ number, url, head: arg('--head'), state: 'OPEN' })
       return ok(`Creating pull request\n${url}\n`)
     }
+    if (cmd[1] === 'api' && cmd[3] === 'PATCH') return ok('{}')
     if (verb === 'edit') return ok('')
     if (verb === 'view' && arg('--json') === 'statusCheckRollup')
       return ok(JSON.stringify({ statusCheckRollup: this.checks.map(rollupItem) }))
@@ -84,6 +85,10 @@ export class FakeGh {
 
   gh(verb: string): Call[] {
     return this.calls.filter((c) => c.cmd[0] === 'gh' && c.cmd[2] === verb)
+  }
+
+  prUpdates(): Call[] {
+    return this.calls.filter((c) => c.cmd[1] === 'api' && c.cmd[3] === 'PATCH')
   }
 
   ciReads(): Call[] {

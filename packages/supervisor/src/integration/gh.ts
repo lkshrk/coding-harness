@@ -163,11 +163,12 @@ export class GhGitHost implements GitHost {
         account,
       })
       if (open) {
+        // Older gh pr edit queries classic Projects, which GitHub now rejects.
         const edited = await this.run(
-          ['gh', 'pr', 'edit', String(open.number), '--repo', slug, '--title', o.title, '--body-file', '-'],
-          { env, stdin: o.body },
+          ['gh', 'api', '-X', 'PATCH', `repos/${slug}/pulls/${open.number}`, '--input', '-'],
+          { env, stdin: JSON.stringify({ title: o.title, body: o.body }) },
         )
-        this.check(edited, 'gh pr edit')
+        this.check(edited, 'gh api PATCH pull')
         return pr(open.number, open.url)
       }
       const created = await this.run(
