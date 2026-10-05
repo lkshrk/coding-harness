@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
-import { branchOf, workdirOf } from '../../adapters/worker/executor'
+import { branchOf, workdirOf } from '../../policy/naming'
 import type { BuiltContext, IssueSnapshot, SandboxDriver } from '../../ports'
 import type { Event } from '../../state/events'
 import type { Run } from '../../state/runs'

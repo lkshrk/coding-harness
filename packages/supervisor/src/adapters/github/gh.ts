@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome, githubAccount } from '@nightshift/core'
+import { BRANCH_PREFIX } from '../../policy/naming'
 import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState } from '../../ports'
 import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from './github-tokens'
 
@@ -18,8 +19,6 @@ export type GhGitHostOptions = {
   pushUrl?: (repository: string, slug: string) => string
   home?: string
 }
-
-export const BRANCH_PREFIX = 'ns/'
 
 const UNAUTHORIZED =
   /HTTP 401|Bad credentials|Authentication failed|could not read Username|invalid credentials/i
@@ -114,6 +113,8 @@ export function bucketOf(c: GhRollupItem): 'pass' | 'fail' | 'cancel' | 'pending
   if (result === 'PENDING' || result === 'EXPECTED' || result === '') return 'pending'
   return 'pass'
 }
+
+export { BRANCH_PREFIX }
 
 export class GhGitHost implements GitHost {
   private readonly run: HostCommandRunner

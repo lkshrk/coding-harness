@@ -9,7 +9,6 @@ import {
   outputValidator,
 } from '@nightshift/core'
 import type { ControlSupervisor } from '../../ports/control'
-import type { Run } from '../../state/runs'
 import type {
   AnswerRequest,
   AttachInfo,
@@ -19,7 +18,8 @@ import type {
   RetryRequest,
   SendRequest,
   StopRequest,
-} from '../generated/control'
+} from '../../ports/generated/control'
+import type { Run } from '../../state/runs'
 import { ControlError, type ErrorCode } from './errors'
 
 export const SOCKET_FILE = 'nightshift.sock'

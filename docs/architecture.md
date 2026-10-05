@@ -121,10 +121,10 @@ the issue and in Phoenix so issue sizing can be tuned from data.
 - `ports/` — shared contracts by concern.
 - `stages/` — gates, context, intake, and integration.
 - `adapters/` — external service and worker implementations.
-- `control/` — socket API and generated protocol types.
+- `control/` — socket API.
 - `testing/` — shared test fixtures.
 
-Dependencies follow the layer matrix enforced by `boundaries.test.ts`: runtime composes all layers, supervisor uses policy/state/ports/stages, policy uses ports, state uses ports, ports is self-contained, stages use ports/state/policy, and adapters/control use ports/state, with explicit file-pair exceptions.
+Dependencies follow the layer matrix enforced by `boundaries.test.ts`, with no exceptions: `runtime` composes every layer and nothing imports it; `supervisor` uses `policy`, `state`, `ports` and `stages`; `stages` use `ports`, `state`, `policy` and `adapters`; `adapters` use `ports`, `state` and `policy`; `control` uses `ports` and `state`; `policy` and `state` use only `ports`; `ports` imports nothing. Shared record shapes (`Run`, `Event`) and the generated wire contracts live in `ports/`, pure naming rules (branches, refs, durations) in `policy/naming.ts`, host-side git in `adapters/git/`.
 
 ## Hosts
 

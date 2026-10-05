@@ -1,10 +1,10 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type Config, expandHome } from '@nightshift/core'
-import { branchOf, parseDuration, workdirOf } from '../../adapters/worker/executor'
+import { importBundle, writeReviewArtifacts } from '../../adapters/git/host'
+import { branchOf, parseDuration, workdirOf } from '../../policy/naming'
 import type { GateResult, GateRunner, SandboxDriver } from '../../ports'
 import type { Run } from '../../state/runs'
-import { importBundle, writeReviewArtifacts } from './host'
 
 export interface GateCallbacks {
   headImported(runId: string, headSha: string): Promise<void>

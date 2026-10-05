@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { importBundle } from '../../adapters/git/host'
 import type { IssueSnapshot } from '../../ports'
 import type { Event } from '../../state/events'
-import { importBundle } from '../gates/host'
 import type { PullRequestRecord } from '../integration/records'
 import type { VaultSyncOptions } from './vault'
 

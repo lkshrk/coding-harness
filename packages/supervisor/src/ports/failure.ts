@@ -1,4 +1,4 @@
-import type { Run } from '../state/runs'
+import type { Run } from './records'
 
 export type FailureClass =
   | 'environment'

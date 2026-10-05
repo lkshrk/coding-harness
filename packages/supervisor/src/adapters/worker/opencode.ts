@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AttachInfo } from '../../control/generated/control'
 import type {
   HarnessEvent,
   Ms,
@@ -11,6 +10,7 @@ import type {
   WorkerSession,
   WorkerStart,
 } from '../../ports'
+import type { AttachInfo } from '../../ports/generated/control'
 import { Channel } from './channel'
 import { OpenCodeClient } from './opencode-client'
 

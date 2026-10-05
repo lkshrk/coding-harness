@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { git, gitFixture } from '../../stages/gates/testing'
 import { importBundle, isTestFile, runRef, writeReviewArtifacts } from './host'
-import { git, gitFixture } from './testing'
 
 let root: string
 beforeEach(() => {

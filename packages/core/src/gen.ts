@@ -159,11 +159,11 @@ export async function generate(): Promise<Generated[]> {
       content: await types(STACK_SCHEMA, readSchema(STACK_SCHEMA), 'StackFile'),
     },
     {
-      path: join(ROOT, 'packages/supervisor/src/state/generated/events.ts'),
+      path: join(ROOT, 'packages/supervisor/src/ports/generated/events.ts'),
       content: await types(EVENTS_SCHEMA, readSchema(EVENTS_SCHEMA), 'EventRecord'),
     },
     {
-      path: join(ROOT, 'packages/supervisor/src/control/generated/control.ts'),
+      path: join(ROOT, 'packages/supervisor/src/ports/generated/control.ts'),
       content: await types(CONTROL_SCHEMA, readSchema(CONTROL_SCHEMA), 'ControlApi'),
     },
     {

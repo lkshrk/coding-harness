@@ -1,17 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type JsonSchema, outputValidator, validateFinish } from '@nightshift/core'
-import type { EventType } from './generated/events'
+import type { EventInput, EventType } from '../ports/records'
 
-export type { EventType }
+export type { EventInput, EventType }
 
 export const EVENTS_SCHEMA_PATH = join(import.meta.dir, '../../schema/events.schema.json')
 
 const SPEC = JSON.parse(readFileSync(EVENTS_SCHEMA_PATH, 'utf8')) as Schema
 
 export const EVENT_TYPES = SPEC.$defs.eventType.enum
-
-export type EventInput = { type: EventType; issue?: string; run?: string; data: Record<string, unknown> }
 
 type Rule = { required: string[]; validate: (data: unknown) => string[] }
 

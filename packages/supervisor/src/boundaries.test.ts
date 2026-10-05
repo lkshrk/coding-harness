@@ -12,27 +12,10 @@ const ALLOWED: Record<string, readonly string[]> = {
   policy: ['ports'],
   state: ['ports'],
   ports: [],
-  stages: ['ports', 'state', 'policy'],
-  adapters: ['ports', 'state'],
+  stages: ['ports', 'state', 'policy', 'adapters'],
+  adapters: ['ports', 'state', 'policy'],
   control: ['ports', 'state'],
 }
-
-const KNOWN_VIOLATIONS = [
-  'adapters/worker/executor.ts → stages/gates/host.ts',
-  'adapters/worker/opencode.ts → control/generated/control.ts',
-  'ports/control.ts → state/events.ts',
-  'ports/control.ts → state/runs.ts',
-  'ports/failure.ts → state/runs.ts',
-  'ports/vault.ts → state/events.ts',
-  'ports/vault.ts → state/runs.ts',
-  'ports/worker.ts → state/runs.ts',
-  'stages/context/ingest-runtime.ts → adapters/worker/executor.ts',
-  'stages/gates/step.ts → adapters/worker/executor.ts',
-  'stages/integration/stage.ts → adapters/github/gh.ts',
-  'supervisor/dispatch.ts → control/socket/errors.ts',
-  'supervisor/questions.ts → control/socket/errors.ts',
-  'supervisor/run-lifecycle.ts → control/socket/errors.ts',
-]
 
 function files(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -68,10 +51,6 @@ test('enforces supervisor package import boundaries', () => {
       }
     }
   }
-  const unexpected = [...violations].filter((pair) => !KNOWN_VIOLATIONS.includes(pair)).sort()
-  expect(unexpected, unexpected.join('\n')).toEqual([])
-  expect(
-    KNOWN_VIOLATIONS.filter((pair) => !violations.has(pair)),
-    'remove resolved exceptions',
-  ).toEqual([])
+  const found = [...violations].sort()
+  expect(found, found.join('\n')).toEqual([])
 })

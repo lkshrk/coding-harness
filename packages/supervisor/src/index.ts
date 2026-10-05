@@ -96,6 +96,7 @@ export {
   startPairing,
 } from './adapters/signal'
 export { branchOf } from './adapters/worker/executor'
+export * from './control/socket'
 export type {
   AnswerRequest,
   AttachInfo,
@@ -108,8 +109,7 @@ export type {
   RunResponse,
   SendRequest,
   StopRequest,
-} from './control/generated/control'
-export * from './control/socket'
+} from './ports/generated/control'
 export * from './runtime/compose'
 export * from './stages/context'
 export { ingestConfig, VAULT_REPOSITORY } from './stages/context/ingest-runtime'

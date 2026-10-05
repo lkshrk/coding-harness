@@ -1,5 +1,18 @@
-import type { Event } from '../state/events'
-import type { Run } from '../state/runs'
+import type { ErrorCode } from './generated/control'
+import type { Event, Run } from './records'
+
+export type { ErrorCode }
+
+export class ControlError extends Error {
+  override name = 'ControlError'
+
+  constructor(
+    readonly code: ErrorCode,
+    message: string,
+  ) {
+    super(message)
+  }
+}
 
 export type By = 'cli' | 'supervisor' | 'lead' | 'signal'
 

@@ -1,7 +1,8 @@
+import type { Event, EventInput, EventType } from '../ports/records'
 import type { Db } from './db'
-import { type EventInput, type EventType, validateEvent } from './event-schema'
+import { validateEvent } from './event-schema'
 
-export type Event = EventInput & { id: string; ts: string }
+export type { Event }
 
 export type EventFilter = { issue?: string; run?: string; types?: EventType[] }
 

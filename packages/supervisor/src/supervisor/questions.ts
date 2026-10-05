@@ -1,7 +1,7 @@
-import { ControlError } from '../control/socket/errors'
 import { lifecycleOf } from '../policy/stages'
 import type { Awaiting, IssueUpdate } from '../ports'
 import type { By } from '../ports/control'
+import { ControlError } from '../ports/control'
 import type { Event } from '../state/events'
 import type { Run } from '../state/runs'
 import type { FinishLike, SupervisorRuntime } from './runtime'

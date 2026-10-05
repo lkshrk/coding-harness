@@ -3,9 +3,9 @@ import { join } from 'node:path'
 
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec|specs)\/|[._-](test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$/
 
-export function runRef(run: string): string {
-  return `refs/nightshift/${run}`
-}
+export { runRef } from '../../policy/naming'
+
+import { runRef } from '../../policy/naming'
 
 export function isTestFile(path: string): boolean {
   return TEST_FILE.test(path)

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Supervisor, type SupervisorDeps } from '../../index'
+import type { AttachInfo } from '../../ports/generated/control'
 import { openState } from '../../state/db'
 import { issueRecords, questionRecords, workerRecords } from '../../state/records'
 import {
@@ -15,7 +16,6 @@ import {
   snapshot,
   testConfig,
 } from '../../testing/testing'
-import type { AttachInfo } from '../generated/control'
 import { type ControlServer, serveControl } from './server'
 
 const KINDS: Record<string, 'worker' | 'single_call'> = {

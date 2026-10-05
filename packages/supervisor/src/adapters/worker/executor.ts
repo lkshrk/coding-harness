@@ -11,6 +11,7 @@ import {
   renderFinishPlugin,
   type WorkerImage,
 } from '@nightshift/core'
+import { branchOf, parseDuration, parseTokens, runRef, workdirOf } from '../../policy/naming'
 import type {
   BuiltContext,
   ExecutorStart,
@@ -24,7 +25,10 @@ import type {
 } from '../../ports'
 import type { TaskMessage } from '../../ports/context'
 import type { SandboxCreatedInfo, WorkerStartedInfo } from '../../ports/worker'
-import { importBundle, runRef } from '../../stages/gates/host'
+import { importBundle } from '../git/host'
+
+export { branchOf, parseDuration, parseTokens, workdirOf } from '../../policy/naming'
+
 import type { Run } from '../../state/runs'
 import { INDEX_MOUNT, indexDb } from '../codegraph'
 import { Channel } from './channel'
@@ -100,31 +104,8 @@ const DETACHED: WorkerCallbacks = {
   workerProgress: dropped('progress'),
 }
 
-const UNIT_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000 }
-const UNIT_TOKENS: Record<string, number> = { k: 1_000, M: 1_000_000 }
-
-export function parseDuration(value: string): Ms {
-  const m = value.match(/^([1-9][0-9]*)(s|m|h)$/)
-  if (!m) throw new Error(`invalid duration '${value}'`)
-  return Number(m[1]) * (UNIT_MS[m[2] as string] as number)
-}
-
-export function parseTokens(value: string): number {
-  const m = value.match(/^([1-9][0-9]*)(k|M)?$/)
-  if (!m) throw new Error(`invalid token count '${value}'`)
-  return Number(m[1]) * (m[2] ? (UNIT_TOKENS[m[2]] as number) : 1)
-}
-
 export function shellJoin(args: string[]): string {
   return args.map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replaceAll("'", `'\\''`)}'`)).join(' ')
-}
-
-export function workdirOf(run: Pick<Run, 'repository'>): string {
-  return `/work/${run.repository}`
-}
-
-export function branchOf(run: Pick<Run, 'issue' | 'attempt'>): string {
-  return `ns/${run.issue}-${run.attempt}`
 }
 
 export function failureReason(message: string): string {

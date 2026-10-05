@@ -1,4 +1,10 @@
-export { importBundle, isTestFile, type ReviewArtifacts, runRef, writeReviewArtifacts } from './host'
+export {
+  importBundle,
+  isTestFile,
+  type ReviewArtifacts,
+  runRef,
+  writeReviewArtifacts,
+} from '../../adapters/git/host'
 export { type GateEventData, gateComment, gateEventData } from './report'
 export {
   blockerSummary,

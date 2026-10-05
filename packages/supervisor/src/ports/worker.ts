@@ -1,6 +1,6 @@
-import type { Run } from '../state/runs'
 import type { CiFailure } from './git-host'
 import type { IssueSnapshot } from './linear'
+import type { Run } from './records'
 import type { Ms, SandboxHandle } from './sandbox'
 
 export type RenderedAgent = { name: string; files: { path: string; content: string }[] }

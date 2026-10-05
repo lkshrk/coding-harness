@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PullRequest } from '../../ports'
-import { importBundle, runRef } from '../../stages/gates/host'
 import { git, gitFixture } from '../../stages/gates/testing'
 import {
   AGENT_TOKEN,
@@ -13,6 +12,7 @@ import {
   hostConfig,
   PERSONAL_TOKEN,
 } from '../../stages/integration/testing'
+import { importBundle, runRef } from '../git/host'
 import { bucketOf, githubSlug, MAX_CI_LOG, MAX_JOB_LOG } from './gh'
 
 let root: string

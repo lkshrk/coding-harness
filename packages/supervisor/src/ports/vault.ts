@@ -1,7 +1,6 @@
-import type { Event } from '../state/events'
-import type { Run } from '../state/runs'
 import type { PullRequestRecord } from './git-host'
 import type { IssueSnapshot } from './linear'
+import type { Event, Run } from './records'
 
 export type VaultIngestPrepared = {
   repository: string

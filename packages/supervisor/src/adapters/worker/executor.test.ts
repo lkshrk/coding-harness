@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
 import type { BuiltContext, HarnessEvent, WorkerDriver, WorkerSession, WorkerStart } from '../../ports'
-import { runRef } from '../../stages/gates/host'
 import { git, gitFixture } from '../../stages/gates/testing'
 import type { Run } from '../../state/runs'
 import { snapshot, testConfig } from '../../testing/testing'
+import { runRef } from '../git/host'
 import { Channel } from './channel'
 import {
   GRACE_MESSAGE,

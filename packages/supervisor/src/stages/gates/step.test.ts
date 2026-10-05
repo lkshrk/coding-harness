@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
+import { runRef } from '../../adapters/git/host'
 import { FakeSandboxDriver } from '../../adapters/worker/testing'
 import type { ExecResult, ExecutorStart, GateRunner, RunExecutor, SandboxHandle } from '../../ports'
 import { openState } from '../../state/db'
@@ -18,7 +19,6 @@ import {
   snapshot,
   testConfig,
 } from '../../testing/testing'
-import { runRef } from './host'
 import { SandboxGateRunner } from './runner'
 import { gateStep } from './step'
 import { type GitFixture, git, gitFixture } from './testing'

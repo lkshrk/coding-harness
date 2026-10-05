@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
+import { importBundle } from '../../adapters/git/host'
 import {
   GhGitHost,
   type HostCommandResult,
@@ -23,7 +24,6 @@ import {
   snapshot,
   testConfig,
 } from '../../testing/testing'
-import { importBundle } from '../gates/host'
 import { git, gitFixture } from '../gates/testing'
 import { IntegrationHandler } from './stage'
 

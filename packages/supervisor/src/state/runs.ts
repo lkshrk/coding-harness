@@ -1,19 +1,8 @@
+import { type NewRun, RUN_STATES, type Run, type RunState } from '../ports/records'
 import type { Db } from './db'
 import type { Event } from './events'
 
-export const RUN_STATES = [
-  'queued',
-  'starting',
-  'running',
-  'finishing',
-  'gating',
-  'reviewing',
-  'done',
-  'failed',
-  'stopped',
-] as const
-
-export type RunState = (typeof RUN_STATES)[number]
+export { type NewRun, RUN_STATES, type Run, type RunState }
 
 const TERMINAL: readonly RunState[] = ['done', 'failed', 'stopped']
 
@@ -36,30 +25,6 @@ export function isTerminal(state: RunState): boolean {
 export function canTransition(from: RunState, to: RunState): boolean {
   if (isTerminal(from)) return false
   return to === 'failed' || to === 'stopped' || NEXT[from].includes(to)
-}
-
-export type NewRun = {
-  issue: string
-  agent: string
-  profile: string
-  model: string
-  repository: string
-  baseSha: string
-  attempt: number
-}
-
-export type Run = NewRun & {
-  id: string
-  state: RunState
-  sandbox: string | null
-  session: string | null
-  headSha: string | null
-  finish: unknown
-  failure: string | null
-  startedAt: string
-  endedAt: string | null
-  tokensIn: number
-  tokensOut: number
 }
 
 export type RunUpdate = Partial<

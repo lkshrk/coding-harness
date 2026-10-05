@@ -1,7 +1,7 @@
-import { ControlError } from '../control/socket/errors'
 import { decide, VERIFICATION, viewIssue } from '../policy/stages'
 import type { SandboxHandle } from '../ports'
 import type { By } from '../ports/control'
+import { ControlError } from '../ports/control'
 import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 import { type Event, EventValidationError } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'

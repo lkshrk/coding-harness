@@ -35,7 +35,6 @@ import {
   OpenCodeDriver,
   WorkerExecutor,
 } from '../adapters/worker'
-import type { AttachInfo } from '../control/generated/control'
 import type {
   GateRunner,
   GitHost,
@@ -46,6 +45,7 @@ import type {
   SandboxDriver,
   WorkerDriver,
 } from '../ports'
+import type { AttachInfo } from '../ports/generated/control'
 import {
   contextSelector,
   contextTaskMessage,
