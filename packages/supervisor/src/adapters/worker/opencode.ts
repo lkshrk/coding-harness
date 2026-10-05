@@ -1,6 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import type {
   HarnessEvent,
   Ms,
@@ -14,6 +12,14 @@ import type { AttachInfo } from '../../ports/generated/control'
 import { Channel } from './channel'
 import { OpenCodeClient } from './opencode-client'
 
+import { memorySessionStore, type SessionConnection, type SessionStore } from './opencode-session'
+
+export * from './opencode-session'
+
+import { EventMapper } from './opencode-events'
+
+export * from './opencode-events'
+
 export const OPENCODE_PORT = 4096
 export const WORKER_HOME = '/tmp/nightshift'
 export const OPENCODE_CONFIG_DIR = `${WORKER_HOME}/config/opencode`
@@ -21,39 +27,6 @@ export const FINISH_FILE = `${WORKER_HOME}/finish.json`
 export const PROVIDER = 'litellm'
 export const GATEWAY_KEY_ENV = 'NIGHTSHIFT_GATEWAY_KEY'
 const PASSWORD_FILE = `${WORKER_HOME}/server-password`
-
-export type SessionConnection = { sandbox: SandboxHandle; url: string; password: string; workdir: string }
-
-export interface SessionStore {
-  save(id: string, c: SessionConnection): void
-  load(id: string): SessionConnection | undefined
-  remove(id: string): void
-}
-
-export function memorySessionStore(): SessionStore {
-  const m = new Map<string, SessionConnection>()
-  return { save: (id, c) => m.set(id, c), load: (id) => m.get(id), remove: (id) => m.delete(id) }
-}
-
-export function fileSessionStore(dir: string): SessionStore {
-  const file = (id: string) => join(dir, `${id}.json`)
-  return {
-    save(id, c) {
-      mkdirSync(dir, { recursive: true, mode: 0o700 })
-      writeFileSync(file(id), JSON.stringify(c), { mode: 0o600 })
-    },
-    load(id) {
-      try {
-        return JSON.parse(readFileSync(file(id), 'utf8')) as SessionConnection
-      } catch {
-        return undefined
-      }
-    },
-    remove(id) {
-      rmSync(file(id), { force: true })
-    },
-  }
-}
 
 export function modelRef(model: string): { providerID: string; id: string } {
   return {
@@ -82,92 +55,6 @@ export function opencodeConfig(
         models: { [id]: {} },
       },
     },
-  }
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
-  if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`
-  }
-  return JSON.stringify(value) ?? 'null'
-}
-
-export function argsDigest(tool: string, input: unknown): string {
-  return createHash('sha256')
-    .update(`${tool}\0${stableJson(input)}`)
-    .digest('hex')
-    .slice(0, 16)
-}
-
-type RawEvent = { type?: string; data?: Record<string, unknown> }
-type Tokens = {
-  input?: number
-  output?: number
-  reasoning?: number
-  cache?: { read?: number; write?: number }
-}
-
-function errorMessage(data: Record<string, unknown>): string {
-  const e = data.error
-  if (typeof e === 'string') return e
-  if (e && typeof e === 'object' && typeof (e as { message?: unknown }).message === 'string') {
-    return (e as { message: string }).message
-  }
-  return typeof data.message === 'string' ? data.message : JSON.stringify(e ?? data).slice(0, 300)
-}
-
-export class EventMapper {
-  private readonly tools = new Map<string, string>()
-  private steps = 0
-
-  constructor(private readonly sessionId: string) {}
-
-  map(raw: unknown): HarnessEvent[] {
-    const { type, data } = raw as RawEvent
-    if (!type || !data || data.sessionID !== this.sessionId) return []
-    switch (type) {
-      case 'session.tool.input.started':
-        this.tools.set(String(data.id), String(data.name))
-        return []
-      case 'session.tool.called': {
-        const tool = this.tools.get(String(data.id)) ?? 'unknown'
-        return [{ kind: 'tool_call', tool, argsDigest: argsDigest(tool, data.input) }]
-      }
-      case 'session.tool.success':
-      case 'session.tool.failed':
-        return [
-          {
-            kind: 'tool_result',
-            tool: this.tools.get(String(data.id)) ?? 'unknown',
-            ok: type === 'session.tool.success',
-          },
-        ]
-      case 'session.step.ended': {
-        const t = (data.tokens ?? {}) as Tokens
-        this.steps += 1
-        return [
-          {
-            kind: 'step',
-            step: this.steps,
-            tokensIn: (t.input ?? 0) + (t.cache?.write ?? 0),
-            tokensOut: (t.output ?? 0) + (t.reasoning ?? 0),
-          },
-        ]
-      }
-      case 'session.text.ended':
-        return [{ kind: 'text', chars: typeof data.text === 'string' ? data.text.length : 0 }]
-      case 'session.step.failed':
-        return [{ kind: 'error', message: errorMessage(data), fatal: false }]
-      case 'session.execution.failed':
-        return [{ kind: 'error', message: errorMessage(data), fatal: true }]
-      case 'session.execution.succeeded':
-      case 'session.execution.interrupted':
-        return [{ kind: 'idle', sinceMs: 0 }]
-      default:
-        return []
-    }
   }
 }
 
