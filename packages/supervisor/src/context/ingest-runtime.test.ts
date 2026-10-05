@@ -10,7 +10,7 @@ test('derives an isolated vault repository with only the required lints', () => 
     path: config.paths.vault,
     base: 'main',
     remote: 'origin',
-    stacks: [],
+    stacks: ['bun'],
     checks: [{ run: 'bun scripts/lint.ts' }, { run: 'obsidian-wiki lint "$PWD"' }],
   })
 })

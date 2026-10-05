@@ -21,7 +21,7 @@ export function ingestConfig(config: Config): Config {
         path: config.paths.vault,
         remote: 'origin',
         base: 'main',
-        stacks: [],
+        stacks: ['bun'],
         checks: [
           { name: 'schema', run: 'bun scripts/lint.ts', timeout: '5m' },
           { name: 'wiki', run: 'obsidian-wiki lint "$PWD"', timeout: '5m' },
