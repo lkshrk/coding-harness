@@ -326,6 +326,10 @@ export class FakeExecutor implements RunExecutor {
     this.calls.push({ op: 'stop', run: run.id, detail: reason })
   }
 
+  detach(): void {
+    this.calls.push({ op: 'detach', run: '*' })
+  }
+
   ops(op: string): string[] {
     return this.calls.filter((c) => c.op === op).map((c) => c.run)
   }

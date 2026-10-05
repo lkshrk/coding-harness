@@ -96,6 +96,7 @@ export interface RunExecutor {
   runStep(run: Run): Promise<void>
   nudge(run: Run, message: string): Promise<void>
   stop(run: Run, reason: string): Promise<void>
+  detach?(): void
 }
 
 export interface RepoInspector {

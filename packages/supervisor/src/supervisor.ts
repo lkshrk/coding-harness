@@ -152,6 +152,7 @@ export class Supervisor {
   private readonly steps = new Map<string, Promise<void>>()
   private cursor: string | undefined
   private paused = false
+  private stopped = false
   private environmentStreak = 0
 
   constructor(deps: SupervisorDeps) {
@@ -192,7 +193,15 @@ export class Supervisor {
   }
 
   stop(reason = 'stopped'): void {
+    if (this.stopped) return
+    this.stopped = true
+    this.d.executor.detach?.()
     this.log.append({ type: 'SUPERVISOR_STOPPED', data: { reason } })
+  }
+
+  private late(runId: string, what: string): boolean {
+    if (this.stopped) console.error(`run ${runId}: ${what} after supervisor stop ignored`)
+    return this.stopped
   }
 
   async idle(): Promise<void> {
@@ -477,14 +486,17 @@ export class Supervisor {
   }
 
   async sandboxCreated(runId: string, info: SandboxCreatedInfo): Promise<void> {
+    if (this.late(runId, 'sandbox created')) return
     this.log.append({ type: 'SANDBOX_CREATED', run: runId, data: info })
   }
 
   async workerProgress(runId: string, progress: Progress): Promise<void> {
+    if (this.late(runId, 'progress')) return
     this.log.append({ type: 'WORKER_PROGRESS', run: runId, data: progress })
   }
 
   async workerStarted(runId: string, info: WorkerStartedInfo): Promise<void> {
+    if (this.late(runId, 'start')) return
     const run = this.runs.update(runId, { sandbox: info.sandbox, session: info.session })
     const event = this.log.append({
       type: 'WORKER_STARTED',
@@ -504,6 +516,7 @@ export class Supervisor {
   }
 
   async workerStalled(runId: string, signal: string, detail?: string): Promise<void> {
+    if (this.late(runId, `stall ${signal}`)) return
     const run = this.requireRun(runId)
     if (isTerminal(run.state)) return
     this.log.append({
@@ -526,6 +539,7 @@ export class Supervisor {
   }
 
   async workerFinished(runId: string, payload: unknown): Promise<void> {
+    if (this.late(runId, 'finish')) return
     const run = this.requireRun(runId)
     if (isTerminal(run.state)) return
     let event: Event
@@ -563,6 +577,7 @@ export class Supervisor {
   }
 
   async workerFailed(runId: string, reason: string, detail?: string): Promise<void> {
+    if (this.late(runId, `failure ${reason}`)) return
     const run = this.requireRun(runId)
     if (isTerminal(run.state)) return
     if (reason === 'gateway_error') this.gatewayReachable(false, detail ?? reason)

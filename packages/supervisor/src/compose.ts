@@ -397,6 +397,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
     attach: (run) => (run.session === null ? undefined : opencode?.attachInfo(run.session)),
     ...(signal ? { signal: signal.inbox } : {}),
     close: () => {
+      executor.detach()
       db.close()
       release()
     },
