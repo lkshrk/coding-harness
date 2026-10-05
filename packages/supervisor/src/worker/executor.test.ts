@@ -464,6 +464,15 @@ describe('WorkerExecutor watching', () => {
     expect(cb.of('failed')[0]?.[2]).toBe('crash')
   })
 
+  test('a failure after detach is dropped instead of reaching the callbacks', async () => {
+    const ex = await started()
+    ex.detach()
+    worker.stream.close()
+    await until(() => worker.stopped.length === 1)
+    await Bun.sleep(10)
+    expect(cb.of('failed')).toEqual([])
+  })
+
   test('progress carries the diff size against the base commit', async () => {
     await started({ thresholds: { progressSteps: 2 } })
     sandbox.onExec = (cmd) =>

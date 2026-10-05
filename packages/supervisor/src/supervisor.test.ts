@@ -665,6 +665,7 @@ describe('worker lifecycle', () => {
     await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
     h.sup.stop('signal')
     expect(h.types().at(-1)).toBe('SUPERVISOR_STOPPED')
+    expect(h.executor.ops('detach')).toEqual(['*'])
     h.db.close()
     await h.sup.workerFailed(run.id, 'crash', 'late')
     await h.sup.workerStalled(run.id, 'idle')

@@ -195,6 +195,7 @@ export class Supervisor {
   stop(reason = 'stopped'): void {
     if (this.stopped) return
     this.stopped = true
+    this.d.executor.detach?.()
     this.log.append({ type: 'SUPERVISOR_STOPPED', data: { reason } })
   }
 

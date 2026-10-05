@@ -86,6 +86,19 @@ type Active = {
   input: Channel<HarnessEvent | 'tick'>
 }
 
+const dropped = (what: string) => async (runId: string) => {
+  console.error(`run ${runId}: ${what} after executor detach ignored`)
+}
+
+const DETACHED: WorkerCallbacks = {
+  sandboxCreated: dropped('sandbox created'),
+  workerStarted: dropped('start'),
+  workerStalled: dropped('stall'),
+  workerFinished: dropped('finish'),
+  workerFailed: dropped('failure'),
+  workerProgress: dropped('progress'),
+}
+
 const UNIT_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000 }
 const UNIT_TOKENS: Record<string, number> = { k: 1_000, M: 1_000_000 }
 
@@ -126,6 +139,7 @@ export class WorkerExecutor implements RunExecutor {
   private readonly thresholds: WatchThresholds
   private readonly now: () => number
   private callbacks: WorkerCallbacks | undefined
+  private detached = false
 
   constructor(private readonly d: WorkerExecutorDeps) {
     this.thresholds = { ...WATCH_DEFAULTS, ...d.thresholds }
@@ -134,6 +148,12 @@ export class WorkerExecutor implements RunExecutor {
 
   bind(callbacks: WorkerCallbacks): void {
     this.callbacks = callbacks
+    this.detached = false
+  }
+
+  detach(): void {
+    this.callbacks = undefined
+    this.detached = true
   }
 
   async start({ run, issue, files, sourceFiles, repairFrom }: ExecutorStart): Promise<void> {
@@ -474,6 +494,7 @@ export class WorkerExecutor implements RunExecutor {
   }
 
   private cb(): WorkerCallbacks {
+    if (this.detached) return DETACHED
     if (!this.callbacks) throw new Error('WorkerExecutor: bind() the supervisor before starting runs')
     return this.callbacks
   }
