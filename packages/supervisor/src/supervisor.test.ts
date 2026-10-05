@@ -659,6 +659,31 @@ describe('worker lifecycle', () => {
     expect(h.of('WORKER_STALLED').length).toBe(2)
   })
 
+  test('worker callbacks after stop are ignored and leave the run unchanged', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+    h.sup.stop('signal')
+    expect(h.types().at(-1)).toBe('SUPERVISOR_STOPPED')
+    h.db.close()
+    await h.sup.workerFailed(run.id, 'crash', 'late')
+    await h.sup.workerStalled(run.id, 'idle')
+    await h.sup.workerFinished(run.id, { status: 'DONE' })
+    await h.sup.sandboxCreated(run.id, { driver: 'docker', id: 'sb-2', image: 'img' })
+  })
+
+  test('a worker failure after stop does not change the run', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+    h.sup.stop('signal')
+    const events = h.types()
+    await h.sup.workerFailed(run.id, 'crash', 'late')
+    expect(h.sup.runs.get(run.id)?.state).toBe('running')
+    expect(h.types()).toEqual(events)
+    expect(h.sup.leases.get('FOR-1')?.run).toBe(run.id)
+  })
+
   test('an executor that cannot start the run fails it as a sandbox error', async () => {
     const h = harness()
     h.executor.failStart = 'docker not running'
