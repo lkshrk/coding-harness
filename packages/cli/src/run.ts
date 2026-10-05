@@ -11,6 +11,7 @@ import { CliError, type CommandDeps, createCtx, EXIT, type Io, parseGlobal, with
 import { COMMAND_HELP, COMMANDS } from './commands'
 import { DOCTOR_USAGE, type DoctorDeps, doctor, parseDoctorFlags } from './doctor'
 import { type EnvDeps, env } from './env'
+import { type IssueCheckDeps, issue } from './issue-check'
 import { remoteHost, runRemote } from './remote'
 import { down, type ServiceDeps, up } from './service'
 
@@ -18,6 +19,7 @@ export type { Io }
 
 export type CliDeps = DoctorDeps &
   EnvDeps &
+  IssueCheckDeps &
   CommandDeps & {
     load?: () => LoadResult
     statePath?: () => string
@@ -98,7 +100,10 @@ export async function run(argv: string[], io: Io, given: CliDeps = {}): Promise<
     io.err('run ns help')
     return EXIT.usage
   }
-  const args = rest[0] !== undefined && Object.hasOwn(COMMANDS, rest[0]) ? rest : withoutValueFlags(argv)
+  const args =
+    rest[0] === 'issue' || (rest[0] !== undefined && Object.hasOwn(COMMANDS, rest[0]))
+      ? rest
+      : withoutValueFlags(argv)
   const user = flags.config
   const deps: CliDeps = user && !given.load ? { ...given, load: () => loadConfig({ user }) } : given
   const remote = remoteHost(flags, deps, args[0])
@@ -125,6 +130,15 @@ export async function run(argv: string[], io: Io, given: CliDeps = {}): Promise<
   if (command === 'env') {
     const config = loaded(deps, io)
     return config ? env(args.slice(1), config, deps, io) : 1
+  }
+  if (command === 'issue') {
+    try {
+      return await issue(createCtx(io, flags, deps), args.slice(1), deps)
+    } catch (e) {
+      if (!(e instanceof CliError)) throw e
+      io.err(e.message)
+      return e.exit
+    }
   }
   if (command === 'doctor') {
     const flags = parseDoctorFlags(args.slice(1))
