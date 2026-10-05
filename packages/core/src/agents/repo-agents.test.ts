@@ -7,7 +7,7 @@ import { parseConfigSection } from '../config/validate'
 import { validateIssue } from '../issues/template'
 import { outputValidator, validateFinish } from './finish'
 import { splitFrontmatter } from './frontmatter'
-import { formatAgentError, loadAgents, parseAgent } from './load'
+import { formatAgentError, loadAgents } from './load'
 import { activeProfile, type RenderContext, renderAgent } from './render'
 import { type FetchLike, runSingleCall } from './single-call'
 import type { AgentDef, JsonSchema } from './types'
@@ -27,11 +27,12 @@ const ctx: RenderContext = {
   stepsLimit: parseConfigSection('limits', defaults.limits).worker.steps,
 }
 
-// The lead's skills ship outside this repository's skills/ directory.
-const lead = parseAgent('agents/lead.md', readFileSync(join(ROOT, 'agents/lead.md'), 'utf8')).def
+// The lead's planning skills are not written yet.
+const PENDING_SKILLS = ['discover', 'design', 'decompose', 'status', 'replan', 'intake']
+const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,
-  externalSkills: [...(lead?.skills ?? []), 'wiki-ingest'],
+  externalSkills: [...PENDING_SKILLS, 'wiki-ingest'],
 })
 const workers = [...agents.values()].filter((d) => d.kind === 'worker')
 const SELECTED = ['implementer', 'explorer', 'fixer', 'repairer', 'refactorer', 'migrator', 'ingester']
@@ -122,6 +123,60 @@ describe('repository agents', () => {
         })
       }
     }
+  })
+})
+
+describe('lead', () => {
+  const text = readFileSync(join(ROOT, 'agents/lead.md'), 'utf8')
+
+  test('loads with only the planning skills pending', () => {
+    const own = loadAgents(join(ROOT, 'agents'), { profiles, externalSkills: ['wiki-ingest'] })
+    const pending = own.errors.filter((e) => e.file === 'agents/lead.md').map(formatAgentError)
+    expect(pending).toEqual(
+      PENDING_SKILLS.map((s) => expect.stringContaining(`no skill '${s}'`) as unknown as string),
+    )
+    expect(agents.get('lead')?.skills).toEqual(expect.arrayContaining(CLI_SKILLS))
+  })
+
+  test('names no stage: or agent: labels and only verified linear commands', () => {
+    expect(text).not.toMatch(/`(stage|agent):/)
+    expect(text).toContain('`ai-stage:`')
+    const linear = Object.keys(rendered(agents.get('lead') as AgentDef).frontmatter.permission.bash).filter(
+      (p) => p.startsWith('linear '),
+    )
+    for (const p of linear)
+      expect(p).toMatch(
+        /^linear (issue (view|query|create|update|comment (list|add)|relation (list|add))|project (view|list|create|update)|document (view|list|create|update)|team (list|states)|milestone (list|view)|label list) ?\*$/,
+      )
+    expect(linear).not.toContain('linear issue comment *')
+    expect(linear).not.toContain('linear issue relation *')
+  })
+})
+
+describe('CLI skills', () => {
+  test.each(CLI_SKILLS)('%s has a when/when-not description and stays under 140 lines', (name) => {
+    const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8')
+    const split = splitFrontmatter(text)
+    expect(split).toBeDefined()
+    const fm = parse(split?.frontmatter ?? '')
+    expect(fm.name).toBe(name)
+    expect(fm.description).toMatch(/Use when/)
+    expect(fm.description).toMatch(/Not for|Do not use/)
+    expect(text.split('\n').length).toBeLessThan(140)
+    expect(text).not.toMatch(/lin_api_|ghp_|gho_|https?:\/\/(?!github\.com|linear\.app)[a-z0-9.-]+:\d+/i)
+  })
+
+  test('linear pins the CLI version', () => {
+    const fm = parse(
+      splitFrontmatter(readFileSync(join(ROOT, 'skills/linear/SKILL.md'), 'utf8'))?.frontmatter ?? '',
+    )
+    expect(fm.compatibility).toContain('2.6.0')
+  })
+
+  test('search reads the searxng URL from the environment', () => {
+    const script = readFileSync(join(ROOT, 'skills/search/scripts/search.sh'), 'utf8')
+    expect(script).toContain('SEARXNG_URL')
+    expect(script).not.toMatch(/https?:\/\//)
   })
 })
 

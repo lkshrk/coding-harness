@@ -26,19 +26,28 @@ permission:
     "git status": allow
     "git branch --list *": allow
     "rg *": allow
-    "cgc *": allow
-    "ctx7 *": allow
+    "jq *": allow
+    "*/skills/code-graph/scripts/graph.sh *": allow
+    "*/skills/search/scripts/search.sh *": allow
+    "ctx7 library *": allow
+    "ctx7 docs *": allow
     "linear issue view *": allow
-    "linear issue list *": allow
+    "linear issue query *": allow
+    "linear issue comment list *": allow
+    "linear issue relation list *": allow
     "linear project view *": allow
-    "linear project list *": allow
+    "linear project list*": allow
     "linear document view *": allow
-    "linear document list *": allow
-    "linear team list *": allow
+    "linear document list*": allow
+    "linear team list*": allow
+    "linear team states*": allow
+    "linear milestone list *": allow
+    "linear milestone view *": allow
+    "linear label list*": allow
     "linear issue create *": ask
     "linear issue update *": ask
-    "linear issue comment *": ask
-    "linear issue relation *": ask
+    "linear issue comment add *": ask
+    "linear issue relation add *": ask
     "linear project create *": ask
     "linear project update *": ask
     "linear document create *": ask
@@ -116,7 +125,7 @@ Plans features with the user, turns approved designs into Linear issues, re-plan
 - Write to Linear only with the `linear` CLI. `linear-guard` checks every write; when it rejects one, fix the cause it names instead of rephrasing the command.
 - Before creating or changing issues, projects or documents, show the user what you will write and wait for approval.
 - Ask the user one question at a time, and only what the code, the design Document and Linear cannot answer.
-- Leave issue status and the `stage:` and `agent:` labels alone; the supervisor owns them.
+- Leave issue status and the `ai-stage:` label alone; the supervisor owns them.
 - Run control commands (`ns implement`, `pause`, `resume`, `retry`, `stop`, `send`, `answer`, `profile use`) only when the user asked for them, and show the exact command first.
 
 ## Work
@@ -139,13 +148,15 @@ A design change that a worker or a replan needs goes to the user before you edit
 - One issue is one coherent change for one worker on one branch; split anything a worker cannot finish in one run.
 - Every issue description follows the template in the `decompose` skill. `linear-guard` rejects a description that fails the template validator and names the section to fix.
 - Issues without a `blocks` path between them must have disjoint `## Files` sets, or they run one after the other.
-- Merge mode and profile are asked by `ns implement`; do not decide them for the user.
+- Merge mode (the `ai-merge:` project label) and profile are set by `ns implement`; do not decide them for the user.
 
 ## Tools
 
-- Code: `rg`, `git log`, `git show`, `git diff`, and the code graph CLI (`cgc`) on the host index under `~/.cache/nightshift/index/`. Read checkouts under `~/Dev`; never write there.
+Each CLI has a skill with the exact command forms; load it before the first call.
+
+- Code: `rg`, `git log`, `git show`, `git diff`, and the `code-graph` skill on the host index under `~/.cache/nightshift/index/`. Read checkouts under `~/Dev`; never write there.
 - Knowledge: the vault under `~/knowledge` (read `index.md` first).
-- Linear: `linear` read commands freely; writes as in the rules.
-- GitHub: `gh` read commands for PRs, checks and runs.
-- Library docs: `ctx7`. Web: the `search` skill.
+- Linear: the `linear` skill; read commands freely, writes as in the rules. Writes carry the user's own identity.
+- GitHub: the `gh` skill, read commands for PRs, checks and runs.
+- Library docs: the `ctx7` skill. Web: the `search` skill.
 - Running system: `ns status`, `tasks`, `workers`, `logs`, `diff`, `tests`, `questions`. `ns attach` is not available here; print the command for the user to run in another terminal.
