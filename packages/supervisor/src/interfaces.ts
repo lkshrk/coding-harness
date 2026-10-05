@@ -109,6 +109,7 @@ export type Attempt = {
   summary: string
   gateTail?: string
   findings?: string
+  ciFailures?: CiFailure[]
 }
 
 export type ContextRepository = { name: string; checkoutPath: string; indexPath?: string; base: string }
@@ -157,7 +158,14 @@ export type PullRequest = {
   account: string
 }
 
-export type CiState = { state: 'pending' | 'passed' | 'failed'; failedChecks: string[]; url: string }
+export type CiFailure = { name: string; url: string; log: string }
+
+export type CiState = {
+  state: 'pending' | 'passed' | 'failed'
+  failedChecks: string[]
+  failures: CiFailure[]
+  url: string
+}
 
 export type PullRequestState = { state: 'open' | 'merged' | 'closed'; mergeSha?: string }
 

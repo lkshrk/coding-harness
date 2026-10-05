@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome, githubAccount } from '@nightshift/core'
 import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from '../github-tokens'
-import type { CiState, GitHost, PullRequest, PullRequestState } from '../interfaces'
+import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState } from '../interfaces'
 
 export type HostCommandResult = { exitCode: number; stdout: string; stderr: string }
 
@@ -59,6 +59,49 @@ type GhRollupItem = {
   status?: string
   conclusion?: string
   state?: string
+  detailsUrl?: string
+  targetUrl?: string
+}
+
+export const MAX_JOB_LOG = 8 * 1024
+export const MAX_CI_LOG = 24 * 1024
+
+const ACTIONS_URL = /\/actions\/runs\/(\d+)(?:\/job\/(\d+))?/
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`, 'g')
+const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ?/
+const FAILING = /error|fail|assert|panic|exception|expected|✗|✘/i
+const BEFORE = 3
+const AFTER = 8
+const TRUNCATED = '\n[... truncated]'
+
+function logLine(raw: string): string {
+  const fields = raw.split('\t')
+  const text = fields.length >= 3 ? fields.slice(2).join('\t') : raw
+  return text.replace(ANSI, '').replace(TIMESTAMP, '').trimEnd()
+}
+
+export function logExcerpt(log: string, limit: number = MAX_JOB_LOG): string {
+  if (limit <= 0) return ''
+  const lines = log.split('\n').map(logLine)
+  while (lines.length && lines.at(-1) === '') lines.pop()
+  const hits = lines.flatMap((l, n) => (FAILING.test(l) ? [n] : []))
+  const keep = new Set<number>()
+  if (hits.length === 0) for (let n = Math.max(0, lines.length - 40); n < lines.length; n++) keep.add(n)
+  for (const h of hits)
+    for (let n = Math.max(0, h - BEFORE); n <= Math.min(lines.length - 1, h + AFTER); n++) keep.add(n)
+  const out: string[] = []
+  let last = -1
+  for (const n of [...keep].sort((a, b) => a - b)) {
+    if (last >= 0 && n > last + 1) out.push('...')
+    out.push(lines[n] as string)
+    last = n
+  }
+  const text = out.join('\n')
+  if (text.length <= limit) return text
+  if (limit <= TRUNCATED.length) return ''
+  const head = text.slice(0, limit - TRUNCATED.length)
+  const cut = head.lastIndexOf('\n')
+  return `${cut > 0 ? head.slice(0, cut) : head}${TRUNCATED}`
 }
 
 const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
@@ -207,17 +250,50 @@ export class GhGitHost implements GitHost {
       )
       this.check(r, 'gh pr view')
       const { statusCheckRollup = [] } = JSON.parse(r.stdout) as { statusCheckRollup?: GhRollupItem[] }
-      const checks = statusCheckRollup.map((c) => ({ name: c.name ?? c.context ?? '?', bucket: bucketOf(c) }))
-      const failedChecks = checks
-        .filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')
-        .map((c) => c.name)
+      const checks = statusCheckRollup.map((c) => ({
+        name: c.name ?? c.context ?? '?',
+        url: c.detailsUrl || c.targetUrl || '',
+        bucket: bucketOf(c),
+      }))
+      const failed = checks.filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')
+      const failedChecks = failed.map((c) => c.name)
       const state = failedChecks.length
         ? 'failed'
         : checks.some((c) => c.bucket === 'pending')
           ? 'pending'
           : 'passed'
-      return { state, failedChecks, url: pr.url }
+      const failures: CiFailure[] = []
+      let budget = MAX_CI_LOG
+      for (const c of failed) {
+        const log = budget > 0 ? await this.failedLog(pr, c, gitAuthEnv(token)) : ''
+        const excerpt = logExcerpt(log, Math.min(MAX_JOB_LOG, budget))
+        budget -= excerpt.length
+        failures.push({ name: c.name, url: c.url || pr.url, log: excerpt })
+      }
+      return { state, failedChecks, failures, url: pr.url }
     })
+  }
+
+  private async failedLog(
+    pr: PullRequest,
+    c: { name: string; url: string },
+    env: Record<string, string>,
+  ): Promise<string> {
+    const ids = ACTIONS_URL.exec(c.url)
+    if (!ids?.[1]) {
+      console.error(
+        `ci ${pr.url}: no log for check ${c.name}: not a GitHub Actions run (${c.url || 'no url'})`,
+      )
+      return ''
+    }
+    const target = ids[2] ? ['--job', ids[2]] : [ids[1]]
+    const r = await this.run(['gh', 'run', 'view', ...target, '--repo', pr.repo, '--log-failed'], { env })
+    if (r.exitCode !== 0) {
+      const why = r.stderr.trim().split('\n').slice(-3).join(' ') || `exit ${r.exitCode}`
+      console.error(`ci ${pr.url}: no log for check ${c.name}: gh run view --log-failed: ${why}`)
+      return ''
+    }
+    return r.stdout
   }
 
   async state(pr: PullRequest): Promise<PullRequestState> {

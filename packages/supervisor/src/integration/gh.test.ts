@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { importBundle, runRef } from '../gates/host'
 import { git, gitFixture } from '../gates/testing'
 import type { PullRequest } from '../interfaces'
-import { bucketOf, githubSlug } from './gh'
+import { bucketOf, githubSlug, MAX_CI_LOG, MAX_JOB_LOG } from './gh'
 import { AGENT_TOKEN, bareRemote, FakeGh, fakeHost, hostConfig, PERSONAL_TOKEN } from './testing'
 
 let root: string
@@ -142,25 +142,114 @@ describe('GhGitHost pull requests', () => {
       { name: 'build', bucket: 'pass' },
       { name: 'test', bucket: 'pending' },
     ]
-    expect(await host.ci(pr)).toEqual({ state: 'pending', failedChecks: [], url: pr.url })
+    expect(await host.ci(pr)).toEqual({ state: 'pending', failedChecks: [], failures: [], url: pr.url })
     gh.checks = [
       { name: 'build', bucket: 'fail' },
       { name: 'test', bucket: 'cancel' },
     ]
-    expect(await host.ci(pr)).toEqual({ state: 'failed', failedChecks: ['build', 'test'], url: pr.url })
+    expect(await host.ci(pr)).toEqual({
+      state: 'failed',
+      failedChecks: ['build', 'test'],
+      failures: [
+        { name: 'build', url: pr.url, log: '' },
+        { name: 'test', url: pr.url, log: '' },
+      ],
+      url: pr.url,
+    })
     gh.checks = [
       { name: 'build', bucket: 'pass' },
       { name: 'deploy', bucket: 'skipping' },
     ]
-    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], url: pr.url })
+    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], failures: [], url: pr.url })
     gh.checks = []
-    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], url: pr.url })
+    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], failures: [], url: pr.url })
     expect(gh.gh('checks')).toHaveLength(0)
     expect(gh.ciReads()).toHaveLength(4)
     expect(await host.state(pr)).toEqual({ state: 'open' })
     ;(gh.prs[0] as { state: string }).state = 'MERGED'
     expect(await host.state(pr)).toEqual({ state: 'merged', mergeSha: 'm3rg3d' })
     expect(gh.gh('view')[0]?.env.GH_TOKEN).toBe(PERSONAL_TOKEN)
+  })
+
+  const ciPr: PullRequest = {
+    url: 'https://github.com/lkshrk/omni/pull/1',
+    number: 1,
+    repository: 'omni',
+    repo: 'lkshrk/omni',
+    branch: 'ns/FOR-1',
+    base: 'main',
+    account: 'agent',
+  }
+
+  test('a failing check run carries an excerpt of its failed job log', async () => {
+    const { gh, host } = setup()
+    const noise = (tag: string) =>
+      Array.from({ length: 40 }, (_, n) => `quality\tTest\t2026-10-05T10:00:00.0000000Z ${tag} ${n}`)
+    gh.logs['job 77'] = [
+      ...noise('before'),
+      'quality\tTest\t2026-10-05T10:00:01.0000000Z (fail) stable locator contract > keeps ids',
+      'quality\tTest\t2026-10-05T10:00:01.0000000Z   error: expect(received).toBe(expected)',
+      'quality\tTest\t2026-10-05T10:00:01.0000000Z   at e2e/test/stable-locator-contract.test.ts:42:7',
+      ...noise('after'),
+    ].join('\n')
+    gh.checks = [
+      { name: 'build', bucket: 'pass', run: 5 },
+      { name: 'quality', bucket: 'fail', run: 5, job: 77 },
+    ]
+    const ci = await host.ci(ciPr)
+    expect(ci.state).toBe('failed')
+    expect(ci.failedChecks).toEqual(['quality'])
+    expect(ci.failures).toHaveLength(1)
+    const [f] = ci.failures
+    expect(f?.name).toBe('quality')
+    expect(f?.url).toBe('https://github.com/lkshrk/omni/actions/runs/5/job/77')
+    expect(f?.log).toContain('(fail) stable locator contract > keeps ids')
+    expect(f?.log).toContain('at e2e/test/stable-locator-contract.test.ts:42:7')
+    expect(f?.log).toContain('before 39')
+    expect(f?.log).not.toContain('before 30')
+    expect(f?.log).not.toContain('after 30')
+    expect(f?.log).not.toContain('2026-10-05T10')
+    const [read] = gh.logReads()
+    expect(read?.cmd).toEqual(['gh', 'run', 'view', '--job', '77', '--repo', 'lkshrk/omni', '--log-failed'])
+    expect(read?.env.GH_TOKEN).toBe(AGENT_TOKEN)
+  })
+
+  test('failed job logs are bounded per job and in total', async () => {
+    const { gh, host } = setup()
+    const huge = Array.from({ length: 4000 }, (_, n) => `j\ts\terror: assertion ${n} failed`).join('\n')
+    gh.checks = [1, 2, 3, 4, 5].map((n) => ({ name: `job${n}`, bucket: 'fail', run: 9, job: n }))
+    for (const n of [1, 2, 3, 4, 5]) gh.logs[`job ${n}`] = huge
+    const ci = await host.ci(ciPr)
+    for (const f of ci.failures) expect(f.log.length).toBeLessThanOrEqual(MAX_JOB_LOG)
+    expect(ci.failures.reduce((n, f) => n + f.log.length, 0)).toBeLessThanOrEqual(MAX_CI_LOG)
+    expect(ci.failures[0]?.log).toContain('truncated')
+    expect(ci.failures.map((f) => f.name)).toEqual(['job1', 'job2', 'job3', 'job4', 'job5'])
+  })
+
+  test('a log that cannot be fetched leaves the check with its name only', async () => {
+    const { gh, host } = setup()
+    gh.checks = [
+      { name: 'e2e', bucket: 'fail', run: 8, job: 3 },
+      { name: 'ci/legacy', bucket: 'fail' },
+    ]
+    gh.logs['job 3'] = { exitCode: 1, stdout: '', stderr: 'log not found' }
+    const errors: string[] = []
+    const original = console.error
+    console.error = (m: string) => errors.push(m)
+    try {
+      const ci = await host.ci(ciPr)
+      expect(ci.state).toBe('failed')
+      expect(ci.failedChecks).toEqual(['e2e', 'ci/legacy'])
+      expect(ci.failures).toEqual([
+        { name: 'e2e', url: 'https://github.com/lkshrk/omni/actions/runs/8/job/3', log: '' },
+        { name: 'ci/legacy', url: ciPr.url, log: '' },
+      ])
+    } finally {
+      console.error = original
+    }
+    expect(errors.join('\n')).toContain('e2e')
+    expect(errors.join('\n')).toContain('log not found')
+    expect(errors.join('\n')).toContain('ci/legacy')
   })
 
   test('a rejected token is refreshed once and the command retried', async () => {

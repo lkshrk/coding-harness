@@ -16,7 +16,7 @@ import type { Db } from './db'
 import { type Event, EventLog, EventValidationError } from './events'
 import { type GateEventData, gateComment, gateEventData } from './gates/report'
 import { blockerSummary, type ReviewOutcome, reviewComment } from './gates/review'
-import { type PullRequestRecord, PullRequestStore } from './integration/records'
+import { CiFailureStore, type PullRequestRecord, PullRequestStore } from './integration/records'
 import type { CiState, GateResult, GitHost, SandboxDriver, SandboxHandle, WorkerDriver } from './interfaces'
 import { type Lease, LeaseStore } from './leases'
 import type {
@@ -748,8 +748,13 @@ export class Supervisor {
       type: 'CI_FAILED',
       issue: pr.issue,
       run: pr.run,
-      data: { url: ci.url, failed_checks: ci.failedChecks },
+      data: {
+        url: ci.url,
+        failed_checks: ci.failedChecks,
+        failures: ci.failures.map((f) => ({ name: f.name, url: f.url })),
+      },
     })
+    if (ci.failures.some((f) => f.log !== '')) new CiFailureStore(this.d.db).put(pr.run, ci.failures)
     const checks = ci.failedChecks.length ? ci.failedChecks.join(', ') : 'unknown checks'
     await this.postOnce(pr.issue, event.id, `CI failed on ${pr.url}: ${checks}.`)
     await this.notify(`CI failed on PR #${pr.number}`, pr.issue, {

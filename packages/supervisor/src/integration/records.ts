@@ -1,5 +1,5 @@
 import type { Db } from '../db'
-import type { PullRequest } from '../interfaces'
+import type { CiFailure, PullRequest } from '../interfaces'
 import type { MergeMode } from '../ports'
 
 export type PullRequestRecord = PullRequest & {
@@ -15,6 +15,35 @@ export type PullRequestRecord = PullRequest & {
 }
 
 const KEY = 'pull_requests'
+const CI_KEY = 'ci_failures'
+
+export class CiFailureStore {
+  constructor(private readonly db: Db) {}
+
+  get(run: string): CiFailure[] {
+    return this.read()[run] ?? []
+  }
+
+  put(run: string, failures: CiFailure[]): void {
+    const known = new Set(
+      this.db
+        .query<{ id: string }, []>('SELECT id FROM runs')
+        .all()
+        .map((r) => r.id),
+    )
+    const kept = Object.fromEntries(Object.entries(this.read()).filter(([id]) => known.has(id)))
+    this.db
+      .query(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(CI_KEY, JSON.stringify({ ...kept, [run]: failures }))
+  }
+
+  private read(): Record<string, CiFailure[]> {
+    const row = this.db.query<{ value: string }, [string]>('SELECT value FROM meta WHERE key = ?').get(CI_KEY)
+    return row ? (JSON.parse(row.value) as Record<string, CiFailure[]>) : {}
+  }
+}
 
 export class PullRequestStore {
   constructor(private readonly db: Db) {}

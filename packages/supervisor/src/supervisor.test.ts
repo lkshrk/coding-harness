@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
-import { TaskTooLargeError } from './context'
+import { attemptsOf, TaskTooLargeError } from './context'
 import { openState } from './db'
 import type { EventType } from './event-schema'
 import { integrationHarness } from './integration/testing'
@@ -1452,7 +1452,11 @@ describe('pull request watching', () => {
       await h.first.tick()
       await h.first.tick()
       expect(h.of('CI_FAILED').map((e) => e.data)).toEqual([
-        { url: 'https://github.com/lkshrk/omni/pull/1', failed_checks: ['e2e'] },
+        {
+          url: 'https://github.com/lkshrk/omni/pull/1',
+          failed_checks: ['e2e'],
+          failures: [{ name: 'e2e', url: 'https://github.com/lkshrk/omni/pull/1' }],
+        },
       ])
       expect(signals).toEqual([])
       expect(h.of('FAILURE_CLASSIFIED').at(-1)?.data).toEqual({
@@ -1464,6 +1468,31 @@ describe('pull request watching', () => {
       expect(h.linear.get('FOR-1')).toMatchObject({ status: 'Todo', labels: ['ai-stage:implementation'] })
       const marker = `<!-- nightshift:${h.of('CI_FAILED')[0]?.id} -->`
       expect((await h.linear.comments('FOR-1')).filter((c) => c.body.includes(marker))).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a failing check hands its job log excerpt to the repair attempt, not to the event log', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'quality', bucket: 'fail', run: 5, job: 77 }]
+      h.gh.logs['job 77'] =
+        'quality\tTest\t2026-10-05T10:00:01Z (fail) stable locator contract\nquality\tTest\t2026-10-05T10:00:01Z error: expected "a" got "b"'
+      await h.first.tick()
+      const url = 'https://github.com/lkshrk/omni/actions/runs/5/job/77'
+      expect(h.of('CI_FAILED').map((e) => e.data)).toEqual([
+        {
+          url: 'https://github.com/lkshrk/omni/pull/1',
+          failed_checks: ['quality'],
+          failures: [{ name: 'quality', url }],
+        },
+      ])
+      expect(JSON.stringify(h.first.log.since(null, {}))).not.toContain('stable locator contract')
+      const [attempt] = attemptsOf(h.db, 'FOR-1', 'next')
+      expect(attempt?.ciFailures).toEqual([
+        { name: 'quality', url, log: '(fail) stable locator contract\nerror: expected "a" got "b"' },
+      ])
     } finally {
       h.cleanup()
     }

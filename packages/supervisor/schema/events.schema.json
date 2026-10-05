@@ -433,7 +433,16 @@
         "required": ["url"],
         "properties": {
           "url": { "type": "string" },
-          "failed_checks": { "type": "array", "items": { "type": "string" } }
+          "failed_checks": { "type": "array", "items": { "type": "string" } },
+          "failures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "url"],
+              "properties": { "name": { "type": "string" }, "url": { "type": "string" } }
+            }
+          }
         }
       },
       "unblocked": {
