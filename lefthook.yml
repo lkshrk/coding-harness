@@ -15,7 +15,7 @@ pre-push:
   parallel: true
   commands:
     typescript:
-      run: bun run typecheck && bun test
+      run: bun run typecheck && bun run test
     python:
       root: eval/
       run: uv run pytest -q
