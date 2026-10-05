@@ -64,6 +64,7 @@ export function supervisorVersion(): string {
 }
 export * from './compose'
 export * from './context'
+export { ingestConfig, VAULT_REPOSITORY } from './context/ingest-runtime'
 export { coveredIssues, heldIssues, setCovered, setHeld } from './coverage'
 export * from './gates'
 export type {

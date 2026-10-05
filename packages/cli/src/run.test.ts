@@ -229,6 +229,24 @@ describe('env', () => {
     expect(b.calls).toEqual([])
   })
 
+  test('builds the derived vault repository', async () => {
+    const built: string[] = []
+    const b = builder(undefined)
+    const r = await capture(['env', 'build', 'nightshift-vault'], {
+      ...b.deps,
+      envBuilder: (c) => ({
+        current: async () => undefined,
+        build: async (repo: string) => {
+          built.push(`${repo}:${c.repositories[repo]?.path}`)
+          return image
+        },
+        ensure: async () => image,
+      }),
+    })
+    expect(r.code).toBe(0)
+    expect(built).toEqual(['nightshift-vault:/v'])
+  })
+
   test('an unknown repository exits 4', async () => {
     const r = await capture(['env', 'build', 'nope'], builder(undefined).deps)
     expect(r).toEqual({ code: 4, out: [], err: ["unknown repository 'nope'"] })

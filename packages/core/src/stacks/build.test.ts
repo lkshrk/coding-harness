@@ -84,7 +84,10 @@ function fake(
 }
 
 let n = 0
-function setup(files: Record<string, string>, opts: Parameters<typeof fake>[1] & { root?: string } = {}) {
+function setup(
+  files: Record<string, string>,
+  opts: Parameters<typeof fake>[1] & { root?: string; repositories?: Record<string, unknown> } = {},
+) {
   const tree = { files: { ...files } }
   const f = fake(tree.files, opts)
   const cache = join(tmp, `cache-${n++}`)
@@ -92,6 +95,7 @@ function setup(files: Record<string, string>, opts: Parameters<typeof fake>[1] &
     paths: { cache, state: cache, vault: cache },
     repositories: {
       routivo: { path: '/src/routivo', remote: 'origin', base: 'main', stacks: 'auto', checks: [] },
+      ...opts.repositories,
     },
   } as unknown as Config
   const builder = new DevcontainerEnvironmentBuilder({
@@ -189,6 +193,35 @@ describe('DevcontainerEnvironmentBuilder', () => {
       expect((await s.builder.plan('routivo')).hash, path).not.toBe(before)
     }
     expect(await s.builder.current('routivo')).toBeUndefined()
+  })
+
+  test('environments/nightshift-vault adds bun and obsidian-wiki without detected stacks', async () => {
+    const vault = { path: '/src/vault', remote: 'origin', base: 'main', stacks: ['bun'], checks: [] }
+    const s = setup(
+      { 'AGENTS.md': '', 'scripts/lint.ts': '' },
+      { root: NIGHTSHIFT_ROOT, repositories: { 'nightshift-vault': vault } },
+    )
+    const image = await s.builder.build('nightshift-vault')
+    expect(image.tag).toMatch(/^nightshift\/env-nightshift-vault:[0-9a-f]{12}$/)
+    expect(image.stacks).toEqual(['bun'])
+    const build = s.builds()[0] as Call
+    const features = JSON.parse(build.cmd[build.cmd.indexOf('--additional-features') + 1] as string)
+    expect(Object.keys(features)).toEqual(['./.nightshift/stack-bun', './.nightshift/agent-layer'])
+    const devcontainer = JSON.parse(build.devcontainer as string)
+    expect(devcontainer.build).toEqual({ dockerfile: 'Dockerfile' })
+    expect(devcontainer.overrideFeatureInstallOrder).toEqual([
+      'ghcr.io/devcontainers/features/common-utils',
+      'ghcr.io/devcontainers/features/node',
+      './.nightshift/stack-bun',
+    ])
+    const dockerfile = readFileSync(join(NIGHTSHIFT_ROOT, 'environments/nightshift-vault/Dockerfile'), 'utf8')
+    expect(dockerfile).toContain('OBSIDIAN_WIKI_VERSION=2026.10.1')
+    expect(dockerfile).toContain('uv tool install')
+    expect(dockerfile).toContain('ENV PATH=/opt/nightshift/tools/bin:$PATH')
+
+    s.tree.files['scripts/lint.ts'] = 'changed\n'
+    s.tree.files['AGENTS.md'] = 'changed\n'
+    expect(await s.builder.current('nightshift-vault')).toEqual(image)
   })
 
   test('the default environment hashes no workspace inputs beyond the stacks', async () => {

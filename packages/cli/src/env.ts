@@ -13,6 +13,7 @@ import {
   DockerSandbox,
   GitHubTokens,
   gitAuthEnv,
+  ingestConfig,
   memoryMb,
   REPO_MOUNT,
   type SandboxDriver,
@@ -125,7 +126,8 @@ function defaultBuilder(deps: EnvDeps): (config: Config) => EnvBuilder {
     })
 }
 
-export async function env(args: string[], config: Config, deps: EnvDeps, io: Io): Promise<number> {
+export async function env(args: string[], userConfig: Config, deps: EnvDeps, io: Io): Promise<number> {
+  const config = ingestConfig(userConfig)
   const [sub, repo, ...rest] = args
   if ((sub !== 'build' && sub !== 'shell') || !repo || rest.length > 0) {
     io.err(ENV_USAGE)

@@ -57,3 +57,14 @@ uv cache at `/var/cache/nightshift/uv`, with h5py built from source against the 
 - name: backend-test
   run: cd backend && uv run --frozen --offline pytest -q
 ```
+
+## nightshift-vault
+
+The closeout ingest's vault repository (`VAULT_REPOSITORY`, derived from `paths.vault`, also known to
+`ns env build`) selects the `bun` stack explicitly, since the vault has no lockfile to detect. Its
+`Dockerfile` installs `obsidian-wiki` with `uv tool install` into `/opt/nightshift/tools` (Python managed
+by uv under the same prefix) and puts `/opt/nightshift/tools/bin` on `PATH`, so both lints run offline:
+
+```
+bun scripts/lint.ts && obsidian-wiki lint "$PWD"
+```
