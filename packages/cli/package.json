@@ -1,0 +1,14 @@
+{
+  "name": "@nightshift/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "nightshift": "./src/main.ts",
+    "ns": "./src/main.ts"
+  },
+  "dependencies": {
+    "@nightshift/core": "workspace:*",
+    "@nightshift/supervisor": "workspace:*"
+  }
+}
