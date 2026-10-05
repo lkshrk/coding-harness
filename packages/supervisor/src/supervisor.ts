@@ -567,6 +567,7 @@ export class Supervisor {
       this.schedule(gating)
       return
     }
+    await this.preserveHead(runId)
     await this.end(runId, 'failed', event)
     this.releaseLease(run.issue)
     if (finish.status === 'NEEDS_CONTEXT') {
@@ -591,6 +592,7 @@ export class Supervisor {
       run: run.id,
       data: { reason, ...(detail ? { detail } : {}) },
     })
+    await this.preserveHead(runId)
     await this.end(runId, 'failed', event)
     this.stalls.delete(runId)
     this.releaseLease(run.issue)
@@ -898,6 +900,7 @@ export class Supervisor {
     const run = this.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.d.executor.stop(run, reason)
+    await this.preserveHead(runId)
     const event = this.log.append({
       type: 'WORKER_FAILED',
       issue: run.issue,
@@ -1570,6 +1573,17 @@ export class Supervisor {
 
   private handle(run: Run): SandboxHandle {
     return { driver: this.cfg.sandbox.driver, id: run.sandbox ?? '', name: run.id }
+  }
+
+  private async preserveHead(runId: string): Promise<void> {
+    const run = this.requireRun(runId)
+    if (run.headSha !== null || run.sandbox === null || run.agent === INGEST_AGENT) return
+    try {
+      const head = await this.d.executor.captureHead?.(run)
+      if (head) this.runs.update(runId, { headSha: head })
+    } catch (e) {
+      console.error(`${run.issue}: keeping the commits of run ${run.id} failed: ${(e as Error).message}`)
+    }
   }
 
   private async destroySandbox(run: Run): Promise<void> {

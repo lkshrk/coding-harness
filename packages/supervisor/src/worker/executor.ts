@@ -13,7 +13,7 @@ import {
 } from '@nightshift/core'
 import { INDEX_MOUNT, indexDb } from '../codegraph'
 import type { TaskMessage } from '../context'
-import { runRef } from '../gates/host'
+import { importBundle, runRef } from '../gates/host'
 import type {
   BuiltContext,
   HarnessEvent,
@@ -278,6 +278,20 @@ export class WorkerExecutor implements RunExecutor {
     if (a) this.end(a)
     const session = a?.session.id ?? run.session
     if (session !== null) await this.d.worker.stop({ id: session, attach: [] }, reason)
+  }
+
+  async captureHead(run: Run): Promise<string | undefined> {
+    if (run.sandbox === null) return undefined
+    const repo = this.d.config.repositories[run.repository]
+    if (!repo) return undefined
+    const handle: SandboxHandle = { driver: this.d.config.sandbox.driver, id: run.sandbox, name: run.id }
+    const exported = await this.d.sandbox.exportCommits(handle, workdirOf(run), branchOf(run))
+    if (run.baseSha && exported.headSha === run.baseSha) return undefined
+    const checkout = expandHome(repo.path, this.d.home ?? homedir())
+    const head = importBundle(checkout, exported.bundle, branchOf(run), run.id)
+    if (head !== exported.headSha)
+      throw new Error(`imported ${head} but the worker reported ${exported.headSha}`)
+    return head
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {

@@ -302,6 +302,7 @@ export function testWorkspace(): LinearWorkspace {
 export class FakeExecutor implements RunExecutor {
   readonly calls: { op: string; run: string; detail?: string }[] = []
   readonly starts: ExecutorStart[] = []
+  readonly heads = new Map<string, string>()
   failStart: string | Error | undefined
 
   async start(s: ExecutorStart): Promise<void> {
@@ -328,6 +329,11 @@ export class FakeExecutor implements RunExecutor {
 
   detach(): void {
     this.calls.push({ op: 'detach', run: '*' })
+  }
+
+  async captureHead(run: Run): Promise<string | undefined> {
+    this.calls.push({ op: 'captureHead', run: run.id, detail: run.sandbox ?? '' })
+    return this.heads.get(run.id)
   }
 
   ops(op: string): string[] {
