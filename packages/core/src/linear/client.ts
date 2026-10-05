@@ -25,6 +25,7 @@ export function linearRequest(opts: {
 }): LinearRequest {
   const doFetch = opts.fetch ?? ((url, init) => fetch(url, init))
   const url = opts.apiUrl ?? LINEAR_API_URL
+  const trace = process.env.NIGHTSHIFT_LINEAR_TRACE === '1'
   const send = async (query: string, variables: Record<string, unknown> | undefined) => {
     const res = await doFetch(url, {
       method: 'POST',
@@ -32,6 +33,10 @@ export function linearRequest(opts: {
       body: JSON.stringify({ query, variables }),
     })
     const body = (await res.json().catch(() => ({}))) as GraphQLBody
+    if (trace)
+      console.error(
+        `linear ${/(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? query.slice(0, 40).replace(/\s+/g, ' ')} complexity=${res.headers.get('x-complexity')} remaining=${res.headers.get('x-ratelimit-complexity-remaining')}`,
+      )
     return { res, body }
   }
   return async <R, V extends Record<string, unknown>>(query: string, variables?: V): Promise<R> => {

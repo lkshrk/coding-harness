@@ -13,7 +13,7 @@ const auth: TokenProvider = {
   invalidate() {},
 }
 
-function fakeLinear(handlers: Record<string, Handler>) {
+function fakeLinear(handlers: Record<string, Handler>, now?: () => number) {
   const calls: Call[] = []
   const fetch: FetchFn = async (_url, init) => {
     const { query, variables = {} } = JSON.parse(String(init.body)) as {
@@ -30,7 +30,7 @@ function fakeLinear(handlers: Record<string, Handler>) {
       return new Response(JSON.stringify({ errors: [{ message: (e as Error).message }] }), { status: 400 })
     }
   }
-  return { reader: new LinearIssueReader(linearRequest({ auth, fetch })), calls }
+  return { reader: new LinearIssueReader(linearRequest({ auth, fetch }), now), calls }
 }
 
 const conn = <T>(nodes: T[], endCursor: string | null = null) => ({
@@ -158,6 +158,28 @@ describe('LinearIssueReader.issues', () => {
     ])
     expect(calls[0]?.variables.filter).toEqual({ and: [optIn] })
     expect(calls[1]?.variables.ids).toEqual(['p1'])
+    expect(calls[1]?.variables.first).toBe(1)
+  })
+
+  test('reuses project details for ten minutes', async () => {
+    let t = 0
+    const { reader, calls } = fakeLinear(
+      {
+        nsIssue: () => ({ issue: rawIssue('FOR-1', { project: { id: 'p1' } }) }),
+        nsProjects: () => ({
+          projects: conn([{ id: 'p1', name: 'Omni', labels: conn([]), initiatives: conn([]) }]),
+        }),
+      },
+      () => t,
+    )
+    const projectReads = () => calls.filter((c) => c.operation === 'nsProjects').length
+    expect((await reader.issue('FOR-1'))?.project?.name).toBe('Omni')
+    t += 9 * 60_000
+    expect((await reader.issue('FOR-1'))?.project?.name).toBe('Omni')
+    expect(projectReads()).toBe(1)
+    t += 2 * 60_000
+    await reader.issue('FOR-1')
+    expect(projectReads()).toBe(2)
   })
 
   test('filters by updatedSince and follows every page', async () => {

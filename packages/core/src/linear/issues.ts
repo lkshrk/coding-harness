@@ -77,6 +77,7 @@ const ISSUE_PAGE = 25
 const NESTED_PAGE = 20
 const COMMENT_PAGE = 100
 const PROJECT_PAGE = 50
+const PROJECT_TTL_MS = 10 * 60_000
 
 const PAGE_INFO = 'pageInfo { hasNextPage endCursor }'
 export const LABEL_FIELDS = `nodes { id name parent { name } } ${PAGE_INFO}`
@@ -103,8 +104,8 @@ const ISSUE_BLOCKERS = `query nsIssueBlockers($id: String!, $after: String) {
   issue(id: $id) { inverseRelations(first: ${NESTED_PAGE}, after: $after) { ${RELATION_FIELDS} } }
 }`
 
-const PROJECTS = `query nsProjects($ids: [ID!], $after: String) {
-  projects(filter: { id: { in: $ids } }, first: ${PROJECT_PAGE}, after: $after) {
+const PROJECTS = `query nsProjects($ids: [ID!], $first: Int!, $after: String) {
+  projects(filter: { id: { in: $ids } }, first: $first, after: $after) {
     nodes {
       id name
       labels(first: ${NESTED_PAGE}) { ${LABEL_FIELDS} }
@@ -164,7 +165,12 @@ export function optInFilter(actOn: ActOn): { or: Record<string, unknown>[] } {
 }
 
 export class LinearIssueReader {
-  constructor(private readonly request: LinearRequest) {}
+  private readonly projectCache = new Map<string, { project: LinearIssueProject; at: number }>()
+
+  constructor(
+    private readonly request: LinearRequest,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async issues(q: { actOn: ActOn; updatedSince?: string }): Promise<LinearIssue[]> {
     const optIn = optInFilter(q.actOn)
@@ -314,12 +320,24 @@ export class LinearIssueReader {
     )
   }
 
-  private async projects(ids: string[]): Promise<Map<string, LinearIssueProject>> {
+  private async projects(all: string[]): Promise<Map<string, LinearIssueProject>> {
     const out = new Map<string, LinearIssueProject>()
+    const ids: string[] = []
+    for (const id of all) {
+      const hit = this.projectCache.get(id)
+      if (hit && this.now() - hit.at < PROJECT_TTL_MS) out.set(id, hit.project)
+      else ids.push(id)
+    }
     if (ids.length === 0) return out
     type Data = { projects: Page<RawProject> }
+    // Linear charges nested connections by the requested page size, not by the rows returned.
+    const first = Math.min(ids.length, PROJECT_PAGE)
     const page = (after: string | null) =>
-      this.request<Data, { ids: string[]; after: string | null }>(PROJECTS, { ids, after })
+      this.request<Data, { ids: string[]; first: number; after: string | null }>(PROJECTS, {
+        ids,
+        first,
+        after,
+      })
     const raw = await rest((await page(null)).projects, async (after) => (await page(after)).projects)
     for (const p of raw) {
       const [labels, initiatives] = await Promise.all([
@@ -335,12 +353,14 @@ export class LinearIssueReader {
               .initiatives,
         ),
       ])
-      out.set(p.id, {
+      const project = {
         id: p.id,
         name: p.name,
         initiatives: initiatives.map((i) => i.name),
         labels: labels.map(labelName),
-      })
+      }
+      this.projectCache.set(p.id, { project, at: this.now() })
+      out.set(p.id, project)
     }
     return out
   }
