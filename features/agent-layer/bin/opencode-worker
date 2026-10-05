@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+home="${NIGHTSHIFT_WORKER_HOME:-$HOME/.nightshift/opencode}"
+mkdir -p "$home/config" "$home/data" "$home/state" "$home/cache"
+# An empty catalog keeps built-in providers out of the model list (anomalyco/opencode#50236).
+[ -f "$home/models.json" ] || printf '{}\n' >"$home/models.json"
+
+export XDG_CONFIG_HOME="$home/config" XDG_DATA_HOME="$home/data" XDG_STATE_HOME="$home/state" \
+  XDG_CACHE_HOME="$home/cache" OPENCODE_CONFIG_DIR="$home/config/opencode" \
+  OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_MODELS_PATH="$home/models.json"
+
+ca_env="$(nightshift-ca-env)"
+eval "$ca_env"
+
+if [ "${1:-}" = run ]; then
+  exec opencode "$@" </dev/null
+fi
+exec opencode "$@"

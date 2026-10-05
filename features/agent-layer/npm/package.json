@@ -1,0 +1,7 @@
+{
+  "name": "nightshift-agent-layer-tools",
+  "private": true,
+  "dependencies": {
+    "bash-language-server": "5.8.1"
+  }
+}

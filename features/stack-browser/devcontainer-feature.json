@@ -1,0 +1,25 @@
+{
+  "id": "stack-browser",
+  "version": "0.1.0",
+  "name": "nightshift browser stack",
+  "description": "Playwright's Chromium headless shell and its system libraries for the repository's Playwright version, installed at build time for offline workers.",
+  "options": {
+    "playwrightVersion": {
+      "type": "string",
+      "default": "",
+      "description": "playwright-core version from the repository lockfile; empty uses the version pinned in tools.sh."
+    }
+  },
+  "containerEnv": {
+    "PLAYWRIGHT_BROWSERS_PATH": "/var/cache/nightshift/ms-playwright",
+    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1"
+  },
+  "dependsOn": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "24",
+      "pnpmVersion": "none",
+      "nodeGypDependencies": false
+    }
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

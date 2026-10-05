@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../packages/core/schema/stack.schema.json
+id: wow
+markers:
+  - glob: "**/*.toc"
+    contains: "^## Interface"
+lsp:
+  lua:
+    command: [lua-language-server, --configpath=/var/cache/nightshift/wow/luarc.json]
+    extensions: [.lua]
+checks:
+  - name: lint
+    run: wow-check .
+env:
+  WOW_HOME: /var/cache/nightshift/wow
+  WOW_CACHE: /var/cache/nightshift/wow/cache
+  WOW_LUACHECKRC: /var/cache/nightshift/wow/luacheckrc
+  WOW_INTERFACE: "120100"
+nested_docker: false

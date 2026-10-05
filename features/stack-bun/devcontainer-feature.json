@@ -1,0 +1,18 @@
+{
+  "id": "stack-bun",
+  "version": "0.1.0",
+  "name": "nightshift bun stack",
+  "description": "Bun, typescript-language-server with TypeScript, Biome and oxlint, installed at build time for offline workers.",
+  "options": {},
+  "containerEnv": {
+    "BUN_INSTALL_CACHE_DIR": "/var/cache/nightshift/bun"
+  },
+  "dependsOn": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "24",
+      "pnpmVersion": "none",
+      "nodeGypDependencies": false
+    }
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

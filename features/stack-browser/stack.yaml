@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../../packages/core/schema/stack.schema.json
+id: browser
+addon: true
+markers:
+  - file: package.json
+    contains: '"(@playwright/test|playwright|playwright-core|vite|next|@sveltejs/kit|react-dom|vue|astro)"\s*:'
+  - file: pnpm-lock.yaml
+    contains: '^\s+/?playwright-core@'
+  - file: package-lock.json
+    contains: '"node_modules/playwright-core"'
+  - file: yarn.lock
+    contains: '^"?playwright-core@'
+  - file: bun.lock
+    contains: '"playwright-core@'
+env:
+  PLAYWRIGHT_BROWSERS_PATH: /var/cache/nightshift/ms-playwright
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+nested_docker: false

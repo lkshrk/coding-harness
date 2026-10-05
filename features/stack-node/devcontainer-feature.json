@@ -1,0 +1,31 @@
+{
+  "id": "stack-node",
+  "version": "0.2.0",
+  "name": "nightshift node stack",
+  "description": "typescript-language-server with TypeScript, vscode-eslint-language-server, ESLint, Prettier and oxlint on Node 24 LTS with corepack, installed at build time for offline workers.",
+  "options": {
+    "packageManagers": {
+      "type": "string",
+      "default": "",
+      "description": "Space-separated packageManager values (e.g. pnpm@10.12.1) that corepack prepares at build time."
+    }
+  },
+  "containerEnv": {
+    "COREPACK_HOME": "/var/cache/nightshift/corepack",
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0",
+    "COREPACK_ENABLE_AUTO_PIN": "0",
+    "npm_config_cache": "/var/cache/nightshift/npm",
+    "npm_config_store_dir": "/var/cache/nightshift/pnpm-store",
+    "pnpm_config_store_dir": "/var/cache/nightshift/pnpm-store",
+    "npm_config_cache_dir": "/var/cache/nightshift/pnpm-cache",
+    "pnpm_config_cache_dir": "/var/cache/nightshift/pnpm-cache"
+  },
+  "dependsOn": {
+    "ghcr.io/devcontainers/features/node:2": {
+      "version": "24",
+      "pnpmVersion": "none",
+      "nodeGypDependencies": false
+    }
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

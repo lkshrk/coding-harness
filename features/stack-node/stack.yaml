@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=../../packages/core/schema/stack.schema.json
+id: node
+markers:
+  - file: package-lock.json
+  - file: pnpm-lock.yaml
+  - file: yarn.lock
+version_files:
+  - .nvmrc
+  - .node-version
+  - package.json#packageManager
+  - package.json#engines.node
+  - .tool-versions
+lsp:
+  typescript:
+    command: [typescript-language-server, --stdio]
+    extensions: [.ts, .tsx, .mts, .cts, .js, .jsx, .mjs, .cjs]
+  eslint:
+    command: [vscode-eslint-language-server, --stdio]
+    extensions: [.ts, .tsx, .mts, .cts, .js, .jsx, .mjs, .cjs, .svelte, .vue]
+checks:
+  - name: lint
+    run: npm run lint
+  - name: test
+    run: npm test
+egress: [registry.npmjs.org]
+env:
+  COREPACK_HOME: /var/cache/nightshift/corepack
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  COREPACK_ENABLE_AUTO_PIN: "0"
+  npm_config_cache: /var/cache/nightshift/npm
+  npm_config_store_dir: /var/cache/nightshift/pnpm-store
+  pnpm_config_store_dir: /var/cache/nightshift/pnpm-store
+  npm_config_cache_dir: /var/cache/nightshift/pnpm-cache
+  pnpm_config_cache_dir: /var/cache/nightshift/pnpm-cache
+nested_docker: false

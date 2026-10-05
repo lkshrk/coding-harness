@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ca="${NIGHTSHIFT_CA_FILE:-/etc/nightshift/ca.pem}"
+system=/etc/ssl/certs/ca-certificates.crt
+bundle="${NIGHTSHIFT_CA_BUNDLE:-${XDG_STATE_HOME:-$HOME/.local/state}/nightshift/ca-bundle.pem}"
+
+[ -r "$ca" ] || exit 0
+if [ ! -r "$system" ]; then
+  echo "system CA bundle $system is missing" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$bundle")"
+tmp="$(mktemp "$(dirname "$bundle")/.ca-bundle.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+{
+  cat "$system"
+  printf '\n'
+  cat "$ca"
+  printf '\n'
+} >"$tmp"
+if [ -f "$bundle" ] && cmp -s "$tmp" "$bundle"; then
+  rm -f "$tmp"
+else
+  chmod 0644 "$tmp"
+  mv -f "$tmp" "$bundle"
+fi
+for var in SSL_CERT_FILE NODE_EXTRA_CA_CERTS REQUESTS_CA_BUNDLE CURL_CA_BUNDLE GIT_SSL_CAINFO; do
+  printf 'export %s=%q\n' "$var" "$bundle"
+done

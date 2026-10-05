@@ -1,0 +1,27 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "installOhMyZsh": false,
+      "installOhMyZshConfig": false,
+      "upgradePackages": false,
+      "username": "none"
+    }
+  },
+  "customizations": {
+    "nightshift": {
+      "inputs": [
+        "frontend/package.json",
+        "frontend/pnpm-lock.yaml",
+        "frontend/pnpm-workspace.yaml",
+        "frontend/.npmrc",
+        "frontend/patches/**",
+        "frontend/project.inlang/settings.json"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "stack-wow",
+  "version": "0.1.0",
+  "name": "nightshift wow stack",
+  "description": "lua-language-server with Ketho's WoW API annotations, luacheck with the FrameXML globals, Lua 5.1, wow-check and wow-api over a pinned wow-ui-source checkout, installed at build time for offline workers.",
+  "options": {},
+  "containerEnv": {
+    "WOW_HOME": "/var/cache/nightshift/wow",
+    "WOW_CACHE": "/var/cache/nightshift/wow/cache",
+    "WOW_LUACHECKRC": "/var/cache/nightshift/wow/luacheckrc",
+    "WOW_INTERFACE": "120100"
+  },
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

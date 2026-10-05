@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../packages/core/schema/stack.schema.json
+id: bun
+markers:
+  - file: bun.lock
+  - file: bun.lockb
+version_files:
+  - package.json#packageManager
+  - .bun-version
+  - .tool-versions
+lsp:
+  typescript:
+    command: [typescript-language-server, --stdio]
+    extensions: [.ts, .tsx, .mts, .cts, .js, .jsx, .mjs, .cjs]
+  biome:
+    command: [biome, lsp-proxy]
+    extensions: [.ts, .tsx, .mts, .cts, .js, .jsx, .mjs, .cjs, .json, .jsonc, .css, .graphql]
+checks:
+  - name: lint
+    run: bun run lint
+  - name: test
+    run: bun test
+egress: [registry.npmjs.org]
+env:
+  BUN_INSTALL_CACHE_DIR: /var/cache/nightshift/bun
+nested_docker: false

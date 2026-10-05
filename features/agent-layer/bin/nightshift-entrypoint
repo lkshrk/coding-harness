@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ca_env="$(nightshift-ca-env)"
+eval "$ca_env"
+
+if [ "$#" -eq 0 ]; then
+  exec sleep infinity
+fi
+exec "$@"
