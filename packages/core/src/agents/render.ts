@@ -129,3 +129,22 @@ export function renderFinishPlugin(
     plugin: { package: `${configDir.replace(/\/+$/, '')}/${FINISH_PLUGIN_DIR}`, options: { outputs } },
   }
 }
+
+export const GUARD_PLUGIN_DIR = 'plugins/linear-guard'
+
+export function renderGuardPlugin(
+  defs: readonly AgentDef[],
+  configDir: string,
+  bundle: string,
+  options: { allowNoDesign?: boolean } = {},
+): { files: { path: string; content: string }[]; plugin: OpenCodePluginEntry } | undefined {
+  if (!defs.some((d) => d.kind === 'interactive' && d.role === 'lead')) return undefined
+  const pkg = { name: 'linear-guard', type: 'module', exports: { '.': './index.js' } }
+  return {
+    files: [
+      { path: `${GUARD_PLUGIN_DIR}/package.json`, content: `${JSON.stringify(pkg, null, 2)}\n` },
+      { path: `${GUARD_PLUGIN_DIR}/index.js`, content: bundle },
+    ],
+    plugin: { package: `${configDir.replace(/\/+$/, '')}/${GUARD_PLUGIN_DIR}`, options },
+  }
+}
