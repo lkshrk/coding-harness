@@ -14,6 +14,7 @@ export function writeIngestSources(o: {
   repository: string
   pr?: PullRequestRecord | null
   events: Event[]
+  reuse?: boolean
 }): string[] {
   const { identifier, title, description, status, labels } = o.issue
   if (!/^\d{4}-\d{2}-\d{2}$/.test(o.date) || !/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(identifier)) {
@@ -59,6 +60,7 @@ export function writeIngestSources(o: {
     const path = `raw/${category}/${o.date}-${identifier}.md`
     const full = join(o.dir, path)
     mkdirSync(dirname(full), { recursive: true })
+    if (o.reuse && existsSync(full)) return path
     try {
       writeFileSync(full, content, { flag: 'wx' })
     } catch (error) {

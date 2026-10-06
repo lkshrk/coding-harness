@@ -111,6 +111,7 @@ export class Ingest {
         date,
         events,
         pr: this.rt.pullRequests.get(id) ?? null,
+        ...(attempt > 1 ? { reuse: true } : {}),
       })
     } catch (e) {
       await this.ingestFailed(id, `prepare: ${(e as Error).message}`)
