@@ -14,6 +14,7 @@ import type {
   AttachInfo,
   CoverRequest,
   Health,
+  IngestRequest,
   PauseRequest,
   RetryRequest,
   SendRequest,
@@ -126,6 +127,10 @@ export function controlHandler(
         by,
       )
       return { run: run.id }
+    },
+    'POST /ingest': async (req) => {
+      const { issue } = await body<IngestRequest>(req, 'ingestRequest')
+      return { run: (await sup.retryIngest(issue)).id }
     },
   }
   const attach = async (target: string): Promise<AttachInfo> => {

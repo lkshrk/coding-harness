@@ -15,6 +15,7 @@ const REMOTE_BY_DEFAULT = new Set([
   'answer',
   'stop',
   'retry',
+  'ingest',
   'pause',
   'resume',
   'implement',

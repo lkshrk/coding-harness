@@ -1,5 +1,6 @@
-import type { IssueView } from '../policy/stages'
-import type { VaultIngest } from '../ports'
+import { type IssueView, type ViewOptions, viewIssue } from '../policy/stages'
+import type { IssueSnapshot, VaultIngest } from '../ports'
+import { ControlError } from '../ports/control'
 import type { Event } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'
 import { type FinishLike, INGEST_AGENT, type SupervisorRuntime } from './runtime'
@@ -8,6 +9,8 @@ export type IngestPeers = {
   profileFor: (view: IssueView) => string
   end: (runId: string, to: 'done' | 'failed' | 'stopped', cause: Event) => Promise<Run>
   forgetStalls: (runId: string) => void
+  observeIssue: (issue: IssueSnapshot) => void
+  viewOptions: (issue: string) => ViewOptions
 }
 
 export class Ingest {
@@ -19,51 +22,122 @@ export class Ingest {
   ) {}
 
   async startIngest(view: IssueView): Promise<void> {
-    const ingest = this.rt.deps.ingest
-    const cfg = this.rt.config()
     const id = view.snapshot.identifier
-    if (!ingest || cfg.stages.closeout?.ingest === false || this.ingesting.has(id)) return
+    if (!this.enabled() || this.ingesting.has(id)) return
     if (this.rt.log.since(null, { issue: id, types: ['VAULT_INGEST_STARTED'] }).length) return
     this.ingesting.add(id)
     try {
       const started = this.rt.log.append({ type: 'VAULT_INGEST_STARTED', issue: id, data: {} })
-      let prepared: Awaited<ReturnType<VaultIngest['prepare']>>
-      try {
-        prepared = await ingest.prepare({
-          issue: view.snapshot,
-          repository: view.repository ?? '',
-          date: this.rt.now().toISOString().slice(0, 10),
-          events: this.rt.log.since(null, { issue: id }),
-          pr: this.rt.pullRequests.get(id) ?? null,
-        })
-      } catch (e) {
-        await this.ingestFailed(id, `prepare: ${(e as Error).message}`)
-        return
-      }
-      const profile = this.peers.profileFor(view)
-      const run = this.rt.runs.create({
-        issue: id,
-        agent: INGEST_AGENT,
-        profile,
-        model: this.rt.deps.modelFor(INGEST_AGENT, profile, this.rt.config()),
-        repository: prepared.repository,
-        baseSha: prepared.baseSha,
-        attempt: 1,
-      })
-      const starting = this.rt.runs.transition(run.id, 'starting', started)
-      try {
-        await this.rt.deps.executor.start({
-          run: starting,
-          issue: view.snapshot,
-          files: prepared.files,
-          sourceFiles: prepared.sourceFiles,
-        })
-      } catch (e) {
-        await this.ingestRunFailed(run.id, `start: ${(e as Error).message}`)
-      }
+      await this.launch(view, started, 1, this.rt.log.since(null, { issue: id }))
     } finally {
       this.ingesting.delete(id)
     }
+  }
+
+  async retryIngest(identifier: string): Promise<Run> {
+    this.retryable(identifier)
+    const snapshot = await this.rt.deps.linear.issue(identifier)
+    if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
+    this.peers.observeIssue(snapshot)
+    // A recorded failed ingest proves nightshift managed the issue; closing it drops coverage.
+    const view = viewIssue(snapshot, this.rt.config(), {
+      ...this.peers.viewOptions(identifier),
+      covered: true,
+    })
+    if (!view) throw new ControlError('refused', `${identifier} is not managed by nightshift`)
+    const { history, first } = this.retryable(identifier)
+    this.ingesting.add(identifier)
+    try {
+      const attempt = history.filter((e) => e.type === 'VAULT_INGEST_STARTED').length + 1
+      const started = this.rt.log.append({
+        type: 'VAULT_INGEST_STARTED',
+        issue: identifier,
+        data: { attempt },
+      })
+      const events = this.rt.log.since(null, { issue: identifier }).filter((e) => e.id <= first.id)
+      const run = await this.launch(view, started, attempt, events, first.ts.slice(0, 10))
+      const failed = this.rt.log
+        .since(started.id, { issue: identifier, types: ['VAULT_INGEST_FAILED'] })
+        .at(-1)
+      if (!run || failed)
+        throw new ControlError(
+          'internal',
+          `${identifier}: vault ingest failed: ${String(failed?.data.reason)}`,
+        )
+      return run
+    } finally {
+      this.ingesting.delete(identifier)
+    }
+  }
+
+  private retryable(identifier: string): { history: Event[]; first: Event } {
+    if (!this.enabled()) throw new ControlError('refused', `${identifier}: vault ingest is disabled`)
+    const history = this.rt.log.since(null, {
+      issue: identifier,
+      types: ['VAULT_INGEST_STARTED', 'VAULT_INGEST_FAILED', 'VAULT_INGESTED'],
+    })
+    const first = history.find((e) => e.type === 'VAULT_INGEST_STARTED')
+    if (history.some((e) => e.type === 'VAULT_INGESTED'))
+      throw new ControlError('refused', `${identifier}: vault ingest already succeeded`)
+    if (
+      this.ingesting.has(identifier) ||
+      history.at(-1)?.type === 'VAULT_INGEST_STARTED' ||
+      this.rt.runs.active().some((r) => r.issue === identifier && r.agent === INGEST_AGENT)
+    )
+      throw new ControlError('refused', `${identifier}: vault ingest is running`)
+    if (!first || history.at(-1)?.type !== 'VAULT_INGEST_FAILED')
+      throw new ControlError('refused', `${identifier}: no failed vault ingest to retry`)
+    return { history, first }
+  }
+
+  private enabled(): boolean {
+    return !!this.rt.deps.ingest && this.rt.config().stages.closeout?.ingest !== false
+  }
+
+  private async launch(
+    view: IssueView,
+    started: Event,
+    attempt: number,
+    events: Event[],
+    date = this.rt.now().toISOString().slice(0, 10),
+  ): Promise<Run | null> {
+    const ingest = this.rt.deps.ingest as VaultIngest
+    const id = view.snapshot.identifier
+    let prepared: Awaited<ReturnType<VaultIngest['prepare']>>
+    try {
+      prepared = await ingest.prepare({
+        issue: view.snapshot,
+        repository: view.repository ?? '',
+        date,
+        events,
+        pr: this.rt.pullRequests.get(id) ?? null,
+      })
+    } catch (e) {
+      await this.ingestFailed(id, `prepare: ${(e as Error).message}`)
+      return null
+    }
+    const profile = this.peers.profileFor(view)
+    const run = this.rt.runs.create({
+      issue: id,
+      agent: INGEST_AGENT,
+      profile,
+      model: this.rt.deps.modelFor(INGEST_AGENT, profile, this.rt.config()),
+      repository: prepared.repository,
+      baseSha: prepared.baseSha,
+      attempt,
+    })
+    const starting = this.rt.runs.transition(run.id, 'starting', started)
+    try {
+      await this.rt.deps.executor.start({
+        run: starting,
+        issue: view.snapshot,
+        files: prepared.files,
+        sourceFiles: prepared.sourceFiles,
+      })
+    } catch (e) {
+      await this.ingestRunFailed(run.id, `start: ${(e as Error).message}`)
+    }
+    return this.rt.requireRun(run.id)
   }
 
   async ingestFinished(run: Run, event: Event, finish: FinishLike): Promise<void> {
@@ -105,7 +179,10 @@ export class Ingest {
   }
 
   async ingestFailed(issue: string, reason: string): Promise<void> {
-    if (this.rt.log.since(null, { issue, types: ['VAULT_INGEST_FAILED', 'VAULT_INGESTED'] }).length) return
+    const last = this.rt.log
+      .since(null, { issue, types: ['VAULT_INGEST_STARTED', 'VAULT_INGEST_FAILED', 'VAULT_INGESTED'] })
+      .at(-1)
+    if (last && last.type !== 'VAULT_INGEST_STARTED') return
     this.rt.log.append({ type: 'VAULT_INGEST_FAILED', issue, data: { reason } })
     await this.rt.notify('Vault ingest failed', issue, { kind: 'info', context: [reason] })
   }

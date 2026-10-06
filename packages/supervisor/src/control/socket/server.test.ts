@@ -287,6 +287,16 @@ describe('control socket', () => {
     expect((await h.req('POST', '/retry', { target: 'FOR-404' })).status).toBe(404)
   })
 
+  test('POST /ingest validates the issue and refuses without a failed ingest', async () => {
+    const h = harness()
+    await h.sup.start()
+    expect((await h.req('POST', '/ingest', { issue: 'not-an-issue' })).status).toBe(400)
+    expect(await h.req('POST', '/ingest', { issue: 'FOR-1' })).toEqual({
+      status: 409,
+      body: { error: { code: 'refused', message: 'FOR-1: vault ingest is disabled' } },
+    })
+  })
+
   test('GET /runs/<target>/attach returns the connection of a running worker only', async () => {
     const h = harness()
     const run = await running(h)
