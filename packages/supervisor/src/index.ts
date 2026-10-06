@@ -1,9 +1,5 @@
 import { NIGHTSHIFT_VERSION } from '@nightshift/core'
 
-export { changedPaths, restartRequired, type WatchOptions, watchConfig } from './config-watch'
-export { acquireLock, type Db, MIGRATIONS, openState, openStateReadOnly, STATE_DB, statePath } from './db'
-export { EVENT_TYPES, type EventInput, type EventType, validateEvent } from './event-schema'
-export { type Event, type EventFilter, EventLog, EventValidationError } from './events'
 export {
   GitHubAuthError,
   GitHubTokens,
@@ -12,28 +8,18 @@ export {
   gitAuthEnv,
   githubOwner,
   TOKEN_TTL_MS,
-} from './github-tokens'
-export { duplicateInput, findCandidates, findDuplicates, type IntakeDeps } from './intake/duplicates'
-export { intakeInput, runIntake } from './intake/intake'
-export type * from './interfaces'
-export { type Lease, LeaseStore } from './leases'
-export { createLinearPort, type LinearPortOptions } from './linear-adapter'
-export { agentResolver, type LoopOptions, runSupervisor } from './loop'
-export type * from './ports'
-export { blockersSatisfied, type DispatchPlan, filesOverlap, planDispatch, type RunningIssue } from './ready'
-export { type RetryEntry, RetryQueue } from './retry'
+} from './adapters/github/github-tokens'
+export { createLinearPort, type LinearPortOptions } from './adapters/linear/linear-adapter'
+export * from './adapters/worker'
 export {
-  canTransition,
-  isTerminal,
-  type NewRun,
-  RUN_STATES,
-  type Run,
-  type RunState,
-  RunStore,
-  RunTransitionError,
-  type RunUpdate,
-} from './runs'
-export { type SelectionContext, selectAgent } from './selection'
+  blockersSatisfied,
+  type DispatchPlan,
+  filesOverlap,
+  planDispatch,
+  type RunningIssue,
+} from './policy/ready'
+export { type RetryEntry, RetryQueue } from './policy/retry'
+export { type SelectionContext, selectAgent } from './policy/selection'
 export {
   type AgentKind,
   type DecideContext,
@@ -44,8 +30,37 @@ export {
   lifecycleOf,
   nextStage,
   viewIssue,
-} from './stages'
-export { type OpenQuestion, readStatus, type SupervisorStatus, type Waiting } from './status'
+} from './policy/stages'
+export type * from './ports'
+export { changedPaths, restartRequired, type WatchOptions, watchConfig } from './runtime/config-watch'
+export { agentResolver, type LoopOptions, runSupervisor } from './runtime/loop'
+export { duplicateInput, findCandidates, findDuplicates, type IntakeDeps } from './stages/intake/duplicates'
+export { intakeInput, runIntake } from './stages/intake/intake'
+export {
+  acquireLock,
+  type Db,
+  MIGRATIONS,
+  openState,
+  openStateReadOnly,
+  STATE_DB,
+  statePath,
+} from './state/db'
+export { EVENT_TYPES, type EventInput, type EventType, validateEvent } from './state/event-schema'
+export { type Event, type EventFilter, EventLog, EventValidationError } from './state/events'
+export { type Lease, LeaseStore } from './state/leases'
+export {
+  canTransition,
+  isTerminal,
+  type NewRun,
+  RUN_STATES,
+  type Run,
+  type RunState,
+  RunStore,
+  RunTransitionError,
+  type RunUpdate,
+} from './state/runs'
+export { type OpenQuestion, readStatus, type SupervisorStatus, type Waiting } from './state/status'
+export { createUlid, ulidTime } from './state/ulid'
 export {
   type By,
   fallbackClassifier,
@@ -55,18 +70,33 @@ export {
   type SupervisorDeps,
   type TickReport,
   type WorkerStartedInfo,
-} from './supervisor'
-export { createUlid, ulidTime } from './ulid'
-export * from './worker'
+} from './supervisor/supervisor'
 
 export function supervisorVersion(): string {
   return NIGHTSHIFT_VERSION
 }
-export * from './compose'
-export * from './context'
-export { ingestConfig, VAULT_REPOSITORY } from './context/ingest-runtime'
-export { coveredIssues, heldIssues, setCovered, setHeld } from './coverage'
-export * from './gates'
+export {
+  BRANCH_PREFIX,
+  GhGitHost,
+  type GhGitHostOptions,
+  githubSlug,
+  type HostCommandResult,
+  type HostCommandRunner,
+  spawnCommand,
+} from './adapters/github/gh'
+export {
+  PAIRING_TTL_MS,
+  readSignalState,
+  resolveTarget,
+  SignalApi,
+  SignalApiError,
+  type SignalSettings,
+  type SignalState,
+  signalApi,
+  startPairing,
+} from './adapters/signal'
+export { branchOf } from './adapters/worker/executor'
+export * from './control/socket'
 export type {
   AnswerRequest,
   AttachInfo,
@@ -79,7 +109,13 @@ export type {
   RunResponse,
   SendRequest,
   StopRequest,
-} from './generated/control'
+} from './ports/generated/control'
+export * from './runtime/compose'
+export * from './stages/context'
+export { ingestConfig, VAULT_REPOSITORY } from './stages/context/ingest-runtime'
+export * from './stages/gates'
+export * from './stages/integration'
+export { coveredIssues, heldIssues, setCovered, setHeld } from './state/coverage'
 export type {
   DiffRecord,
   IssueRecord,
@@ -87,8 +123,7 @@ export type {
   StatusRecord,
   TestsRecord,
   WorkerRecord,
-} from './generated/records'
-export * from './integration'
+} from './state/generated/records'
 export {
   commentUrl,
   type EventQuery,
@@ -99,17 +134,4 @@ export {
   runStore,
   workerRecord,
   workerRecords,
-} from './records'
-export {
-  PAIRING_TTL_MS,
-  readSignalState,
-  resolveTarget,
-  SignalApi,
-  SignalApiError,
-  type SignalSettings,
-  type SignalState,
-  signalApi,
-  startPairing,
-} from './signal'
-export * from './socket'
-export { branchOf } from './worker/executor'
+} from './state/records'

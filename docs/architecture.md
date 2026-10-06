@@ -111,6 +111,21 @@ the context builder; a task too large or an architectural conflict goes back to 
 dependency creates a blocker issue; a capability limit goes to you. Each classified failure is recorded on
 the issue and in Phoenix so issue sizing can be tuned from data.
 
+### Package layout
+
+- `index.ts` — public API.
+- `runtime/` — composition, loop, and config watching.
+- `supervisor/` — the `Supervisor` coordinator (start, stop, tick order, public API) and its modules: `linear-sync`, `holds`, `leases`, `questions`, `ingest`, `run-lifecycle`, `recovery`, `verification`, `pr-watch`, `dispatch`, `remediation`. Modules share one `SupervisorRuntime` and call each other only through the `RunFlow` interface.
+- `policy/` — scheduling and decision rules.
+- `state/` — persistence, events, and projections.
+- `ports/` — shared contracts by concern.
+- `stages/` — gates, context, intake, and integration.
+- `adapters/` — external service and worker implementations.
+- `control/` — socket API.
+- `testing/` — shared test fixtures.
+
+Dependencies follow the layer matrix enforced by `boundaries.test.ts`, with no exceptions: `runtime` composes every layer and nothing imports it; `supervisor` uses `policy`, `state`, `ports` and `stages`; `stages` use `ports`, `state`, `policy` and `adapters`; `adapters` use `ports`, `state` and `policy`; `control` uses `ports` and `state`; `policy` and `state` use only `ports`; `ports` imports nothing. Shared record shapes (`Run`, `Event`) and the generated wire contracts live in `ports/`, pure naming rules (branches, refs, durations) in `policy/naming.ts`, host-side git in `adapters/git/`.
+
 ## Hosts
 
 nightshift runs on Linux and macOS. The interim host is `towerr-dev` (Ubuntu under WSL2 on the Windows
