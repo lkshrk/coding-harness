@@ -59,6 +59,7 @@ export function ingestRuntime(
       date: string
       events: Event[]
       pr: PullRequestRecord | null
+      reuse?: boolean
     }) {
       await publishing.catch(() => undefined)
       const base = Bun.spawnSync(['git', '-C', o.dir, 'rev-parse', '--verify', 'main^{commit}'], {

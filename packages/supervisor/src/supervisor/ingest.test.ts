@@ -193,6 +193,20 @@ describe('vault ingest lifecycle', () => {
     expect(await h.sup.retryIngest('FOR-1')).toMatchObject({ agent: 'ingester', attempt: 2 })
   })
 
+  test('retry asks prepare to reuse the sources the first attempt wrote', async () => {
+    const h = setup()
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    const first = h.executor.starts[0]?.run
+    if (!first) throw new Error('ingester not started')
+    await h.sup.workerFailed(first.id, 'sandbox_error', 'missing tooling')
+    h.linear.patch('FOR-1', { title: 'Renamed after closeout' })
+    await h.sup.retryIngest('FOR-1')
+    const [a, b] = h.prepared as { reuse?: boolean }[]
+    expect(a?.reuse).toBeUndefined()
+    expect(b?.reuse).toBe(true)
+  })
+
   test('concurrent retries start only one ingest run', async () => {
     const h = setup()
     await h.sup.start()

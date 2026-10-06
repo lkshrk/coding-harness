@@ -16,6 +16,7 @@ export interface VaultIngest {
     date: string
     events: Event[]
     pr: PullRequestRecord | null
+    reuse?: boolean
   }): Promise<VaultIngestPrepared>
   publish(run: Run): Promise<string[]>
 }

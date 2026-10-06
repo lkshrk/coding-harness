@@ -40,6 +40,9 @@ test('source writer fixes content, omits empty sources, and refuses changed raw 
   expect(() => writeIngestSources({ ...fixture, issue: { ...fixture.issue, title: 'Changed' } })).toThrow(
     'immutable',
   )
+  const changed = { ...fixture, issue: { ...fixture.issue, status: 'Canceled' } }
+  expect(writeIngestSources({ ...changed, reuse: true })).toEqual(['raw/linear/2026-10-05-FOR-1.md'])
+  expect(readFileSync(path, 'utf8')).toContain('State: Done')
 })
 
 test('review and failure sources preserve event evidence with fixed content', () => {
