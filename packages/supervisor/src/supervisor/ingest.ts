@@ -39,7 +39,11 @@ export class Ingest {
     const snapshot = await this.rt.deps.linear.issue(identifier)
     if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
     this.peers.observeIssue(snapshot)
-    const view = viewIssue(snapshot, this.rt.config(), this.peers.viewOptions(identifier))
+    // A recorded failed ingest proves nightshift managed the issue; closing it drops coverage.
+    const view = viewIssue(snapshot, this.rt.config(), {
+      ...this.peers.viewOptions(identifier),
+      covered: true,
+    })
     if (!view) throw new ControlError('refused', `${identifier} is not managed by nightshift`)
     const { history, first } = this.retryable(identifier)
     this.ingesting.add(identifier)
