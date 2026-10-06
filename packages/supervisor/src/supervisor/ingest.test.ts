@@ -178,6 +178,32 @@ describe('vault ingest lifecycle', () => {
     expect(h.linear.updates).toEqual([])
   })
 
+  test('concurrent retries start only one ingest run', async () => {
+    const h = setup()
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    const first = h.executor.starts[0]?.run
+    if (!first) throw new Error('ingester not started')
+    await h.sup.workerFailed(first.id, 'sandbox_error', 'missing tooling')
+    const lookup = h.linear.issue.bind(h.linear)
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let calls = 0
+    h.linear.issue = async (identifier: string) => {
+      if (calls++ === 1) await gate
+      return lookup(identifier)
+    }
+    const a = h.sup.retryIngest('FOR-1')
+    const b = h.sup.retryIngest('FOR-1')
+    await expect(a).resolves.toMatchObject({ attempt: 2 })
+    release()
+    await expect(b).rejects.toMatchObject({ code: 'refused', message: 'FOR-1: vault ingest is running' })
+    expect(h.executor.starts).toHaveLength(2)
+    expect(h.of('VAULT_INGEST_STARTED')).toHaveLength(2)
+  })
+
   test('a failed retry is recorded again and can be retried', async () => {
     const h = setup()
     h.ingest.prepare = async () => {

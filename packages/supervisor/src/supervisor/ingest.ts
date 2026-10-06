@@ -35,29 +35,13 @@ export class Ingest {
   }
 
   async retryIngest(identifier: string): Promise<Run> {
-    if (!this.enabled()) throw new ControlError('refused', `${identifier}: vault ingest is disabled`)
-    const history = this.rt.log.since(null, {
-      issue: identifier,
-      types: ['VAULT_INGEST_STARTED', 'VAULT_INGEST_FAILED', 'VAULT_INGESTED'],
-    })
-    const first = history.find((e) => e.type === 'VAULT_INGEST_STARTED')
-    if (history.some((e) => e.type === 'VAULT_INGESTED'))
-      throw new ControlError('refused', `${identifier}: vault ingest already succeeded`)
-    if (
-      this.ingesting.has(identifier) ||
-      history.at(-1)?.type === 'VAULT_INGEST_STARTED' ||
-      this.rt.runs.active().some((r) => r.issue === identifier && r.agent === INGEST_AGENT)
-    )
-      throw new ControlError('refused', `${identifier}: vault ingest is running`)
-    if (!first || history.at(-1)?.type !== 'VAULT_INGEST_FAILED')
-      throw new ControlError('refused', `${identifier}: no failed vault ingest to retry`)
+    this.retryable(identifier)
     const snapshot = await this.rt.deps.linear.issue(identifier)
     if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
     this.peers.observeIssue(snapshot)
     const view = viewIssue(snapshot, this.rt.config(), this.peers.viewOptions(identifier))
     if (!view) throw new ControlError('refused', `${identifier} is not managed by nightshift`)
-    if (this.ingesting.has(identifier))
-      throw new ControlError('refused', `${identifier}: vault ingest is running`)
+    const { history, first } = this.retryable(identifier)
     this.ingesting.add(identifier)
     try {
       const attempt = history.filter((e) => e.type === 'VAULT_INGEST_STARTED').length + 1
@@ -80,6 +64,26 @@ export class Ingest {
     } finally {
       this.ingesting.delete(identifier)
     }
+  }
+
+  private retryable(identifier: string): { history: Event[]; first: Event } {
+    if (!this.enabled()) throw new ControlError('refused', `${identifier}: vault ingest is disabled`)
+    const history = this.rt.log.since(null, {
+      issue: identifier,
+      types: ['VAULT_INGEST_STARTED', 'VAULT_INGEST_FAILED', 'VAULT_INGESTED'],
+    })
+    const first = history.find((e) => e.type === 'VAULT_INGEST_STARTED')
+    if (history.some((e) => e.type === 'VAULT_INGESTED'))
+      throw new ControlError('refused', `${identifier}: vault ingest already succeeded`)
+    if (
+      this.ingesting.has(identifier) ||
+      history.at(-1)?.type === 'VAULT_INGEST_STARTED' ||
+      this.rt.runs.active().some((r) => r.issue === identifier && r.agent === INGEST_AGENT)
+    )
+      throw new ControlError('refused', `${identifier}: vault ingest is running`)
+    if (!first || history.at(-1)?.type !== 'VAULT_INGEST_FAILED')
+      throw new ControlError('refused', `${identifier}: no failed vault ingest to retry`)
+    return { history, first }
   }
 
   private enabled(): boolean {
