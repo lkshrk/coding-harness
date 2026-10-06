@@ -346,4 +346,5 @@ export class Supervisor {
     o: { agent?: string; profile?: string; continue?: boolean },
     by: By,
   ): Promise<Run> => this.m.dispatcher.retryRun(target, o, by)
+  retryIngest = (issue: string): Promise<Run> => this.m.ingest.retryIngest(issue)
 }

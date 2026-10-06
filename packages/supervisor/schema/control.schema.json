@@ -14,6 +14,7 @@
     "answer": { "$ref": "#/$defs/answerRequest" },
     "stop": { "$ref": "#/$defs/stopRequest" },
     "retry": { "$ref": "#/$defs/retryRequest" },
+    "ingest": { "$ref": "#/$defs/ingestRequest" },
     "run": { "$ref": "#/$defs/runResponse" },
     "attach": { "$ref": "#/$defs/attachInfo" }
   },
@@ -99,6 +100,12 @@
           "description": "continue from the commit of the latest attempt that has one, whatever its failure class"
         }
       }
+    },
+    "ingestRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue"],
+      "properties": { "issue": { "$ref": "#/$defs/issue" } }
     },
     "runResponse": {
       "type": "object",

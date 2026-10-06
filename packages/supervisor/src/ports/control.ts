@@ -33,6 +33,7 @@ export interface ControlSupervisor extends InboxSupervisor {
   gateway(): 'ok' | 'unavailable'
   uncover(issue: string, by?: By): void
   resolveRun(target: string): Run | undefined
+  retryIngest(issue: string): Promise<Run>
 }
 
 export type Waiting = { identifier: string; reason: string }

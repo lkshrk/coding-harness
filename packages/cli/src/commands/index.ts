@@ -3,7 +3,7 @@ import { DOCTOR_USAGE } from '../doctor'
 import { ENV_USAGE } from '../env'
 import { ISSUE_USAGE } from '../issue-check'
 import { ATTACH_USAGE, attach } from './attach'
-import { answer, CONTROL_USAGE, cover, pause, retry, send, stop } from './control'
+import { answer, CONTROL_USAGE, cover, ingest, pause, retry, send, stop } from './control'
 import { LOGS_USAGE, logs } from './logs'
 import { QUESTIONS_USAGE, questions, TASKS_USAGE, tasks, WORKERS_USAGE, workers } from './read'
 import { DIFF_USAGE, diff, TESTS_USAGE, tests } from './results'
@@ -37,6 +37,7 @@ export const COMMAND_HELP: Record<string, { usage: string; description: string }
   answer: { usage: CONTROL_USAGE.answer, description: 'Answer an issue’s open question.' },
   stop: { usage: CONTROL_USAGE.stop, description: 'Stop a run and hold its issue.' },
   retry: { usage: CONTROL_USAGE.retry, description: 'Dispatch another attempt.' },
+  ingest: { usage: CONTROL_USAGE.ingest, description: 'Retry a failed closeout vault ingest.' },
   pause: { usage: CONTROL_USAGE.pause, description: 'Pause dispatch or hold an issue.' },
   resume: { usage: CONTROL_USAGE.resume, description: 'Resume dispatch or release a held issue.' },
   implement: { usage: CONTROL_USAGE.implement, description: 'Cover an issue for implementation.' },
@@ -60,6 +61,7 @@ export const COMMANDS: Record<string, Command> = {
   answer,
   stop,
   retry,
+  ingest,
   pause: (ctx, args) => pause(ctx, args, true),
   resume: (ctx, args) => pause(ctx, args, false),
   implement: (ctx, args) => cover(ctx, args, true),

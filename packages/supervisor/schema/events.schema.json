@@ -25,7 +25,10 @@
     },
     {
       "if": { "properties": { "type": { "const": "VAULT_INGEST_STARTED" } } },
-      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/empty" } } }
+      "then": {
+        "required": ["issue"],
+        "properties": { "data": { "$ref": "#/$defs/data/vaultIngestStarted" } }
+      }
     },
     {
       "if": { "properties": { "type": { "const": "VAULT_INGESTED" } } },
@@ -231,6 +234,11 @@
     },
     "data": {
       "empty": { "type": "object", "additionalProperties": false, "properties": {} },
+      "vaultIngestStarted": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "attempt": { "type": "integer", "minimum": 2 } }
+      },
       "vaultIngested": {
         "type": "object",
         "additionalProperties": false,

@@ -19,6 +19,7 @@ export interface ControlApi {
   answer?: AnswerRequest
   stop?: StopRequest
   retry?: RetryRequest
+  ingest?: IngestRequest
   run?: RunResponse
   attach?: AttachInfo
   [k: string]: unknown
@@ -64,6 +65,9 @@ export interface RetryRequest {
    * continue from the commit of the latest attempt that has one, whatever its failure class
    */
   continue?: boolean
+}
+export interface IngestRequest {
+  issue: Issue
 }
 export interface RunResponse {
   run: string

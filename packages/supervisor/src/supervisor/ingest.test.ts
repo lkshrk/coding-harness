@@ -139,6 +139,61 @@ describe('vault ingest lifecycle', () => {
     expect(h.linear.updates).toEqual([])
   })
 
+  test('retry starts attempt 2 after a failure with the first attempt inputs', async () => {
+    const h = setup()
+    await h.sup.start()
+    await expect(h.sup.retryIngest('FOR-1')).rejects.toMatchObject({
+      code: 'refused',
+      message: 'FOR-1: no failed vault ingest to retry',
+    })
+    await h.sup.completeStage('FOR-1')
+    const first = h.executor.starts[0]?.run
+    if (!first) throw new Error('ingester not started')
+    await expect(h.sup.retryIngest('FOR-1')).rejects.toMatchObject({
+      code: 'refused',
+      message: 'FOR-1: vault ingest is running',
+    })
+    await h.sup.workerFailed(first.id, 'sandbox_error', 'missing tooling')
+    h.advance(86_400_000)
+    const retried = await h.sup.retryIngest('FOR-1')
+    expect(retried).toMatchObject({ agent: 'ingester', attempt: 2, state: 'starting' })
+    expect(h.executor.starts).toHaveLength(2)
+    expect(h.of('VAULT_INGEST_STARTED').map((e) => e.data)).toEqual([{}, { attempt: 2 }])
+    const [a, b] = h.prepared as { date: string; events: { id: string }[]; issue: unknown }[]
+    expect(b?.date).toBe(a?.date)
+    expect(b?.events).toEqual(a?.events ?? [])
+    expect(b?.issue).toEqual(a?.issue)
+    await h.sup.workerStarted(retried.id, { sandbox: 'vault-sandbox', session: 'vault-session' })
+    await h.sup.workerFinished(retried.id, {
+      status: 'DONE',
+      summary: 'Ingested',
+      evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
+    })
+    expect(h.published).toEqual([retried.id])
+    expect(h.of('VAULT_INGESTED')).toHaveLength(1)
+    await expect(h.sup.retryIngest('FOR-1')).rejects.toMatchObject({
+      code: 'refused',
+      message: 'FOR-1: vault ingest already succeeded',
+    })
+    expect(h.linear.updates).toEqual([])
+  })
+
+  test('a failed retry is recorded again and can be retried', async () => {
+    const h = setup()
+    h.ingest.prepare = async () => {
+      throw new Error('vault missing')
+    }
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    await expect(h.sup.retryIngest('FOR-1')).rejects.toMatchObject({
+      code: 'internal',
+      message: 'FOR-1: vault ingest failed: prepare: vault missing',
+    })
+    expect(h.of('VAULT_INGEST_FAILED')).toHaveLength(2)
+    expect(h.of('VAULT_INGEST_STARTED')).toHaveLength(2)
+    expect(h.linear.updates).toEqual([])
+  })
+
   test('restart of active ingest fails it without changing issue or starting another', async () => {
     const h = setup()
     await h.sup.start()

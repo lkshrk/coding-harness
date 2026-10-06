@@ -13,6 +13,7 @@ export const CONTROL_USAGE = {
   answer: 'ns answer <issue> <text>',
   stop: 'ns stop <target> [--reason R] [--yes]',
   retry: 'ns retry <target> [--agent A] [--profile P] [--continue]',
+  ingest: 'ns ingest <issue>',
 }
 
 function issueArg(value: string | undefined, usage: string): string {
@@ -100,4 +101,13 @@ export async function retry(ctx: Ctx, args: string[]): Promise<number> {
     ...(bools.has('--continue') ? { continue: true } : {}),
   })
   return done(ctx, res, `dispatched run ${res.run} for ${target}`)
+}
+
+export async function ingest(ctx: Ctx, args: string[]): Promise<number> {
+  const usage = CONTROL_USAGE.ingest
+  const { positionals } = parseArgs(args, {}, usage)
+  if (positionals.length > 1) throw new CliError(EXIT.usage, `usage: ${usage}`)
+  const issue = issueArg(positionals[0], usage)
+  const res = await call<RunResponse>(ctx, 'POST', '/ingest', { issue })
+  return done(ctx, res, `started vault ingest run ${res.run} for ${issue}`)
 }

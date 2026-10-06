@@ -103,6 +103,7 @@ export type {
   CoverRequest,
   ErrorResponse,
   Health,
+  IngestRequest,
   Ok,
   PauseRequest,
   RetryRequest,

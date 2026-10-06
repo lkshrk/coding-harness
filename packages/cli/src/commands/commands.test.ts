@@ -410,6 +410,27 @@ describe('control commands', () => {
     expect((await cli(['retry', 'XXX-42'], { ...s.deps, control: refused.control })).code).toBe(5)
   })
 
+  test('ingest posts the issue; bad arguments exit 2 and refusals print one line', async () => {
+    const s = seeded()
+    const rec = recording({ run: '01J0000000000000000000000D' })
+    expect(await cli(['ingest', 'XXX-278'], { ...s.deps, control: rec.control })).toEqual({
+      code: 0,
+      out: ['started vault ingest run 01J0000000000000000000000D for XXX-278'],
+      err: [],
+    })
+    expect(rec.calls).toEqual([['POST', '/ingest', { issue: 'XXX-278' }]])
+    expect((await cli(['ingest'], { ...s.deps, control: rec.control })).code).toBe(2)
+    expect((await cli(['ingest', 'xxx-1'], { ...s.deps, control: rec.control })).code).toBe(2)
+    expect((await cli(['ingest', 'XXX-1', 'XXX-2'], { ...s.deps, control: rec.control })).code).toBe(2)
+    expect(rec.calls).toHaveLength(1)
+    const refused = recording(new ControlFailure(5, 'XXX-278: vault ingest already succeeded', 'refused'))
+    expect(await cli(['ingest', 'XXX-278'], { ...s.deps, control: refused.control })).toEqual({
+      code: 5,
+      out: [],
+      err: ['XXX-278: vault ingest already succeeded'],
+    })
+  })
+
   test('answer and pause per issue', async () => {
     const s = seeded()
     const rec = recording()

@@ -9,6 +9,8 @@ function summary(type: string, d: Data): string {
   switch (type) {
     case 'DISPATCHED':
       return `${str(d.agent)} attempt ${str(d.attempt)} on ${str(d.model)} (profile ${str(d.profile)})${d.reason ? `, ${str(d.reason)}` : ''}`
+    case 'VAULT_INGEST_STARTED':
+      return `attempt ${str(d.attempt ?? 1)}`
     case 'WORKER_STARTED':
       return `session ${str(d.session)}`
     case 'WORKER_PROGRESS':
