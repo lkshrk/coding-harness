@@ -75,8 +75,8 @@ const WIP_SCRIPT = [
   'if [ -z "$(git status --porcelain)" ]; then echo clean; exit 0; fi',
   'git add -A',
   'git commit --quiet --no-verify -m "$1"',
-  'echo committed',
-  'git show --numstat --format= HEAD',
+  `lines=$(git show --numstat --format= HEAD | awk -F'\\t' '{ if ($1 ~ /^[0-9]+$/) n += $1; if ($2 ~ /^[0-9]+$/) n += $2 } END { print n + 0 }')`,
+  'echo "committed $lines"',
 ].join('\n')
 
 export function wipMessage(run: Pick<Run, 'issue' | 'attempt'>, status?: string): string {
@@ -290,15 +290,8 @@ export class WorkerExecutor implements RunExecutor {
     })
     if (res.exitCode !== 0)
       throw new Error(`committing uncommitted work failed: ${res.stderrTail.trim() || res.stdoutTail.trim()}`)
-    const [first, ...rest] = res.stdoutTail.trim().split('\n')
-    if (first !== 'committed') return undefined
-    const lines = rest
-      .filter((l) => l.includes('\t'))
-      .reduce((sum, l) => {
-        const [add, del] = l.split('\t')
-        return sum + (Number(add) || 0) + (Number(del) || 0)
-      }, 0)
-    return { lines }
+    const marker = /^committed (\d+)$/.exec(res.stdoutTail.trim().split('\n').at(-1) ?? '')
+    return marker ? { lines: Number(marker[1]) } : undefined
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {

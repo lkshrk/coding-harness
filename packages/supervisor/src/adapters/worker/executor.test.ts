@@ -607,6 +607,33 @@ describe('WorkerExecutor.captureHead', () => {
     expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 4 }]])
   })
 
+  test('a wip commit is reported even when only the tail of its output survives', async () => {
+    const fx = withCommit()
+    for (let i = 0; i < 50; i++) writeFileSync(join(fx.worker, `src/f${i}.ts`), `export const f${i} = ${i}\n`)
+    sandbox.onExec = (cmd) => {
+      if (!cmd[2]?.includes('git status --porcelain')) return undefined
+      const r = Bun.spawnSync(['sh', '-c', cmd[2], 'sh', cmd[4] ?? ''], {
+        cwd: fx.worker,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'w',
+          GIT_AUTHOR_EMAIL: 'w@w',
+          GIT_COMMITTER_NAME: 'w',
+          GIT_COMMITTER_EMAIL: 'w@w',
+        },
+      })
+      return { exitCode: r.exitCode, stdoutTail: r.stdout.toString().slice(-40), stderrTail: '' }
+    }
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'stopped',
+    )
+    expect(git(fx.checkout, 'log', '-1', '--format=%s', runRef(run.id))).toBe(
+      'wip: FOR-1 attempt 1 (stopped)',
+    )
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 50 }]])
+  })
+
   test('a clean worktree adds no commit and reports nothing', async () => {
     const fx = withCommit()
     sandbox.onExec = (cmd) =>
