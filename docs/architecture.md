@@ -135,6 +135,9 @@ desktop, amd64); the Mac Studio becomes the host later.
   except the service manager behind `ns up` / `ns down` (systemd user unit or launchd agent).
 - `ns doctor` checks the host before start (Docker, `sbx`, rbw unlocked, OpenCode major version, gateway
   CA, disk) and prints the fix for each failure.
+- After a reboot the systemd unit runs `rbw unlock` before start. On Linux, rbw's pinentry is
+  `scripts/rbw-pinentry-creds`, which reads the master password from a `systemd-creds` file
+  (`~/.config/nightshift/rbw.cred`, encrypted with the host key); `ns doctor` warns until both are set up.
 - Switching hosts needs no migration: Linear holds durable state, SQLite only runtime state.
 - Where models are served is independent of the host: the gateway is a config value.
 

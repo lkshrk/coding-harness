@@ -101,6 +101,12 @@ WantedBy=default.target
     expect(s.logFile).toBe('/home/dev/.local/state/nightshift/supervisor.log')
     expect(s.main).toEndWith('packages/cli/src/main.ts')
   })
+
+  test('the systemd unit unlocks rbw before start without blocking on failure', () => {
+    const s = serviceSpec(config, { bun: '/b/bun', env: { HOME: '/home/dev' }, rbw: '/usr/bin/rbw' })
+    expect(s.rbw).toBe('/usr/bin/rbw')
+    expect(systemdUnit(s)).toContain('ExecStartPre=-/usr/bin/rbw unlock\nExecStart=/b/bun ')
+  })
 })
 
 describe('ns up / ns down with systemd', () => {
@@ -112,9 +118,15 @@ describe('ns up / ns down with systemd', () => {
     const f = fakes({
       'systemctl --user is-active nightshift.service': { exitCode: 0, stdout: 'active\n', stderr: '' },
     })
-    const r = await cli(['up'], { service: () => systemd(f), lockHolder: () => null, bun: '/b/bun', env: {} })
+    const r = await cli(['up'], {
+      service: () => systemd(f),
+      lockHolder: () => null,
+      bun: '/b/bun',
+      rbw: '/usr/bin/rbw',
+      env: {},
+    })
     expect(r.code).toBe(0)
-    expect(f.files.get(unit)).toContain('ExecStart=/b/bun ')
+    expect(f.files.get(unit)).toContain('ExecStartPre=-/usr/bin/rbw unlock\nExecStart=/b/bun ')
     expect(f.calls).toEqual([
       'systemctl --user daemon-reload',
       'systemctl --user enable nightshift.service',

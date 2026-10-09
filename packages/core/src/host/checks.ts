@@ -1,5 +1,6 @@
 import { accessSync, constants, existsSync, readFileSync, statfsSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+import { NIGHTSHIFT_ROOT } from '../config/loader'
 import type { Config } from '../config/schema'
 import { secretRefs } from '../config/secret-refs'
 import { expandHome } from '../config/semantic'
@@ -84,6 +85,39 @@ async function rbw(config: Config, d: HostCheckDeps): Promise<CheckResult | null
       fix: `run RBW_PROFILE=${profile} rbw unlock`,
     }
   return { name: 'rbw', ok: true, detail: `profile ${profile} unlocked` }
+}
+
+const PINENTRY = 'rbw-pinentry-creds'
+
+async function rbwAutoUnlock(config: Config, d: HostCheckDeps): Promise<CheckResult | null> {
+  if (d.platform !== 'linux' || !secretRefs(config).some((r) => r.ref.startsWith('rbw:'))) return null
+  const profile = config.secrets.rbw_profile
+  const env: Record<string, string> = { RBW_PROFILE: profile }
+  for (const key of ['HOME', 'PATH', 'XDG_CONFIG_HOME']) {
+    const v = d.env[key]
+    if (v) env[key] = v
+  }
+  const cred = join(d.env.XDG_CONFIG_HOME || join(d.home, '.config'), 'nightshift/rbw.cred')
+  const setup = `systemd-creds encrypt --user --name=rbw - ${cred}; RBW_PROFILE=${profile} rbw config set pinentry ${join(NIGHTSHIFT_ROOT, 'scripts', PINENTRY)}`
+  const res = await d.run(['rbw', 'config', 'show'], env)
+  if (res?.exitCode !== 0) return null
+  let pinentry = ''
+  try {
+    pinentry = String((JSON.parse(res.stdout) as { pinentry?: unknown }).pinentry ?? '')
+  } catch {
+    return null
+  }
+  if (!pinentry.endsWith(PINENTRY))
+    return {
+      name: 'rbw auto-unlock',
+      ok: false,
+      warning: true,
+      detail: `pinentry is ${pinentry || 'unset'}; the service cannot unlock after a reboot`,
+      fix: setup,
+    }
+  if (!existsSync(cred))
+    return { name: 'rbw auto-unlock', ok: false, warning: true, detail: `${cred} is missing`, fix: setup }
+  return { name: 'rbw auto-unlock', ok: true, detail: `${PINENTRY} with ${cred}` }
 }
 
 async function opencode(d: HostCheckDeps): Promise<CheckResult> {
@@ -187,14 +221,24 @@ async function images(config: Config, d: HostCheckDeps): Promise<CheckResult[]> 
 
 export async function hostChecks(config: Config, d: HostCheckDeps): Promise<CheckResult[]> {
   const docked = await docker(d)
-  const [sandbox, vault, oc, gw, imgs] = await Promise.all([
+  const [sandbox, vault, unlock, oc, gw, imgs] = await Promise.all([
     config.sandbox.driver === 'sbx' ? sbx(d) : Promise.resolve([]),
     rbw(config, d),
+    rbwAutoUnlock(config, d),
     opencode(d),
     gateway(config, d),
     docked.ok ? images(config, d) : Promise.resolve([]),
   ])
-  return [docked, ...sandbox, ...(vault ? [vault] : []), oc, gw, ...disk(config, d), ...imgs]
+  return [
+    docked,
+    ...sandbox,
+    ...(vault ? [vault] : []),
+    ...(unlock ? [unlock] : []),
+    oc,
+    gw,
+    ...disk(config, d),
+    ...imgs,
+  ]
 }
 
 export async function spawnCheck(cmd: string[], env?: Record<string, string>): Promise<CommandResult | null> {
