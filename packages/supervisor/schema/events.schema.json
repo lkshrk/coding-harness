@@ -298,7 +298,8 @@
           "tool_calls": { "type": "integer", "minimum": 0 },
           "tokens": { "type": "integer", "minimum": 0 },
           "diff_lines": { "type": "integer", "minimum": 0 },
-          "last_tool": { "type": "string" }
+          "last_tool": { "type": "string" },
+          "tools": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
         }
       },
       "workerStalled": {

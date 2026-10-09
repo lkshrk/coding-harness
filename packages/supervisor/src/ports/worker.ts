@@ -78,4 +78,5 @@ export type Progress = {
   tokens: number
   diff_lines?: number
   last_tool?: string
+  tools?: Record<string, number>
 }

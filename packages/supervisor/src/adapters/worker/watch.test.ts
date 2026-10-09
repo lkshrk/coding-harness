@@ -79,12 +79,18 @@ describe('Watcher', () => {
     const w = new Watcher(limits, WATCH_DEFAULTS, 0)
     const actions = feed(w, [call('read'), step(), step(), step(), step(), step()], 1_000)
     expect(actions).toEqual([
-      { kind: 'progress', data: { steps: 5, tool_calls: 1, tokens: 50, last_tool: 'read' } },
+      {
+        kind: 'progress',
+        data: { steps: 5, tool_calls: 1, tokens: 50, last_tool: 'read', tools: { read: 1 } },
+      },
     ])
     expect(w.tick(30_000)).toEqual([])
     w.diff(7)
     expect(w.tick(61_000)).toEqual([
-      { kind: 'progress', data: { steps: 5, tool_calls: 1, tokens: 50, diff_lines: 7, last_tool: 'read' } },
+      {
+        kind: 'progress',
+        data: { steps: 5, tool_calls: 1, tokens: 50, diff_lines: 7, last_tool: 'read', tools: { read: 1 } },
+      },
     ])
   })
 })
