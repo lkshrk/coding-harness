@@ -133,6 +133,7 @@ for (const rejected of [0, 1, 2])
   test(`publisher imports, lints, rebases, authenticates, and retries ${rejected} rejections`, async () => {
     const fixture = bundleFixture()
     const calls: string[] = []
+    const identities: { cmd: string | undefined; name: string | undefined; email: string | undefined }[] = []
     let pushes = 0
     const promise = publishIngest({
       ...fixture,
@@ -144,6 +145,12 @@ for (const rejected of [0, 1, 2])
       authEnv: (token) => ({ AUTH: token }),
       command: (args, options) => {
         const cmd = args.join(' ')
+        if (args[0] === 'git')
+          identities.push({
+            cmd: args[1],
+            name: options.env.GIT_COMMITTER_NAME,
+            email: options.env.GIT_COMMITTER_EMAIL,
+          })
         if (args[0] !== 'git' || ['pull', 'push'].includes(args[1] ?? '')) {
           calls.push(cmd)
           if (args[0] === 'git') expect(options.env.AUTH).toBe('token')
@@ -162,6 +169,11 @@ for (const rejected of [0, 1, 2])
       expect.stringContaining('obsidian-wiki lint '),
       'git pull --rebase origin main',
     ])
+    expect(identities).toContainEqual({
+      cmd: 'cherry-pick',
+      name: 'nightshift',
+      email: 'nightshift@localhost',
+    })
     expect(calls.filter((c) => c === 'git push origin HEAD:main')).toHaveLength(rejected === 0 ? 1 : 2)
     expect(calls.filter((c) => c === 'git pull --rebase origin main')).toHaveLength(rejected === 0 ? 1 : 2)
   })

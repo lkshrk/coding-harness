@@ -74,6 +74,12 @@ export function writeIngestSources(o: {
 
 type Command = (args: string[], options: { cwd: string; env: Record<string, string> }) => string
 
+// The host may have no git identity; cherry-pick and rebase need a committer.
+const IDENTITY = {
+  GIT_COMMITTER_NAME: 'nightshift',
+  GIT_COMMITTER_EMAIL: 'nightshift@localhost',
+}
+
 const command: Command = (args, options) => {
   const result = Bun.spawnSync(args, {
     cwd: options.cwd,
@@ -99,7 +105,7 @@ export async function publishIngest(
 ): Promise<string[]> {
   const exec = o.command ?? command
   const git = (dir: string, args: string[], env: Record<string, string> = {}) =>
-    exec(['git', ...args], { cwd: dir, env })
+    exec(['git', ...args], { cwd: dir, env: { ...IDENTITY, ...env } })
   const head = importBundle(o.dir, o.bundle, o.ref, o.run)
   git(o.dir, ['merge-base', '--is-ancestor', o.baseSha, head])
   const commits = git(o.dir, ['rev-list', '--reverse', `${o.baseSha}..${head}`])
