@@ -268,7 +268,8 @@ export class WorkerExecutor implements RunExecutor {
   private async commitWip(handle: SandboxHandle, run: Run, status: string): Promise<number | undefined> {
     const script = [
       'test -n "$(git status --porcelain)" || exit 0',
-      'git add -A && git commit --quiet --no-verify -m "$1" && echo committed && git diff --numstat HEAD^ HEAD',
+      'git add -A && git commit --quiet --no-verify -m "$1" || exit $?',
+      'git diff --numstat HEAD^ HEAD | awk \'{ n += $1 + $2 } END { print "committed " n + 0 }\'',
     ].join('\n')
     const message = `wip: ${run.issue} attempt ${run.attempt} (${status})`
     const res = await this.d.sandbox.exec(handle, ['sh', '-c', script, 'sh', message], {
@@ -279,11 +280,8 @@ export class WorkerExecutor implements RunExecutor {
       console.error(`${run.issue}: wip commit of run ${run.id} failed: ${res.stderrTail.trim()}`)
       return undefined
     }
-    const [first, ...rest] = res.stdoutTail.trim().split('\n')
-    if (first !== 'committed') return undefined
-    return rest
-      .map((l) => l.split('\t'))
-      .reduce((sum, [add, del]) => sum + (Number(add) || 0) + (Number(del) || 0), 0)
+    const last = /^committed (\d+)$/.exec(res.stdoutTail.trim().split('\n').at(-1) ?? '')
+    return last ? Number(last[1]) : undefined
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {

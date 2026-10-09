@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
@@ -579,9 +579,7 @@ describe('WorkerExecutor.captureHead', () => {
   test('a dirty worktree is committed as wip before export and reported', async () => {
     const fx = withCommit()
     sandbox.onExec = (cmd) =>
-      cmd[2]?.includes('status --porcelain')
-        ? { stdoutTail: 'committed\n3\t1\tsrc/a.ts\n2\t0\tb.ts\n' }
-        : undefined
+      cmd[2]?.includes('status --porcelain') ? { stdoutTail: 'committed 6\n' } : undefined
     const order: string[] = []
     sandbox.exportCommits = async () => {
       order.push('export')
@@ -597,6 +595,36 @@ describe('WorkerExecutor.captureHead', () => {
     expect(wip?.opts.cwd).toBe('/work/omni')
     expect(order).toEqual(['export'])
     expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 6 }]])
+  })
+
+  test('a wip commit touching many files is still reported with its line count', async () => {
+    const fx = withCommit()
+    for (let i = 0; i < 300; i++) writeFileSync(join(fx.worker, `f${i}.txt`), 'a\nb\n')
+    sandbox.onExec = (cmd) => {
+      const r = Bun.spawnSync(cmd, {
+        cwd: fx.worker,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 't',
+          GIT_AUTHOR_EMAIL: 't@t',
+          GIT_COMMITTER_NAME: 't',
+          GIT_COMMITTER_EMAIL: 't@t',
+        },
+      })
+      return {
+        exitCode: r.exitCode,
+        stdoutTail: r.stdout.toString().split('\n').slice(-200).join('\n'),
+        stderrTail: r.stderr.toString(),
+      }
+    }
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'BLOCKED',
+    )
+    expect(git(fx.worker, 'log', '-1', '--format=%s')).toBe('wip: FOR-1 attempt 1 (BLOCKED)')
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 600 }]])
   })
 
   test('a clean worktree makes no wip commit and no report', async () => {
