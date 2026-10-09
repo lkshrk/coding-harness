@@ -88,8 +88,12 @@ const command: Command = (args, options) => {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  if (result.exitCode !== 0)
-    throw new Error(`${args.join(' ')}: ${result.stderr.toString().trim().slice(-1000)}`)
+  if (result.exitCode !== 0) {
+    const stdout = result.stdout.toString()
+    const errors = stdout.split('\n').filter((line) => /^error\b/i.test(line))
+    const output = result.stderr.toString().trim() || (errors.length ? errors.join('\n') : stdout.trim())
+    throw new Error(`${args.join(' ')}: ${output.slice(-1000)}`)
+  }
   return result.stdout.toString()
 }
 
@@ -100,6 +104,7 @@ export async function publishIngest(
     run: string
     baseSha: string
     sources: string[]
+    repos?: (name: string) => { gitDir: string; ref: string } | undefined
     command?: Command
   },
 ): Promise<string[]> {
@@ -150,20 +155,55 @@ export async function publishIngest(
       throw new Error(`Ingest modified raw source ${source}`)
     originals.set(source, original)
   }
+  const project = [...originals.values()].map((text) => /^Repository: (\S+)$/m.exec(text)?.[1]).find(Boolean)
+  if (!project) throw new Error('Ingest sources name no repository')
   const remoteOwner = o.owner(git(o.dir, ['remote', 'get-url', 'origin']).trim())
   if (!remoteOwner) throw new Error('Cannot determine vault remote owner')
   const env = o.authEnv(await o.token(remoteOwner))
   const worktree = mkdtempSync(join(tmpdir(), 'ns-vault-ingest-'))
+  const repos = mkdtempSync(join(tmpdir(), 'ns-knowledge-repos-'))
+  const picks = [...originals.keys()]
+  const known = o.repos?.(project)
+  const lintEnv: Record<string, string> = {}
+  // Generated files conflict on every rebase, so each attempt rebuilds them on the fresh remote head.
+  const build = () => {
+    git(o.dir, ['fetch', '--quiet', 'origin', 'main'], env)
+    git(worktree, ['checkout', '--quiet', '--detach', 'refs/remotes/origin/main'])
+    for (const [i, commit] of commits.entries()) {
+      git(worktree, ['cherry-pick', commit])
+      exec(
+        [
+          'obsidian-wiki',
+          'memory',
+          'sync',
+          'INGEST',
+          `source=${picks[i]}`,
+          `project=${project}`,
+          '--vault',
+          worktree,
+        ],
+        { cwd: worktree, env: {} },
+      )
+      git(worktree, ['add', '--all'])
+      git(worktree, ['commit', '--quiet', '--amend', '--no-edit'])
+    }
+    exec(['bun', 'scripts/lint.ts'], { cwd: worktree, env: lintEnv })
+    exec(['obsidian-wiki', 'lint', worktree], { cwd: worktree, env: {} })
+  }
   try {
     git(o.dir, ['worktree', 'add', '--quiet', '--detach', worktree, o.baseSha])
-    git(worktree, ['cherry-pick', ...commits])
-    exec(['bun', 'scripts/lint.ts'], { cwd: worktree, env: {} })
-    exec(['obsidian-wiki', 'lint', worktree], { cwd: worktree, env: {} })
-    git(worktree, ['pull', '--rebase', 'origin', 'main'], env)
+    if (known) {
+      const pinned = join(repos, project, '.git')
+      git(worktree, ['clone', '--quiet', '--bare', '--shared', known.gitDir, pinned])
+      const sha = git(known.gitDir, ['rev-parse', '--verify', `${known.ref}^{commit}`]).trim()
+      git(worktree, ['--git-dir', pinned, 'update-ref', '--no-deref', 'HEAD', sha])
+      lintEnv.KNOWLEDGE_REPOS = repos
+    }
+    build()
     try {
       git(worktree, ['push', 'origin', 'HEAD:main'], env)
     } catch {
-      git(worktree, ['pull', '--rebase', 'origin', 'main'], env)
+      build()
       git(worktree, ['push', 'origin', 'HEAD:main'], env)
     }
     const pushed = git(worktree, ['rev-list', '--reverse', `HEAD~${commits.length}..HEAD`])
@@ -184,6 +224,7 @@ export async function publishIngest(
       git(o.dir, ['worktree', 'remove', '--force', worktree])
     } finally {
       rmSync(worktree, { recursive: true, force: true })
+      rmSync(repos, { recursive: true, force: true })
     }
   }
 }

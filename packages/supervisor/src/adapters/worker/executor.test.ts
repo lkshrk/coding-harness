@@ -201,9 +201,32 @@ describe('WorkerExecutor.start', () => {
       sourceFiles: [{ path: 'raw/linear/source.md', content }],
     })
     expect(graphs).toBe(0)
+    expect(sandbox.created[0]?.env).toEqual({})
     expect(sandbox.files.get('/work/omni/raw/linear/source.md')).toBe(content)
     expect(sandbox.execs[0]?.cmd[2]).toContain('git clone')
     expect(sandbox.execs[1]?.cmd.join(' ')).not.toContain(content)
+  })
+
+  test('an ingest run mounts the source repository git dir read-only for the vault path lint', async () => {
+    const ex = executor({ agents: new Map([['ingester', { ...fixer, name: 'ingester' }]]) })
+    await ex.start({
+      run: { ...run, agent: 'ingester' },
+      issue: snapshot({ identifier: 'FOR-1' }),
+      files: [],
+      knowledgeRepo: 'omni',
+    })
+    expect(sandbox.created[0]?.mounts).toContainEqual({
+      hostPath: '/tmp/omni/.git',
+      guestPath: '/mnt/knowledge-source.git',
+      readOnly: true,
+    })
+    expect(sandbox.created[0]?.env).toEqual({ KNOWLEDGE_REPOS: '/tmp/knowledge-repos' })
+    const pin = sandbox.execs.find((e) => e.cmd[2]?.includes('--bare --shared'))
+    expect(pin?.cmd.slice(4)).toEqual([
+      '/mnt/knowledge-source.git',
+      '/tmp/knowledge-repos/omni',
+      `refs/remotes/${config.repositories.omni?.remote}/${config.repositories.omni?.base}`,
+    ])
   })
 
   test("sends the context builder's message as the task message and stores its section summary", async () => {

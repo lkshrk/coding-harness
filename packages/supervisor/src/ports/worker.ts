@@ -54,6 +54,7 @@ export type ExecutorStart = {
   issue: IssueSnapshot
   files: string[]
   sourceFiles?: { path: string; content: string }[]
+  knowledgeRepo?: string
   repairFrom?: { run: string; headSha: string }
 }
 

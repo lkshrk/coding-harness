@@ -38,6 +38,7 @@ export function ingestTaskMessage(files: string[]): BuiltContext {
     ...files.map((file) => `- ${file}`),
     'Commit each source separately: ingest: <source path>. Include the raw file and its page edits.',
     'If nothing durable exists, commit only the raw file. Do not push.',
+    'Never run obsidian-wiki memory or touch index.md, log.md, hot.md or _meta/; publishing syncs them.',
     'Verify: bun scripts/lint.ts; obsidian-wiki lint "$PWD".',
     'Missing tooling or failed lint: finish BLOCKED with needs: environment.',
   ].join('\n')
@@ -49,7 +50,12 @@ export function ingestTaskMessage(files: string[]): BuiltContext {
 }
 
 export function ingestRuntime(
-  o: VaultSyncOptions & { sandbox: SandboxDriver; driver: Config['sandbox']['driver']; artifacts: string },
+  o: VaultSyncOptions & {
+    sandbox: SandboxDriver
+    driver: Config['sandbox']['driver']
+    artifacts: string
+    repos?: (name: string) => { gitDir: string; ref: string } | undefined
+  },
 ) {
   let publishing: Promise<unknown> = Promise.resolve()
   return {
@@ -62,11 +68,19 @@ export function ingestRuntime(
       reuse?: boolean
     }) {
       await publishing.catch(() => undefined)
-      const base = Bun.spawnSync(['git', '-C', o.dir, 'rev-parse', '--verify', 'main^{commit}'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-        stdin: 'ignore',
-      })
+      const git = (args: string[], env: Record<string, string> = {}) =>
+        Bun.spawnSync(['git', '-C', o.dir, ...args], {
+          env: { ...process.env, ...env },
+          stdout: 'pipe',
+          stderr: 'pipe',
+          stdin: 'ignore',
+        })
+      const owner = o.owner(git(['remote', 'get-url', 'origin']).stdout.toString().trim())
+      if (owner) {
+        const fetched = git(['fetch', '--quiet', 'origin', 'main'], o.authEnv(await o.token(owner)))
+        if (fetched.exitCode !== 0) throw new Error(`vault fetch failed: ${fetched.stderr.toString().trim()}`)
+      }
+      const base = git(['rev-parse', '--verify', `${owner ? 'refs/remotes/origin/main' : 'main'}^{commit}`])
       if (base.exitCode !== 0) throw new Error(`vault base unavailable: ${base.stderr.toString().trim()}`)
       const files = writeIngestSources({ ...input, dir: o.dir })
       return {

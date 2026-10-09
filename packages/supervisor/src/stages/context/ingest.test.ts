@@ -125,7 +125,9 @@ function bundleFixture() {
     repository: 'omni',
     events: [],
   })
-  git(dir, 'remote', 'add', 'origin', '/unused-local-vault')
+  const origin = join(temporary(), 'origin.git')
+  git(dir, 'clone', '--quiet', '--bare', dir, origin)
+  git(dir, 'remote', 'add', 'origin', origin)
   return { dir, baseSha, sources, source, bundle, ref: 'refs/heads/main', run: 'test-run' }
 }
 
@@ -134,9 +136,11 @@ for (const rejected of [0, 1, 2])
     const fixture = bundleFixture()
     const calls: string[] = []
     const identities: { cmd: string | undefined; name: string | undefined; email: string | undefined }[] = []
+    let lintEnv: Record<string, string> = {}
     let pushes = 0
     const promise = publishIngest({
       ...fixture,
+      repos: (name) => (name === 'omni' ? { gitDir: join(fixture.dir, '.git'), ref: 'HEAD' } : undefined),
       owner: () => 'owner',
       token: async (owner) => {
         expect(owner).toBe('owner')
@@ -151,7 +155,12 @@ for (const rejected of [0, 1, 2])
             name: options.env.GIT_COMMITTER_NAME,
             email: options.env.GIT_COMMITTER_EMAIL,
           })
-        if (args[0] !== 'git' || ['pull', 'push'].includes(args[1] ?? '')) {
+        if (args[1] === 'memory') writeFileSync(join(options.cwd, 'log.md'), `${cmd}\n`)
+        if (cmd === 'bun scripts/lint.ts') lintEnv = options.env
+        if (args[1] === 'fetch') {
+          calls.push(cmd)
+          expect(options.env.AUTH).toBe('token')
+        } else if (args[0] !== 'git' || args[1] === 'push') {
           calls.push(cmd)
           if (args[0] === 'git') expect(options.env.AUTH).toBe('token')
           if (args[1] === 'push' && ++pushes <= rejected) throw new Error('push rejected')
@@ -164,16 +173,30 @@ for (const rejected of [0, 1, 2])
       await expect(promise).rejects.toThrow('push rejected')
       expect(readFileSync(join(fixture.dir, fixture.sources[0] ?? ''), 'utf8')).toBe(fixture.source)
     } else expect(await promise).toHaveLength(1)
-    expect(calls.slice(0, 3)).toEqual([
+    expect(calls.slice(0, 5)).toEqual([
+      'git fetch --quiet origin main',
+      expect.stringMatching(
+        /^obsidian-wiki memory sync INGEST source=raw\/linear\/\S+ project=omni --vault /,
+      ),
       'bun scripts/lint.ts',
       expect.stringContaining('obsidian-wiki lint '),
-      'git pull --rebase origin main',
+      'git push origin HEAD:main',
     ])
     expect(identities).toContainEqual({
       cmd: 'cherry-pick',
       name: 'nightshift',
       email: 'nightshift@localhost',
     })
+    expect(lintEnv.KNOWLEDGE_REPOS).toBeDefined()
+    if (rejected === 0) {
+      const pushed = (await promise)[0] ?? ''
+      expect(
+        git(fixture.dir, 'diff-tree', '--no-commit-id', '--name-only', '-r', pushed).split('\n'),
+      ).toContain('log.md')
+    }
     expect(calls.filter((c) => c === 'git push origin HEAD:main')).toHaveLength(rejected === 0 ? 1 : 2)
-    expect(calls.filter((c) => c === 'git pull --rebase origin main')).toHaveLength(rejected === 0 ? 1 : 2)
+    expect(calls.filter((c) => c === 'git fetch --quiet origin main')).toHaveLength(rejected === 0 ? 1 : 2)
+    expect(calls.filter((c) => c.startsWith('obsidian-wiki memory sync'))).toHaveLength(
+      rejected === 0 ? 1 : 2,
+    )
   })

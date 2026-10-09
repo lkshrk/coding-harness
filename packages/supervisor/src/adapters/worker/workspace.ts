@@ -43,6 +43,31 @@ export async function prepareWorkspace(
   if (res.exitCode !== 0) throw new Error(`workspace setup failed: ${res.stderrTail.trim()}`)
 }
 
+// The vault path lint reads `git ls-tree HEAD` of <dir>/.git; pin it to the remote base, not the local checkout.
+export async function pinnedRepo(
+  sb: Exec,
+  sandbox: SandboxHandle,
+  source: string,
+  dir: string,
+  repo: { remote: string; base: string },
+): Promise<void> {
+  const script = [
+    'set -e',
+    'git clone --quiet --bare --shared "$1" "$2/.git"',
+    'git --git-dir="$2/.git" update-ref --no-deref HEAD "$(git --git-dir="$1" rev-parse --verify "$3^{commit}")"',
+  ].join('\n')
+  const res = await sb.exec(sandbox, [
+    'sh',
+    '-c',
+    script,
+    'sh',
+    source,
+    dir,
+    `refs/remotes/${repo.remote}/${repo.base}`,
+  ])
+  if (res.exitCode !== 0) throw new Error(`knowledge repository setup failed: ${res.stderrTail.trim()}`)
+}
+
 export async function copySources(
   sb: Exec,
   sandbox: SandboxHandle,
