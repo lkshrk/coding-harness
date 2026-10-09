@@ -35,6 +35,7 @@ export class Watcher {
   private toolCalls = 0
   private tokens = 0
   private lastTool: string | undefined
+  private readonly tools: Record<string, number> = {}
   private lastDigest: string | undefined
   private repeats = 0
   private diffLines: number | undefined
@@ -90,6 +91,7 @@ export class Watcher {
     }
     if (e.kind === 'tool_call') {
       this.toolCalls += 1
+      this.tools[e.tool] = (this.tools[e.tool] ?? 0) + 1
       this.lastTool = e.tool
       this.repeats = e.argsDigest === this.lastDigest ? this.repeats + 1 : 1
       this.lastDigest = e.argsDigest
@@ -132,6 +134,7 @@ export class Watcher {
       tokens: this.tokens,
       ...(this.diffLines === undefined ? {} : { diff_lines: this.diffLines }),
       ...(this.lastTool === undefined ? {} : { last_tool: this.lastTool }),
+      ...(this.toolCalls === 0 ? {} : { tools: { ...this.tools } }),
     }
   }
 

@@ -79,7 +79,10 @@ const start = (): WorkerStart => ({
   sandbox: { driver: 'docker', id: 'ctr', name: 'run-1' },
   agent: {
     name: 'implementer',
-    files: [{ path: 'agent/implementer.md', content: '---\nmode: primary\n---\nImplement the issue.\n' }],
+    files: [
+      { path: 'agent/implementer.md', content: '---\nmode: primary\n---\nImplement the issue.\n' },
+      { path: 'skills/graph-query/SKILL.md', content: '---\nname: graph-query\n---\nUse the graph.\n' },
+    ],
   },
   model: 'claude-opus',
   taskMessage: 'Fix FOR-1',
@@ -98,6 +101,10 @@ test('start writes the patch, finish server and task, spawns headless with the k
   expect(sb.files.get('/tmp/nightshift-dsh/message.md')).toBe('Fix FOR-1')
   expect(sb.files.get('/tmp/nightshift-dsh/finish-mcp.mjs')).toBe('// bundle')
   expect(sb.files.get('/tmp/nightshift-dsh/patch.yml')).toContain('personaSuffix: "Implement the issue."')
+  expect(sb.files.get('/tmp/nightshift-dsh/skills/graph-query/SKILL.md')).toContain('Use the graph.')
+  expect(sb.files.get('/tmp/nightshift-dsh/patch.yml')).toContain(
+    '- id: skill-filesystem\n  config:\n    includeDefaultRoots: false\n    customSkillDirs: ["/tmp/nightshift-dsh/skills"]',
+  )
   expect(JSON.stringify([...sb.files.values()])).not.toContain('secret-key')
   const spawn = sb.spawns[0]
   expect(spawn?.cmd[2]).toContain('dsh-worker --profile headless --patch "$p" --json "$@" -')
