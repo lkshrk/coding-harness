@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# rbw pinentry that answers the master password prompt from a systemd-creds file.
+# Setup: systemd-creds encrypt --user --name=rbw - ~/.config/nightshift/rbw.cred
+#        RBW_PROFILE=nightshift rbw config set pinentry <path to this script>
+set -uo pipefail
+
+cred=${NIGHTSHIFT_RBW_CRED:-${XDG_CONFIG_HOME:-$HOME/.config}/nightshift/rbw.cred}
+prompt=''
+
+encode() {
+  local s=${1//%/%25}
+  s=${s//$'\r'/%0D}
+  printf '%s' "${s//$'\n'/%0A}"
+}
+
+echo 'OK Pleased to meet you'
+while IFS= read -r line; do
+  cmd=${line%% *}
+  args=''
+  [[ $line == *' '* ]] && args=${line#* }
+  case $cmd in
+    SETPROMPT) prompt=$args; echo OK ;;
+    GETPIN)
+      if [[ $prompt != 'Master Password' ]]; then
+        echo 'ERR 83886179 Operation cancelled'
+      elif ! secret=$(systemd-creds decrypt --user --name=rbw "$cred" - 2>/dev/null) || [[ -z $secret ]]; then
+        echo 'ERR 83886179 Operation cancelled'
+      else
+        printf 'D %s\n' "$(encode "$secret")"
+        echo OK
+      fi
+      ;;
+    BYE) echo OK; exit 0 ;;
+    *) echo OK ;;
+  esac
+done

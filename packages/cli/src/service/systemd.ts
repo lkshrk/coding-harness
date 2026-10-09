@@ -26,6 +26,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     '[Service]',
     'Type=simple',
     `WorkingDirectory=${quote(spec.workdir)}`,
+    ...(spec.rbw ? [`ExecStartPre=-${quote(spec.rbw)} unlock`] : []),
     `ExecStart=${quote(spec.bun)} ${quote(spec.main)} supervise`,
     'Restart=on-failure',
     'RestartSec=10',

@@ -6,6 +6,7 @@ export type ServiceSpec = {
   workdir: string
   env: Record<string, string>
   logFile: string
+  rbw?: string
 }
 
 export type ServiceState = 'running' | 'stopped' | 'not installed'

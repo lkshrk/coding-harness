@@ -31,6 +31,7 @@ export type ServiceDeps = {
   service?: () => ServiceManager
   lockHolder?: (dbPath: string) => string | null
   bun?: string
+  rbw?: string | null
   env?: Record<string, string | undefined>
 }
 
@@ -81,7 +82,7 @@ function lockHolder(dbPath: string): string | null {
 
 export function serviceSpec(
   config: Config,
-  o: { bun: string; env: Record<string, string | undefined> },
+  o: { bun: string; env: Record<string, string | undefined>; rbw?: string | null },
 ): ServiceSpec {
   const home = o.env.HOME ?? homedir()
   const env: Record<string, string> = {}
@@ -97,6 +98,7 @@ export function serviceSpec(
     workdir: NIGHTSHIFT_ROOT,
     env,
     logFile: join(expandHome(config.paths.state, home), 'supervisor.log'),
+    ...(o.rbw ? { rbw: o.rbw } : {}),
   }
 }
 
@@ -128,7 +130,8 @@ export async function up(deps: ServiceDeps, io: Io): Promise<number> {
       io.err(holder)
       return 1
     }
-    const spec = serviceSpec(config, { bun: deps.bun ?? process.execPath, env })
+    const rbw = deps.rbw !== undefined ? deps.rbw : Bun.which('rbw', env.PATH ? { PATH: env.PATH } : {})
+    const spec = serviceSpec(config, { bun: deps.bun ?? process.execPath, env, rbw })
     if (manager.installed()) await manager.stop()
     await manager.install(spec)
     await manager.start()

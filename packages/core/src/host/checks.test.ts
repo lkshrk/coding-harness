@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '../config/schema'
@@ -81,6 +81,24 @@ describe('hostChecks', () => {
       fix: 'run RBW_PROFILE=nightshift rbw unlock',
     })
     expect(calls.find((c) => c.cmd[0] === 'rbw')?.env?.RBW_PROFILE).toBe('nightshift')
+  })
+
+  test('rbw auto-unlock warns until the creds pinentry and credential file exist', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'ns-rbw-'))
+    const env = { HOME: home, PATH: '/usr/bin' }
+    const show = (pinentry: string) => ({ 'rbw config show': ok(JSON.stringify({ pinentry })) })
+    const tty = await hostChecks(config(), deps(show('pinentry-tty'), { home, env }).d)
+    expect(byName(tty, 'rbw auto-unlock')).toMatchObject({ ok: false, warning: true })
+    expect(byName(tty, 'rbw auto-unlock')?.detail).toContain('pinentry is pinentry-tty')
+    const creds = show('/repo/scripts/rbw-pinentry-creds')
+    const missing = await hostChecks(config(), deps(creds, { home, env }).d)
+    expect(byName(missing, 'rbw auto-unlock')?.detail).toBe(`${home}/.config/nightshift/rbw.cred is missing`)
+    mkdirSync(join(home, '.config/nightshift'), { recursive: true })
+    writeFileSync(join(home, '.config/nightshift/rbw.cred'), 'x')
+    const ready = await hostChecks(config(), deps(creds, { home, env }).d)
+    expect(byName(ready, 'rbw auto-unlock')).toMatchObject({ ok: true })
+    const mac = await hostChecks(config(), deps(creds, { home, env, platform: 'darwin' }).d)
+    expect(byName(mac, 'rbw auto-unlock')).toBeUndefined()
   })
 
   test('rbw is not probed when no secret reference uses it', async () => {
