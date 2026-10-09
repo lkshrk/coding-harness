@@ -123,6 +123,56 @@ describe('contextInput', () => {
     expect(input.vaultPages).toEqual([])
   })
 
+  test('a retry whose branch starts with a WIP commit gets a HISTORY note on what to do with it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ns-ctx-'))
+    try {
+      const base = repoWithBase(dir)
+      const commit = (message: string) => {
+        git(dir, 'add', '-A')
+        git(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', message)
+        return git(dir, 'rev-parse', 'HEAD')
+      }
+      const wip = commit('wip: FOR-3 attempt 1 (BLOCKED)')
+      writeFileSync(join(dir, 'c.ts'), 'c\n')
+      const done = commit('feat: c')
+      const defaults = testConfig()
+      const omni = defaults.repositories.omni as (typeof defaults.repositories)[string]
+      const config = { ...defaults, repositories: { ...defaults.repositories, omni: { ...omni, path: dir } } }
+      const db = openState(':memory:')
+      const run = new RunStore(db, { now: () => new Date(0), ulid: createUlid() }).create({
+        issue: 'FOR-3',
+        agent: 'fixer',
+        profile: 'cloud',
+        model: 'm',
+        repository: 'omni',
+        baseSha: base,
+        attempt: 2,
+      })
+      const message = contextTaskMessage({
+        config: () => config,
+        db,
+        linear: new FakeLinear(config, () => new Date(0)),
+        builder: new FencedContextBuilder({ count: async (t) => t.length / 4, source: gitObjectSource }),
+      })
+      const build = (headSha: string) =>
+        message(
+          {
+            run,
+            issue: snapshot({ identifier: 'FOR-3' }),
+            files: [],
+            repairFrom: { run: 'prev', headSha },
+          },
+          { inputTokens: 100_000, model: 'm' },
+        )
+      const withWip = (await build(wip)).message
+      expect(withWip).toContain(`The branch starts with WIP commit ${wip.slice(0, 12)}`)
+      expect(withWip).toContain('git reset --soft HEAD~1')
+      expect((await build(done)).message).not.toContain('WIP commit')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('a description outside the template is rejected', async () => {
     const config = testConfig()
     const db = openState(':memory:')

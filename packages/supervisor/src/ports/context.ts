@@ -13,6 +13,7 @@ export type ContextInput = {
   attempts: Attempt[]
   vaultPages: { path: string; title: string; content: string }[]
   answers: { question: string; answer: string }[]
+  wipHead?: { sha: string; subject: string }
   run?: { id: string; attempt: number; profile: string }
 }
 

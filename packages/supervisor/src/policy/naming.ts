@@ -26,6 +26,16 @@ export function branchOf(run: Pick<Run, 'issue' | 'attempt'>): string {
   return `ns/${run.issue}-${run.attempt}`
 }
 
+export const WIP_PREFIX = 'wip:'
+
+export function wipMessage(run: Pick<Run, 'issue' | 'attempt'>, status?: string): string {
+  return `${WIP_PREFIX} ${run.issue} attempt ${run.attempt} (${status ?? 'unfinished'})`
+}
+
+export function isWipMessage(subject: string): boolean {
+  return subject.trimStart().startsWith(WIP_PREFIX)
+}
+
 export function runRef(run: string): string {
   return `refs/nightshift/${run}`
 }

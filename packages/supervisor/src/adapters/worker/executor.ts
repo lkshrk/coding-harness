@@ -10,7 +10,7 @@ import {
   renderFinishPlugin,
   type WorkerImage,
 } from '@nightshift/core'
-import { branchOf, parseDuration, parseTokens, workdirOf } from '../../policy/naming'
+import { branchOf, parseDuration, parseTokens, wipMessage, workdirOf } from '../../policy/naming'
 import type {
   BuiltContext,
   ExecutorStart,
@@ -70,6 +70,16 @@ export type WorkerExecutorDeps = {
   now?: () => number
 }
 
+const WIP_SCRIPT = [
+  'set -e',
+  'cd "$1"',
+  'test -n "$(git status --porcelain)" || exit 0',
+  'git add -A',
+  'lines=$(git diff --cached --numstat | { n=0; while read -r a d _; do case "$a$d" in *[!0-9]*) ;; *) n=$((n + a + d)) ;; esac; done; echo "$n"; })',
+  'git commit -q --no-verify -m "$2"',
+  'echo "$(git rev-parse HEAD) $lines"',
+].join('\n')
+
 const dropped = (what: string) => async (runId: string) => {
   console.error(`run ${runId}: ${what} after executor detach ignored`)
 }
@@ -81,6 +91,7 @@ const DETACHED: WorkerCallbacks = {
   workerFinished: dropped('finish'),
   workerFailed: dropped('failure'),
   workerProgress: dropped('progress'),
+  wipCommitted: dropped('WIP commit'),
 }
 
 export class WorkerExecutor implements RunExecutor {
@@ -248,11 +259,12 @@ export class WorkerExecutor implements RunExecutor {
     if (session !== null) await this.d.worker.stop({ id: session, attach: [] }, reason)
   }
 
-  async captureHead(run: Run): Promise<string | undefined> {
+  async captureHead(run: Run, status?: string): Promise<string | undefined> {
     if (run.sandbox === null) return undefined
     const repo = this.d.config.repositories[run.repository]
     if (!repo) return undefined
     const handle: SandboxHandle = { driver: this.d.config.sandbox.driver, id: run.sandbox, name: run.id }
+    await this.commitWip(run, handle, status)
     const exported = await this.d.sandbox.exportCommits(handle, workdirOf(run), branchOf(run))
     if (run.baseSha && exported.headSha === run.baseSha) return undefined
     const checkout = expandHome(repo.path, this.d.home ?? homedir())
@@ -260,6 +272,24 @@ export class WorkerExecutor implements RunExecutor {
     if (head !== exported.headSha)
       throw new Error(`imported ${head} but the worker reported ${exported.headSha}`)
     return head
+  }
+
+  private async commitWip(run: Run, handle: SandboxHandle, status: string | undefined): Promise<void> {
+    const res = await this.d.sandbox.exec(handle, [
+      'sh',
+      '-c',
+      WIP_SCRIPT,
+      'sh',
+      workdirOf(run),
+      wipMessage(run, status),
+    ])
+    if (res.exitCode !== 0) {
+      console.error(`${run.issue}: WIP commit of run ${run.id} failed: ${res.stderrTail.trim()}`)
+      return
+    }
+    const [sha, lines] = res.stdoutTail.trim().split('\n').at(-1)?.split(' ') ?? []
+    if (!sha) return
+    await this.cb().wipCommitted?.(run.id, { sha, lines: Number(lines) || 0 })
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {

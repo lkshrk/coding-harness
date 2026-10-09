@@ -47,7 +47,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 - `INTERFACES`: contracts from other issues; treat them as fixed.
 - `FILES`: files expected to change in full, with outlines of their neighbours.
 - `KNOWLEDGE`: conventions, pitfalls and lessons for these paths.
-- `HISTORY`: earlier attempts with their failure class and findings; do not repeat what failed.
+- `HISTORY`: earlier attempts with their failure class and findings; do not repeat what failed. If it says the branch starts with a WIP commit, finish, squash or drop it before your own commit.
 
 ## Procedure
 

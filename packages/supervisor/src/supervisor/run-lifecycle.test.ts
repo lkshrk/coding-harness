@@ -28,6 +28,29 @@ describe('worker lifecycle', () => {
     ])
   })
 
+  test('a BLOCKED finish captures the head with its status and logs the WIP commit', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    const statuses: (string | undefined)[] = []
+    h.executor.captureHead = async (r, status) => {
+      statuses.push(status)
+      await h.sup.wipCommitted(r.id, { sha: 'wip1', lines: 12 })
+      return 'wip1'
+    }
+    await h.sup.workerFinished(run.id, {
+      status: 'BLOCKED',
+      summary: 'Unfinished, nothing committed',
+      evidence: [{ kind: 'observation', ref: 'limit', result: 'info' }],
+      blocker: { needs: 'environment', reason: 'run limit' },
+    })
+    expect(statuses).toEqual(['BLOCKED'])
+    expect(h.of('WIP_COMMITTED').map((e) => [e.issue, e.run, e.data])).toEqual([
+      ['FOR-1', run.id, { run: run.id, sha: 'wip1', lines: 12 }],
+    ])
+    expect(h.sup.runs.get(run.id)?.headSha).toBe('wip1')
+  })
+
   test('a valid finish with DONE moves to gating and runs the next step', async () => {
     const h = harness()
     const run = await dispatchOne(h)

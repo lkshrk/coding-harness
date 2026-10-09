@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
@@ -59,6 +59,33 @@ describe('integration stage (manual)', () => {
     expect(body).toContain('Verdict: pass\n- **SUGGESTION** `src/b.ts:1`: export a type')
     expect(body).toContain(`Session \`${run.id}\``)
     expect(body).not.toMatch(/claude|co-authored|generated (with|by)|\bAI\b/i)
+  })
+
+  test('a run whose head is a WIP commit opens no PR', async () => {
+    const h = integrationHarness(root)
+    h.linear.put(snapshot({ identifier: 'FOR-1', title: 'Trim names' }))
+    await h.first.start()
+    await h.first.tick()
+    const run = h.first.runs.forIssue('FOR-1').at(-1) as Run
+    await h.first.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+    await h.first.workerFinished(run.id, FINISH)
+    writeFileSync(join(h.fx.worker, 'src/c.ts'), 'export const c = 3\n')
+    git(h.fx.worker, 'add', '-A')
+    git(h.fx.worker, 'commit', '-q', '-m', 'wip: FOR-1 attempt 1 (BLOCKED)')
+    await h.first.headImported(run.id, importBundle(h.fx.checkout, h.fx.bundle().bundle, h.fx.branch, run.id))
+    await h.first.gatesFinished(run.id, [gate('test')])
+    await h.first.reviewFinished(run.id, {
+      kind: 'verdict',
+      review: { verdict: 'pass', findings: [] },
+      model: 'glm',
+    })
+    expect(h.first.runs.get(run.id)?.state).toBe('done')
+    await expect(
+      h.handler.run({ issue: h.linear.get('FOR-1'), stage: 'integration', agent: undefined }),
+    ).rejects.toThrow('head commit is a WIP commit')
+    expect(h.gh.gh('create')).toEqual([])
+    expect(h.gh.calls.filter((c) => c.cmd.includes('push'))).toEqual([])
+    expect(h.of('PR_CREATED')).toEqual([])
   })
 
   test('retrying the step logs PR_CREATED once and attaches the link once', async () => {

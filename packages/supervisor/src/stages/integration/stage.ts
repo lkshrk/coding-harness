@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome } from '@nightshift/core'
-import { BRANCH_PREFIX, runRef } from '../../policy/naming'
+import { BRANCH_PREFIX, isWipMessage, runRef } from '../../policy/naming'
 import { INTEGRATION, lifecycleOf, viewIssue } from '../../policy/stages'
 import type { GitHost, StageHandler, StageWork } from '../../ports'
 import type { EventLog } from '../../state/events'
@@ -41,6 +41,16 @@ export function changedFiles(checkout: string, base: string, head: string): stri
   return r.stdout.toString().split('\n').filter(Boolean)
 }
 
+export function isWipHead(checkout: string, head: string): boolean {
+  const r = Bun.spawnSync(['git', '-C', checkout, 'log', '-1', '--format=%s', head], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: 'ignore',
+  })
+  if (r.exitCode !== 0) throw new Error(`git log ${head}: ${r.stderr.toString().trim()}`)
+  return isWipMessage(r.stdout.toString())
+}
+
 export function riskPathsTouched(files: readonly string[], patterns: readonly string[]): string[] {
   const globs = patterns.map((p) => new Bun.Glob(p))
   return files.filter((f) => globs.some((g) => g.match(f)))
@@ -72,6 +82,10 @@ export class IntegrationHandler implements StageHandler {
     const repo = config.repositories[run.repository]
     if (!repo) throw new Error(`no repository '${run.repository}'`)
     const checkout = expandHome(repo.path, this.d.home ?? homedir())
+    if (isWipHead(checkout, run.headSha))
+      throw new Error(
+        `${id}: head commit is a WIP commit (${run.headSha.slice(0, 12)}); refusing to open a PR`,
+      )
     const risk = riskPathsTouched(
       changedFiles(checkout, run.baseSha || `${run.headSha}^`, run.headSha),
       repo.risk_paths,

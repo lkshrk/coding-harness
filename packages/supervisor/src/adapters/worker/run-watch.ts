@@ -1,6 +1,6 @@
 import type { HarnessEvent, Ms, SandboxDriver, SandboxHandle, WorkerDriver, WorkerSession } from '../../ports'
 import type { Run } from '../../ports/records'
-import type { SandboxCreatedInfo, WorkerStartedInfo } from '../../ports/worker'
+import type { SandboxCreatedInfo, WipCommit, WorkerStartedInfo } from '../../ports/worker'
 import { Channel } from './channel'
 import { type CapReason, type Progress, type WatchAction, Watcher, type WatchThresholds } from './watch'
 import { diffLines } from './workspace'
@@ -14,6 +14,7 @@ export interface WorkerCallbacks {
   workerFinished(runId: string, payload: unknown): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
   workerProgress?(runId: string, progress: Progress): Promise<void>
+  wipCommitted?(runId: string, wip: WipCommit): Promise<void>
 }
 
 export type RunLimits = ConstructorParameters<typeof Watcher>[0] & { graceTurns: number }

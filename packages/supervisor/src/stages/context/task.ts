@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome, issueSpec, validateIssue } from '@nightshift/core'
+import { isWipMessage } from '../../policy/naming'
 import type {
   Attempt,
   BlockerOutput,
@@ -117,9 +118,19 @@ export function answersOf(db: Db, issue: string): { question: string; answer: st
     })
 }
 
+export function wipHeadOf(checkout: string, sha: string): ContextInput['wipHead'] {
+  const r = Bun.spawnSync(['git', '-C', checkout, 'log', '-1', '--format=%s', sha], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: 'ignore',
+  })
+  const subject = r.stdout.toString().trim()
+  return r.exitCode === 0 && isWipMessage(subject) ? { sha, subject } : undefined
+}
+
 export async function contextInput(
   d: TaskContextDeps,
-  { run, issue, indexPath }: TaskStart,
+  { run, issue, indexPath, repairFrom }: TaskStart,
 ): Promise<ContextInput> {
   const parsed = parse(issue)
   if (!parsed.ok) {
@@ -132,11 +143,13 @@ export async function contextInput(
   if (!repo) throw new Error(`no repository '${run.repository}'`)
   const spec = issueSpec(issue.identifier, issue.title, parsed.issue)
   await d.syncVault?.()
+  const checkoutPath = expandHome(repo.path, d.home ?? homedir())
+  const wipHead = repairFrom ? wipHeadOf(checkoutPath, repairFrom.headSha) : undefined
   return {
     issue: spec,
     repository: {
       name: run.repository,
-      checkoutPath: expandHome(repo.path, d.home ?? homedir()),
+      checkoutPath,
       base: run.baseSha || 'HEAD',
       ...(indexPath ? { indexPath } : {}),
     },
@@ -148,6 +161,7 @@ export async function contextInput(
       spec.files,
     ),
     answers: answersOf(d.db, issue.identifier),
+    ...(wipHead ? { wipHead } : {}),
     run: { id: run.id, attempt: run.attempt, profile: run.profile },
   }
 }

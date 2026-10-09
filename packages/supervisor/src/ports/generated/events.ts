@@ -27,6 +27,7 @@ export type EventType =
   | 'WORKER_FINISHED'
   | 'WORKER_NO_FINISH'
   | 'WORKER_FAILED'
+  | 'WIP_COMMITTED'
   | 'GATE_PASSED'
   | 'GATE_FAILED'
   | 'REVIEW_RECEIVED'

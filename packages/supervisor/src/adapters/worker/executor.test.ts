@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
@@ -70,6 +70,9 @@ class Callbacks implements WorkerCallbacks {
   }
   async workerProgress(runId: string, progress: unknown) {
     this.calls.push(['progress', runId, progress])
+  }
+  async wipCommitted(runId: string, wip: unknown) {
+    this.calls.push(['wip', runId, wip])
   }
 
   of(kind: string) {
@@ -559,6 +562,48 @@ describe('WorkerExecutor.captureHead', () => {
     const head = await executor().captureHead({ ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` })
     expect(head).toBe(git(fx.worker, 'rev-parse', fx.branch))
     expect(git(fx.checkout, 'rev-parse', runRef(run.id))).toBe(head ?? '')
+  })
+
+  function runningIn(dir: string) {
+    git(dir, 'config', 'user.name', 'nightshift')
+    git(dir, 'config', 'user.email', 'nightshift@localhost')
+    sandbox.onExec = (cmd) => {
+      if (cmd[0] !== 'sh' || !cmd[2]?.includes('status --porcelain')) return undefined
+      const r = Bun.spawnSync([...cmd.slice(0, 4), dir, ...cmd.slice(5)], { stdout: 'pipe', stderr: 'pipe' })
+      return { exitCode: r.exitCode, stdoutTail: r.stdout.toString(), stderrTail: r.stderr.toString() }
+    }
+  }
+
+  test('a dirty worktree becomes a wip commit on the run branch and logs it', async () => {
+    const fx = withCommit()
+    runningIn(fx.worker)
+    writeFileSync(join(fx.worker, 'src/c.ts'), 'export const c = 3\nexport const d = 4\n')
+    writeFileSync(join(fx.worker, '.gitignore'), 'secret.txt\n')
+    writeFileSync(join(fx.worker, 'secret.txt'), 'ignored\n')
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'BLOCKED',
+    )
+    expect(git(fx.checkout, 'log', '-1', '--format=%s', runRef(run.id))).toBe(
+      'wip: FOR-1 attempt 1 (BLOCKED)',
+    )
+    expect(head).toBe(git(fx.checkout, 'rev-parse', runRef(run.id)))
+    expect(git(fx.checkout, 'diff', '--name-only', fx.base, head ?? '')).toContain('src/c.ts')
+    expect(git(fx.checkout, 'ls-tree', '--name-only', head ?? '')).not.toContain('secret.txt')
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 3 }]])
+  })
+
+  test('a clean worktree adds no commit and no event', async () => {
+    const fx = withCommit()
+    runningIn(fx.worker)
+    const committed = git(fx.worker, 'rev-parse', fx.branch)
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'stopped',
+    )
+    expect(head).toBe(committed)
+    expect(git(fx.checkout, 'log', '-1', '--format=%s', runRef(run.id))).toBe('work')
+    expect(cb.of('wip')).toEqual([])
   })
 
   test('a sandbox without commits ahead of base yields no head', async () => {
