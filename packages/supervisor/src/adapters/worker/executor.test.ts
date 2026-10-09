@@ -582,7 +582,7 @@ describe('WorkerExecutor.captureHead', () => {
     sandbox.onExec = (cmd) => {
       if (!cmd.join(' ').includes('status --porcelain')) return undefined
       order.push('wip')
-      return { stdoutTail: 'wip\n3\t1\tsrc/a.ts\n2\t0\tsrc/c.ts\n' }
+      return { stdoutTail: 'nightshift-wip 6\n' }
     }
     sandbox.exportCommits = async () => {
       order.push('export')
@@ -596,6 +596,20 @@ describe('WorkerExecutor.captureHead', () => {
     const wip = sandbox.execs.find((e) => e.cmd.join(' ').includes('status --porcelain'))
     expect(wip?.cmd).toContain('wip: FOR-1 attempt 1 (BLOCKED)')
     expect(wip?.opts.cwd).toBe('/work/omni')
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 6 }]])
+  })
+
+  test('hook output around a successful wip commit still reports it', async () => {
+    const fx = withCommit()
+    sandbox.onExec = (cmd) =>
+      cmd.join(' ').includes('status --porcelain')
+        ? { stdoutTail: 'husky - running post-commit\nlint ok\nnightshift-wip 6\n' }
+        : undefined
+    sandbox.exportCommits = async () => fx.bundle(run.id)
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'step_cap',
+    )
     expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 6 }]])
   })
 

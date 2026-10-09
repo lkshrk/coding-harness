@@ -50,6 +50,8 @@ export { REPO_MOUNT, shellJoin } from './workspace'
 export const CA_MOUNT = '/etc/nightshift/ca.pem'
 export const KNOWLEDGE_SOURCE = '/mnt/knowledge-source.git'
 export const KNOWLEDGE_REPOS = '/tmp/knowledge-repos'
+const WIP_MARKER = 'nightshift-wip'
+const WIP_LINE = new RegExp(`^${WIP_MARKER} (\\d+)$`, 'gm')
 
 export type WorkerExecutorDeps = {
   config: Config
@@ -270,23 +272,18 @@ export class WorkerExecutor implements RunExecutor {
       'test -n "$(git status --porcelain)" || exit 0',
       'git add -A',
       'git commit --quiet --no-verify -m "$1"',
-      'echo wip',
-      'git diff --numstat --no-renames HEAD~1 HEAD',
+      `git diff --numstat --no-renames HEAD~1 HEAD | awk '{ n += $1 + $2 } END { printf "${WIP_MARKER} %d\\n", n }'`,
     ].join(' && ')
     const message = `wip: ${run.issue} attempt ${run.attempt} (${status})`
     const res = await this.d.sandbox
       .exec(handle, ['sh', '-c', script, 'sh', message], { cwd: workdirOf(run), timeoutMs: 60_000 })
       .catch((e: Error) => ({ exitCode: -1, stdoutTail: '', stderrTail: e.message }))
-    const [marker, ...stat] = res.stdoutTail.trim().split('\n')
-    if (res.exitCode !== 0 || marker !== 'wip') {
-      if (res.exitCode !== 0)
-        console.error(`${run.issue}: WIP commit of run ${run.id} failed: ${res.stderrTail.trim()}`)
+    if (res.exitCode !== 0) {
+      console.error(`${run.issue}: WIP commit of run ${run.id} failed: ${res.stderrTail.trim()}`)
       return undefined
     }
-    return stat.reduce((sum, line) => {
-      const [added, deleted] = line.split('\t')
-      return sum + (Number(added) || 0) + (Number(deleted) || 0)
-    }, 0)
+    const marker = [...res.stdoutTail.matchAll(WIP_LINE)].at(-1)
+    return marker ? Number(marker[1]) : undefined
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {
