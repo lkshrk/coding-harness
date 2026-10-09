@@ -9,6 +9,7 @@ import { createUlid } from '../../state/ulid'
 import { FakeLinear, issueBody, snapshot, testConfig } from '../../testing/testing'
 import { FencedContextBuilder } from './builder'
 import { gitObjectSource } from './git'
+import { historyItems } from './sections'
 import { contextInput, contextTaskMessage } from './task'
 
 const git = (cwd: string, ...args: string[]) => {
@@ -121,6 +122,47 @@ describe('contextInput', () => {
       },
     ])
     expect(input.vaultPages).toEqual([])
+  })
+
+  test('a branch continuing from a WIP commit gets a retry note', async () => {
+    const config = testConfig()
+    const db = openState(':memory:')
+    const stores = { now: () => new Date(0), ulid: createUlid() }
+    const runs = new RunStore(db, stores)
+    const log = new EventLog(db, stores)
+    const base = {
+      issue: 'FOR-2',
+      agent: 'implementer',
+      profile: 'cloud',
+      model: 'm',
+      repository: 'omni',
+      baseSha: 'abc',
+    }
+    const prior = runs.create({ ...base, attempt: 1 })
+    runs.update(prior.id, { failure: 'task_too_large', headSha: 'w1p' })
+    log.append({ type: 'WIP_COMMITTED', issue: 'FOR-2', run: prior.id, data: { sha: 'w1p', lines: 40 } })
+    const current = runs.create({ ...base, attempt: 2 })
+    const deps = {
+      config: () => config,
+      db,
+      linear: new FakeLinear(config, () => new Date(0)),
+      builder: {} as never,
+      home: '/h',
+    }
+    const issue = snapshot({ identifier: 'FOR-2' })
+
+    const fresh = await contextInput(deps, { run: current, issue, files: [] })
+    expect(fresh.wip).toBeUndefined()
+    const continued = await contextInput(deps, {
+      run: current,
+      issue,
+      files: [],
+      repairFrom: { run: prior.id, headSha: 'w1p' },
+    })
+    expect(continued.wip).toEqual({ sha: 'w1p', attempt: 1 })
+    const items = historyItems(continued)
+    expect(items[0]?.text).toContain('starts with a WIP commit')
+    expect(items[0]?.text).toContain('git reset --soft')
   })
 
   test('a description outside the template is rejected', async () => {

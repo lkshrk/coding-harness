@@ -126,7 +126,15 @@ export function historyItems(input: ContextInput): Item[] {
         ),
       ]),
     }))
-  return [...answers, ...attempts]
+  const wip = input.wip
+    ? [
+        {
+          source: `wip ${input.wip.sha}`,
+          text: `## Branch starts with a WIP commit\nThe branch starts with a WIP commit (\`${input.wip.sha.slice(0, 12)}\`, \`wip: …\`) holding the uncommitted work of attempt ${input.wip.attempt}. Finish it, squash it into your own commit, or drop it with \`git reset --soft HEAD~1\` before your own commit; a branch whose head commit message starts with \`wip:\` is never integrated.`,
+        },
+      ]
+    : []
+  return [...wip, ...answers, ...attempts]
 }
 
 const GLOB = /[*?[\]{}]/

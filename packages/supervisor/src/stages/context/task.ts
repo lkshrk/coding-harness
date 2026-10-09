@@ -117,9 +117,19 @@ export function answersOf(db: Db, issue: string): { question: string; answer: st
     })
 }
 
+export function wipOf(db: Db, from: TaskStart['repairFrom']): ContextInput['wip'] {
+  if (!from) return undefined
+  const stores = { now: () => new Date(), ulid: createUlid() }
+  const wip = new EventLog(db, stores)
+    .since(null, { run: from.run, types: ['WIP_COMMITTED'] })
+    .find((e) => e.data.sha === from.headSha)
+  const prior = wip && new RunStore(db, stores).get(from.run)
+  return prior ? { sha: from.headSha, attempt: prior.attempt } : undefined
+}
+
 export async function contextInput(
   d: TaskContextDeps,
-  { run, issue, indexPath }: TaskStart,
+  { run, issue, indexPath, repairFrom }: TaskStart,
 ): Promise<ContextInput> {
   const parsed = parse(issue)
   if (!parsed.ok) {
@@ -132,7 +142,9 @@ export async function contextInput(
   if (!repo) throw new Error(`no repository '${run.repository}'`)
   const spec = issueSpec(issue.identifier, issue.title, parsed.issue)
   await d.syncVault?.()
+  const wip = wipOf(d.db, repairFrom)
   return {
+    ...(wip ? { wip } : {}),
     issue: spec,
     repository: {
       name: run.repository,
