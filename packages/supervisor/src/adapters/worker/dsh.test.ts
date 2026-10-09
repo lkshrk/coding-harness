@@ -75,7 +75,7 @@ test('the profile patch routes through the gateway, mounts the finish MCP server
   expect(patch).not.toContain('apiKey: ')
 })
 
-const start = (sb: FakeSandboxDriver): WorkerStart => ({
+const start = (): WorkerStart => ({
   sandbox: { driver: 'docker', id: 'ctr', name: 'run-1' },
   agent: {
     name: 'implementer',
@@ -93,7 +93,7 @@ test('start writes the patch, finish server and task, spawns headless with the k
   const lines = fixture('finish.ndjson')
   sb.onExec = (cmd) => (cmd[2]?.startsWith('head -n 1') ? { stdoutTail: lines[0] ?? '' } : undefined)
   const driver = new DshDriver({ sandbox: sb, finishMcp: '// bundle' })
-  const session = await driver.start(start(sb))
+  const session = await driver.start(start())
   expect(session.id).toMatch(/^session-/)
   expect(sb.files.get('/tmp/nightshift-dsh/message.md')).toBe('Fix FOR-1')
   expect(sb.files.get('/tmp/nightshift-dsh/finish-mcp.mjs')).toBe('// bundle')
@@ -123,7 +123,7 @@ test('events stream the file in order and end with the finish payload; send resu
     return undefined
   }
   const driver = new DshDriver({ sandbox: sb, finishMcp: '', pollMs: 1 })
-  const session = await driver.start(start(sb))
+  const session = await driver.start(start())
   const events: HarnessEvent[] = []
   for await (const e of driver.events(session)) events.push(e)
   expect(events.at(-1)).toEqual({ kind: 'finish', payload })
@@ -139,7 +139,7 @@ test('stop kills the recorded dsh pid', async () => {
   sb.onExec = (cmd) =>
     cmd[2]?.startsWith('head -n 1') ? { stdoutTail: fixture('finish.ndjson')[0] ?? '' } : undefined
   const driver = new DshDriver({ sandbox: sb, finishMcp: '' })
-  const session = await driver.start(start(sb))
+  const session = await driver.start(start())
   await driver.stop(session, 'user')
   expect(sb.execs.at(-1)?.cmd[2]).toContain('kill -TERM')
   expect(sb.execs.find((e) => e.cmd[2]?.startsWith('printf %s'))?.cmd.slice(4)).toEqual([
