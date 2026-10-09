@@ -173,6 +173,13 @@ set -euo pipefail
 exec "$prefix/node/bin/node" "$entry" "\$@"
 EOF
   chmod 0755 "$bin/bash-language-server"
+  entry="$(readlink -f "$prefix/npm/node_modules/.bin/dsh")"
+  cat >"$bin/dsh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$prefix/node/bin/node" "$entry" "\$@"
+EOF
+  chmod 0755 "$bin/dsh"
 }
 
 install_scripts() {

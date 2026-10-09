@@ -202,6 +202,10 @@ export interface Config {
   policies: Policy
   sandbox: {
     driver: 'docker' | 'sbx'
+    /**
+     * Worker harness. dsh (DeepSeek Harness) is experimental.
+     */
+    harness: 'opencode' | 'dsh'
     resources: {
       cpus?: number
       memory?: string

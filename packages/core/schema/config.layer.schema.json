@@ -215,6 +215,10 @@
       "additionalProperties": false,
       "properties": {
         "driver": { "enum": ["docker", "sbx"] },
+        "harness": {
+          "enum": ["opencode", "dsh"],
+          "description": "Worker harness. dsh (DeepSeek Harness) is experimental."
+        },
         "resources": {
           "type": "object",
           "additionalProperties": false,

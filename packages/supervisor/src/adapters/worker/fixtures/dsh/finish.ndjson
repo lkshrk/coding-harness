@@ -1,0 +1,19 @@
+{"type":"session","sessionId":"session-00f0debf-d793-4b90-a5d1-334e7d85305d","cwd":"/w"}
+{"type":"status","phase":"turn_start","turn":1}
+{"type":"status","phase":"step_start","turn":1,"step":1}
+{"type":"tool_call","callId":"toolu_01SGQjy3cy6UfNgicD7tfm4S","tool":"write","input":{"file_path":"/w/hello.txt","content":"hi"}}
+{"type":"tool_result","callId":"toolu_01SGQjy3cy6UfNgicD7tfm4S","status":"completed","result":"<path>/w/hello.txt</path>\n<type>file</type>\n<content>\nCreated file\n</content>"}
+{"type":"tool_call","callId":"toolu_01FnLQraR9JfDxMs9sB9WvHU","tool":"bash","input":{"command":"cat /w/hello.txt","description":"Verify hello.txt contents"}}
+{"type":"tool_result","callId":"toolu_01FnLQraR9JfDxMs9sB9WvHU","status":"completed","result":"hi"}
+{"type":"status","phase":"step_end","turn":1,"step":1,"usage":{"inputTokens":2,"outputTokens":180,"totalTokens":9814,"cacheWriteTokens":9632}}
+{"type":"status","phase":"step_start","turn":1,"step":2}
+{"type":"thinking","text":"The result field only accepts pass/fail/info, so \"hi\" isn't valid there—I'll use \"pass\" and put \"hi\" in the detail field instead.\n\n"}
+{"type":"tool_call","callId":"toolu_01DLZsUgmrgog3Xd1Cx6pcT2","tool":"mcp__nightshift__finish","input":{"status":"DONE","summary":"Created hello.txt containing \"hi\".","evidence":[{"kind":"command","ref":"cat hello.txt","result":"pass","detail":"hi"}],"changed_files":["hello.txt"]}}
+{"type":"tool_result","callId":"toolu_01DLZsUgmrgog3Xd1Cx6pcT2","status":"completed","result":"Result recorded. Stop now."}
+{"type":"status","phase":"step_end","turn":1,"step":2,"usage":{"inputTokens":2,"outputTokens":225,"totalTokens":10148,"cacheReadTokens":9632,"cacheWriteTokens":289}}
+{"type":"status","phase":"step_start","turn":1,"step":3}
+{"type":"thinking","text":"I need the evidence result field to be an enum value, so I put \"hi\" into the detail field instead to note that.\n\n"}
+{"type":"text","text":"I created `/w/hello.txt` containing `hi`, and `cat hello.txt` printed `hi`. I then called the finish tool with status DONE.\n\nOne change to the evidence you specified: the tool's `result` field only accepts `pass`, `fail` or `info`, so I couldn't put `hi` there. I recorded `result: pass` and put the output `hi` in the `detail` field instead."}
+{"type":"status","phase":"step_end","turn":1,"step":3,"usage":{"inputTokens":2,"outputTokens":163,"totalTokens":10285,"cacheReadTokens":9921,"cacheWriteTokens":199}}
+{"type":"status","phase":"turn_end","turn":1,"reason":{"kind":"completed"}}
+{"type":"final","text":"I created `/w/hello.txt` containing `hi`, and `cat hello.txt` printed `hi`. I then called the finish tool with status DONE.\n\nOne change to the evidence you specified: the tool's `result` field only accepts `pass`, `fail` or `info`, so I couldn't put `hi` there. I recorded `result: pass` and put the output `hi` in the `detail` field instead."}
