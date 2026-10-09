@@ -71,6 +71,9 @@ class Callbacks implements WorkerCallbacks {
   async workerProgress(runId: string, progress: unknown) {
     this.calls.push(['progress', runId, progress])
   }
+  async wipCommitted(runId: string, info: unknown) {
+    this.calls.push(['wip', runId, info])
+  }
 
   of(kind: string) {
     return this.calls.filter((c) => c[0] === kind)
@@ -571,6 +574,36 @@ describe('WorkerExecutor.captureHead', () => {
 
   test('a run without a sandbox yields no head', async () => {
     expect(await executor().captureHead(run)).toBeUndefined()
+  })
+
+  test('a dirty worktree is committed as wip before export and reported', async () => {
+    const fx = withCommit()
+    sandbox.onExec = (cmd) =>
+      cmd[2]?.includes('status --porcelain')
+        ? { stdoutTail: 'committed\n3\t1\tsrc/a.ts\n2\t0\tb.ts\n' }
+        : undefined
+    const order: string[] = []
+    sandbox.exportCommits = async () => {
+      order.push('export')
+      return fx.bundle(run.id)
+    }
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'BLOCKED',
+    )
+    const wip = sandbox.execs.find((e) => e.cmd[2]?.includes('status --porcelain'))
+    expect(wip?.cmd[2]).toContain('git add -A && git commit')
+    expect(wip?.cmd.at(-1)).toBe('wip: FOR-1 attempt 1 (BLOCKED)')
+    expect(wip?.opts.cwd).toBe('/work/omni')
+    expect(order).toEqual(['export'])
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 6 }]])
+  })
+
+  test('a clean worktree makes no wip commit and no report', async () => {
+    const fx = withCommit()
+    await executor().captureHead({ ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` }, 'BLOCKED')
+    expect(sandbox.execs.filter((e) => e.cmd[2]?.includes('status --porcelain'))).toHaveLength(1)
+    expect(cb.of('wip')).toEqual([])
   })
 })
 

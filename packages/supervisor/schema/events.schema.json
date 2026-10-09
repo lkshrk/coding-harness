@@ -83,6 +83,13 @@
       }
     },
     {
+      "if": { "properties": { "type": { "const": "WIP_COMMITTED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/wipCommitted" } }
+      }
+    },
+    {
       "if": { "properties": { "type": { "enum": ["GATE_PASSED", "GATE_FAILED"] } } },
       "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/gate" } } }
     },
@@ -203,6 +210,7 @@
         "WORKER_FINISHED",
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
+        "WIP_COMMITTED",
         "GATE_PASSED",
         "GATE_FAILED",
         "REVIEW_RECEIVED",
@@ -331,6 +339,19 @@
           },
           "detail": { "type": "string" },
           "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "wipCommitted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha", "lines"],
+        "properties": {
+          "sha": { "type": "string", "description": "head of the run branch after the wip commit" },
+          "lines": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "lines added plus deleted by the wip commit"
+          }
         }
       },
       "gate": {

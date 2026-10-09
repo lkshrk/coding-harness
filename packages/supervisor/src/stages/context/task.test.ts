@@ -123,6 +123,70 @@ describe('contextInput', () => {
     expect(input.vaultPages).toEqual([])
   })
 
+  test('a continuation from a wip commit says so in HISTORY', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ns-ctx-'))
+    try {
+      const base = repoWithBase(dir)
+      git(dir, 'add', '-A')
+      git(
+        dir,
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'user.name=t',
+        'commit',
+        '-q',
+        '-m',
+        'wip: FOR-4 attempt 1 (BLOCKED)',
+      )
+      const wip = git(dir, 'rev-parse', 'HEAD')
+      const config = testConfig()
+      const omni = config.repositories.omni as NonNullable<(typeof config.repositories)['omni']>
+      const withDir = { ...config, repositories: { ...config.repositories, omni: { ...omni, path: dir } } }
+      const db = openState(':memory:')
+      const runs = new RunStore(db, { now: () => new Date(0), ulid: createUlid() })
+      const create = (attempt: number) =>
+        runs.create({
+          issue: 'FOR-4',
+          agent: 'fixer',
+          profile: 'cloud',
+          model: 'm',
+          repository: 'omni',
+          baseSha: base,
+          attempt,
+        })
+      const prior = create(1)
+      const run = create(2)
+      const deps = { config: () => withDir, db, linear: new FakeLinear(config, () => new Date(0)) }
+      const issue = snapshot({ identifier: 'FOR-4' })
+      const continued = await contextInput(
+        { ...deps, builder: {} as never },
+        { run, issue, files: [], repairFrom: { run: prior.id, headSha: wip } },
+      )
+      expect(continued.wipHead).toBe(wip)
+      const fresh = await contextInput({ ...deps, builder: {} as never }, { run, issue, files: [] })
+      expect(fresh.wipHead).toBeUndefined()
+      const notWip = await contextInput(
+        { ...deps, builder: {} as never },
+        { run, issue, files: [], repairFrom: { run: prior.id, headSha: base } },
+      )
+      expect(notWip.wipHead).toBeUndefined()
+
+      const message = contextTaskMessage({
+        ...deps,
+        builder: new FencedContextBuilder({ count: async (t) => t.length / 4, source: gitObjectSource }),
+      })
+      const built = await message(
+        { run, issue, files: [], repairFrom: { run: prior.id, headSha: wip } },
+        { inputTokens: 20_000, model: 'm' },
+      )
+      expect(built.message).toContain(`starts with a WIP commit ${wip.slice(0, 12)}`)
+      expect(built.message).toContain('git reset --soft HEAD^')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('a description outside the template is rejected', async () => {
     const config = testConfig()
     const db = openState(':memory:')

@@ -2,7 +2,7 @@ import { viewIssue } from '../policy/stages'
 import type { SandboxHandle } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
-import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
+import type { Progress, SandboxCreatedInfo, WipCommittedInfo, WorkerStartedInfo } from '../ports/worker'
 import { type Event, EventValidationError } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'
 import { activeRun } from '../state/targets'
@@ -30,6 +30,12 @@ export class RunLifecycle {
   async sandboxCreated(runId: string, info: SandboxCreatedInfo): Promise<void> {
     if (this.late(runId, 'sandbox created')) return
     this.rt.log.append({ type: 'SANDBOX_CREATED', run: runId, data: info })
+  }
+
+  async wipCommitted(runId: string, info: WipCommittedInfo): Promise<void> {
+    if (this.late(runId, 'wip commit')) return
+    const run = this.rt.requireRun(runId)
+    this.rt.log.append({ type: 'WIP_COMMITTED', issue: run.issue, run: run.id, data: info })
   }
 
   async workerProgress(runId: string, progress: Progress): Promise<void> {
@@ -109,7 +115,7 @@ export class RunLifecycle {
       this.flow.schedule(gating)
       return
     }
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, String(finish.status ?? 'no status'))
     await this.end(runId, 'failed', event)
     this.flow.releaseLease(run.issue)
     if (finish.status === 'NEEDS_CONTEXT') {
@@ -134,7 +140,7 @@ export class RunLifecycle {
       run: run.id,
       data: { reason, ...(detail ? { detail } : {}) },
     })
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, reason)
     await this.end(runId, 'failed', event)
     this.stalls.delete(runId)
     this.flow.releaseLease(run.issue)
@@ -151,7 +157,7 @@ export class RunLifecycle {
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.rt.deps.executor.stop(run, reason)
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, 'stopped')
     const event = this.rt.log.append({
       type: 'WORKER_FAILED',
       issue: run.issue,
@@ -187,11 +193,11 @@ export class RunLifecycle {
     return { driver: this.rt.config().sandbox.driver, id: run.sandbox ?? '', name: run.id }
   }
 
-  async preserveHead(runId: string): Promise<void> {
+  async preserveHead(runId: string, status: string): Promise<void> {
     const run = this.rt.requireRun(runId)
     if (run.headSha !== null || run.sandbox === null || run.agent === INGEST_AGENT) return
     try {
-      const head = await this.rt.deps.executor.captureHead?.(run)
+      const head = await this.rt.deps.executor.captureHead?.(run, status)
       if (head) this.rt.runs.update(runId, { headSha: head })
     } catch (e) {
       console.error(`${run.issue}: keeping the commits of run ${run.id} failed: ${(e as Error).message}`)

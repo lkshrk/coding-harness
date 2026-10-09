@@ -28,6 +28,13 @@ describe('worker lifecycle', () => {
     ])
   })
 
+  test('a wip commit is logged against the run', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.wipCommitted(run.id, { sha: 'abc123', lines: 7 })
+    expect(h.of('WIP_COMMITTED').map((e) => [e.run, e.data])).toEqual([[run.id, { sha: 'abc123', lines: 7 }]])
+  })
+
   test('a valid finish with DONE moves to gating and runs the next step', async () => {
     const h = harness()
     const run = await dispatchOne(h)

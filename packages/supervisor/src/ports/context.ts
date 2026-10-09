@@ -14,6 +14,7 @@ export type ContextInput = {
   vaultPages: { path: string; title: string; content: string }[]
   answers: { question: string; answer: string }[]
   run?: { id: string; attempt: number; profile: string }
+  wipHead?: string
 }
 
 export type ContextSection = { name: string; tokens: number; sources: string[]; truncated: boolean }

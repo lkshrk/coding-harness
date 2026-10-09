@@ -22,6 +22,8 @@ function summary(type: string, d: Data): string {
     case 'WORKER_FAILED':
     case 'WORKER_NO_FINISH':
       return `${str(d.reason)}${d.detail ? `: ${str(d.detail)}` : ''}`
+    case 'WIP_COMMITTED':
+      return `${str(d.sha).slice(0, 12)}, ${str(d.lines)} lines`
     case 'GATE_PASSED':
     case 'GATE_FAILED':
       return `${str(d.check)} exit ${str(d.exit_code)} (${Math.round(Number(d.duration_ms) / 1000)}s)`

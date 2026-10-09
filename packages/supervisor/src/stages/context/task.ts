@@ -119,7 +119,7 @@ export function answersOf(db: Db, issue: string): { question: string; answer: st
 
 export async function contextInput(
   d: TaskContextDeps,
-  { run, issue, indexPath }: TaskStart,
+  { run, issue, indexPath, repairFrom }: TaskStart,
 ): Promise<ContextInput> {
   const parsed = parse(issue)
   if (!parsed.ok) {
@@ -132,11 +132,13 @@ export async function contextInput(
   if (!repo) throw new Error(`no repository '${run.repository}'`)
   const spec = issueSpec(issue.identifier, issue.title, parsed.issue)
   await d.syncVault?.()
+  const checkoutPath = expandHome(repo.path, d.home ?? homedir())
+  const wipHead = repairFrom && isWipCommit(checkoutPath, repairFrom.headSha) ? repairFrom.headSha : undefined
   return {
     issue: spec,
     repository: {
       name: run.repository,
-      checkoutPath: expandHome(repo.path, d.home ?? homedir()),
+      checkoutPath,
       base: run.baseSha || 'HEAD',
       ...(indexPath ? { indexPath } : {}),
     },
@@ -149,7 +151,17 @@ export async function contextInput(
     ),
     answers: answersOf(d.db, issue.identifier),
     run: { id: run.id, attempt: run.attempt, profile: run.profile },
+    ...(wipHead ? { wipHead } : {}),
   }
+}
+
+export function isWipCommit(checkout: string, sha: string): boolean {
+  const r = Bun.spawnSync(['git', '-C', checkout, 'log', '-1', '--format=%s', sha], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: 'ignore',
+  })
+  return r.exitCode === 0 && r.stdout.toString().startsWith('wip:')
 }
 
 export function contextTaskMessage(d: TaskContextDeps): TaskMessage {
