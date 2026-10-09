@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
@@ -70,6 +70,9 @@ class Callbacks implements WorkerCallbacks {
   }
   async workerProgress(runId: string, progress: unknown) {
     this.calls.push(['progress', runId, progress])
+  }
+  async wipCommitted(runId: string, wip: unknown) {
+    this.calls.push(['wip', runId, wip])
   }
 
   of(kind: string) {
@@ -567,6 +570,65 @@ describe('WorkerExecutor.captureHead', () => {
     expect(
       await executor().captureHead({ ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` }),
     ).toBeUndefined()
+  })
+
+  test('a dirty worktree is committed as wip before export and reported with its size', async () => {
+    const fx = withCommit()
+    writeFileSync(join(fx.worker, 'src/c.ts'), 'export const c = 3\nexport const d = 4\n')
+    writeFileSync(join(fx.worker, 'src/a.ts'), 'export const a = 2\n')
+    sandbox.onExec = (cmd) => {
+      if (!cmd[2]?.includes('git status --porcelain')) return undefined
+      const r = Bun.spawnSync(['sh', '-c', cmd[2], 'sh', cmd[4] ?? ''], {
+        cwd: fx.worker,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'w',
+          GIT_AUTHOR_EMAIL: 'w@w',
+          GIT_COMMITTER_NAME: 'w',
+          GIT_COMMITTER_EMAIL: 'w@w',
+        },
+      })
+      return { exitCode: r.exitCode, stdoutTail: r.stdout.toString(), stderrTail: r.stderr.toString() }
+    }
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'BLOCKED',
+    )
+    const wip = sandbox.execs.find((e) => e.cmd[2]?.includes('git status --porcelain'))
+    expect(wip?.opts.cwd).toBe('/work/omni')
+    expect(git(fx.checkout, 'log', '-1', '--format=%s', runRef(run.id))).toBe(
+      'wip: FOR-1 attempt 1 (BLOCKED)',
+    )
+    expect(head).toBe(git(fx.worker, 'rev-parse', fx.branch))
+    expect(git(fx.checkout, 'show', '--format=', '--name-only', runRef(run.id)).split('\n').sort()).toEqual([
+      'src/a.ts',
+      'src/c.ts',
+    ])
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 4 }]])
+  })
+
+  test('a clean worktree adds no commit and reports nothing', async () => {
+    const fx = withCommit()
+    sandbox.onExec = (cmd) =>
+      cmd[2]?.includes('git status --porcelain') ? { stdoutTail: 'clean\n' } : undefined
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'step_cap',
+    )
+    expect(git(fx.checkout, 'log', '-1', '--format=%s', runRef(run.id))).toBe('work')
+    expect(head).toBe(git(fx.worker, 'rev-parse', fx.branch))
+    expect(cb.of('wip')).toEqual([])
+  })
+
+  test('a failed wip commit keeps the sandbox commits unexported and says why', async () => {
+    withCommit()
+    sandbox.onExec = (cmd) =>
+      cmd[2]?.includes('git status --porcelain')
+        ? { exitCode: 128, stderrTail: 'fatal: no identity' }
+        : undefined
+    await expect(executor().captureHead({ ...run, sandbox: `ctr-${run.id}` })).rejects.toThrow(
+      'committing uncommitted work failed: fatal: no identity',
+    )
   })
 
   test('a run without a sandbox yields no head', async () => {

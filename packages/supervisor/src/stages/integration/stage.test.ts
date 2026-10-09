@@ -7,6 +7,7 @@ import { importBundle } from '../../adapters/git/host'
 import type { Run } from '../../state/runs'
 import { snapshot } from '../../testing/testing'
 import { git } from '../gates/testing'
+import { IntegrationHandler } from './stage'
 import { AGENT_TOKEN, FINISH, gate, integrationHarness, PERSONAL_TOKEN, until } from './testing'
 
 let root: string
@@ -103,6 +104,33 @@ describe('integration stage (manual)', () => {
     expect(h.of('PR_CREATED')[0]?.data).toMatchObject({ account: 'personal', mode: 'manual' })
     expect(h.gh.gh('create')[0]?.env.GH_TOKEN).toBe(PERSONAL_TOKEN)
     expect(h.linear.get('FOR-1').status).toBe('In Review')
+  })
+
+  test('a head commit whose message starts with wip: is refused before any push', async () => {
+    const h = integrationHarness(root)
+    h.linear.put(snapshot({ identifier: 'FOR-1', title: 'Trim names' }))
+    await h.first.start()
+    await h.first.tick()
+    const run = h.first.runs.forIssue('FOR-1').at(-1) as Run
+    git(h.fx.worker, 'commit', '-q', '--amend', '-m', 'wip: FOR-1 attempt 1 (BLOCKED)')
+    const head = importBundle(h.fx.checkout, h.fx.bundle().bundle, h.fx.branch, run.id)
+    const done = { ...run, state: 'done' as const, headSha: head }
+    const handler = new IntegrationHandler({
+      config: () => h.config,
+      host: {
+        push: async () => {
+          throw new Error('pushed')
+        },
+        openPullRequest: async () => {
+          throw new Error('opened')
+        },
+      } as never,
+      callbacks: () => ({ ...h.first, runs: { forIssue: () => [done] } }) as never,
+    })
+    await expect(
+      handler.run({ issue: h.linear.get('FOR-1'), stage: 'integration', agent: undefined }),
+    ).rejects.toThrow('head commit is a WIP commit')
+    expect(h.gh.gh('create')).toEqual([])
   })
 
   test('an unreviewed change says so in the PR body', async () => {

@@ -92,6 +92,23 @@ describe('manual retry', () => {
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: run.id, headSha: 'head1' })
   })
 
+  test('a run ending on a limit passes its cause to the capture and logs the WIP commit', async () => {
+    const h = harness()
+    const run = await runningWithCommit(h)
+    const sha = 'a'.repeat(40)
+    const statuses: (string | undefined)[] = []
+    h.executor.captureHead = async (r, status) => {
+      statuses.push(status)
+      await h.sup.wipCommitted(r.id, { sha, lines: 12 })
+      return sha
+    }
+    await h.sup.workerFailed(run.id, 'step_cap')
+    expect(statuses).toEqual(['step_cap'])
+    expect(h.of('WIP_COMMITTED').map((e) => [e.issue, e.run, e.data])).toEqual([
+      ['FOR-1', run.id, { run: run.id, sha, lines: 12 }],
+    ])
+  })
+
   test('a supervisor stop captures the commit before the sandbox is destroyed', async () => {
     const h = harness()
     const run = await runningWithCommit(h)

@@ -109,7 +109,7 @@ export class RunLifecycle {
       this.flow.schedule(gating)
       return
     }
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, typeof finish.status === 'string' ? finish.status : undefined)
     await this.end(runId, 'failed', event)
     this.flow.releaseLease(run.issue)
     if (finish.status === 'NEEDS_CONTEXT') {
@@ -134,7 +134,7 @@ export class RunLifecycle {
       run: run.id,
       data: { reason, ...(detail ? { detail } : {}) },
     })
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, reason)
     await this.end(runId, 'failed', event)
     this.stalls.delete(runId)
     this.flow.releaseLease(run.issue)
@@ -151,7 +151,7 @@ export class RunLifecycle {
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.rt.deps.executor.stop(run, reason)
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, 'stopped')
     const event = this.rt.log.append({
       type: 'WORKER_FAILED',
       issue: run.issue,
@@ -187,11 +187,21 @@ export class RunLifecycle {
     return { driver: this.rt.config().sandbox.driver, id: run.sandbox ?? '', name: run.id }
   }
 
-  async preserveHead(runId: string): Promise<void> {
+  async wipCommitted(runId: string, wip: { sha: string; lines: number }): Promise<void> {
+    const run = this.rt.requireRun(runId)
+    this.rt.log.append({
+      type: 'WIP_COMMITTED',
+      issue: run.issue,
+      run: run.id,
+      data: { run: run.id, sha: wip.sha, lines: wip.lines },
+    })
+  }
+
+  async preserveHead(runId: string, status?: string): Promise<void> {
     const run = this.rt.requireRun(runId)
     if (run.headSha !== null || run.sandbox === null || run.agent === INGEST_AGENT) return
     try {
-      const head = await this.rt.deps.executor.captureHead?.(run)
+      const head = await this.rt.deps.executor.captureHead?.(run, status)
       if (head) this.rt.runs.update(runId, { headSha: head })
     } catch (e) {
       console.error(`${run.issue}: keeping the commits of run ${run.id} failed: ${(e as Error).message}`)

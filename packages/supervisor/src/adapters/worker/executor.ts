@@ -10,7 +10,7 @@ import {
   renderFinishPlugin,
   type WorkerImage,
 } from '@nightshift/core'
-import { branchOf, parseDuration, parseTokens, workdirOf } from '../../policy/naming'
+import { branchOf, parseDuration, parseTokens, WIP_PREFIX, workdirOf } from '../../policy/naming'
 import type {
   BuiltContext,
   ExecutorStart,
@@ -70,6 +70,19 @@ export type WorkerExecutorDeps = {
   now?: () => number
 }
 
+const WIP_SCRIPT = [
+  'set -e',
+  'if [ -z "$(git status --porcelain)" ]; then echo clean; exit 0; fi',
+  'git add -A',
+  'git commit --quiet --no-verify -m "$1"',
+  'echo committed',
+  'git show --numstat --format= HEAD',
+].join('\n')
+
+export function wipMessage(run: Pick<Run, 'issue' | 'attempt'>, status?: string): string {
+  return `${WIP_PREFIX} ${run.issue} attempt ${run.attempt}${status ? ` (${status})` : ''}`
+}
+
 const dropped = (what: string) => async (runId: string) => {
   console.error(`run ${runId}: ${what} after executor detach ignored`)
 }
@@ -81,6 +94,7 @@ const DETACHED: WorkerCallbacks = {
   workerFinished: dropped('finish'),
   workerFailed: dropped('failure'),
   workerProgress: dropped('progress'),
+  wipCommitted: dropped('wip commit'),
 }
 
 export class WorkerExecutor implements RunExecutor {
@@ -248,18 +262,43 @@ export class WorkerExecutor implements RunExecutor {
     if (session !== null) await this.d.worker.stop({ id: session, attach: [] }, reason)
   }
 
-  async captureHead(run: Run): Promise<string | undefined> {
+  async captureHead(run: Run, status?: string): Promise<string | undefined> {
     if (run.sandbox === null) return undefined
     const repo = this.d.config.repositories[run.repository]
     if (!repo) return undefined
     const handle: SandboxHandle = { driver: this.d.config.sandbox.driver, id: run.sandbox, name: run.id }
+    const wip = await this.commitWip(handle, run, status)
     const exported = await this.d.sandbox.exportCommits(handle, workdirOf(run), branchOf(run))
     if (run.baseSha && exported.headSha === run.baseSha) return undefined
     const checkout = expandHome(repo.path, this.d.home ?? homedir())
     const head = importBundle(checkout, exported.bundle, branchOf(run), run.id)
     if (head !== exported.headSha)
       throw new Error(`imported ${head} but the worker reported ${exported.headSha}`)
+    if (wip) await this.cb().wipCommitted?.(run.id, { sha: head, lines: wip.lines })
     return head
+  }
+
+  private async commitWip(
+    handle: SandboxHandle,
+    run: Run,
+    status: string | undefined,
+  ): Promise<{ lines: number } | undefined> {
+    const message = wipMessage(run, status)
+    const res = await this.d.sandbox.exec(handle, ['sh', '-c', WIP_SCRIPT, 'sh', message], {
+      cwd: workdirOf(run),
+      timeoutMs: 60_000,
+    })
+    if (res.exitCode !== 0)
+      throw new Error(`committing uncommitted work failed: ${res.stderrTail.trim() || res.stdoutTail.trim()}`)
+    const [first, ...rest] = res.stdoutTail.trim().split('\n')
+    if (first !== 'committed') return undefined
+    const lines = rest
+      .filter((l) => l.includes('\t'))
+      .reduce((sum, l) => {
+        const [add, del] = l.split('\t')
+        return sum + (Number(add) || 0) + (Number(del) || 0)
+      }, 0)
+    return { lines }
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {

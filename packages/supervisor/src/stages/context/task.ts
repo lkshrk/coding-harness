@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome, issueSpec, validateIssue } from '@nightshift/core'
+import { WIP_PREFIX } from '../../policy/naming'
 import type {
   Attempt,
   BlockerOutput,
@@ -77,13 +78,27 @@ function findingsOf(run: Run, log: EventLog): string | undefined {
     .join('\n')
 }
 
-export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
+export function isWipCommit(checkout: string, sha: string): boolean {
+  const r = Bun.spawnSync(['git', '-C', checkout, 'log', '-1', '--format=%s', sha], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: 'ignore',
+  })
+  return r.exitCode === 0 && r.stdout.toString().startsWith(WIP_PREFIX)
+}
+
+export function attemptsOf(
+  db: Db,
+  issue: string,
+  current: string,
+  wip?: { run: string; headSha: string },
+): Attempt[] {
   const stores = { now: () => new Date(), ulid: createUlid() }
   const log = new EventLog(db, stores)
   const ci = new CiFailureStore(db)
   return new RunStore(db, stores)
     .forIssue(issue)
-    .filter((r) => r.id !== current && r.failure !== null)
+    .filter((r) => r.id !== current && (r.failure !== null || r.id === wip?.run))
     .map((r) => {
       const gateTail = gateTailOf(r, log)
       const findings = findingsOf(r, log)
@@ -91,11 +106,12 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
       return {
         attempt: r.attempt,
         agent: r.agent,
-        failureClass: r.failure as string,
+        failureClass: r.failure ?? r.state,
         summary: summaryOf(r, log),
         ...(gateTail ? { gateTail } : {}),
         ...(findings ? { findings } : {}),
         ...(ciFailures.length ? { ciFailures } : {}),
+        ...(wip?.run === r.id ? { wipCommit: wip.headSha } : {}),
       }
     })
 }
@@ -119,7 +135,7 @@ export function answersOf(db: Db, issue: string): { question: string; answer: st
 
 export async function contextInput(
   d: TaskContextDeps,
-  { run, issue, indexPath }: TaskStart,
+  { run, issue, indexPath, repairFrom }: TaskStart,
 ): Promise<ContextInput> {
   const parsed = parse(issue)
   if (!parsed.ok) {
@@ -132,16 +148,18 @@ export async function contextInput(
   if (!repo) throw new Error(`no repository '${run.repository}'`)
   const spec = issueSpec(issue.identifier, issue.title, parsed.issue)
   await d.syncVault?.()
+  const checkoutPath = expandHome(repo.path, d.home ?? homedir())
+  const wip = repairFrom && isWipCommit(checkoutPath, repairFrom.headSha) ? repairFrom : undefined
   return {
     issue: spec,
     repository: {
       name: run.repository,
-      checkoutPath: expandHome(repo.path, d.home ?? homedir()),
+      checkoutPath,
       base: run.baseSha || 'HEAD',
       ...(indexPath ? { indexPath } : {}),
     },
     blockers: await blockerOutputs(issue, d.linear),
-    attempts: attemptsOf(d.db, issue.identifier, run.id),
+    attempts: attemptsOf(d.db, issue.identifier, run.id, wip),
     vaultPages: selectVaultPages(
       expandHome(config.paths.vault, d.home ?? homedir()),
       run.repository,

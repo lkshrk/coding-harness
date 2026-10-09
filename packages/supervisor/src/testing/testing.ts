@@ -47,7 +47,7 @@ export class FakeExecutor implements RunExecutor {
     this.calls.push({ op: 'detach', run: '*' })
   }
 
-  async captureHead(run: Run): Promise<string | undefined> {
+  async captureHead(run: Run, _status?: string): Promise<string | undefined> {
     this.calls.push({ op: 'captureHead', run: run.id, detail: run.sandbox ?? '' })
     return this.heads.get(run.id)
   }

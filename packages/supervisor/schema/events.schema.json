@@ -151,6 +151,13 @@
       "then": { "required": ["run"], "properties": { "data": { "$ref": "#/$defs/data/sandbox" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "WIP_COMMITTED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/wipCommitted" } }
+      }
+    },
+    {
       "if": { "properties": { "type": { "const": "NOTIFICATION_SENT" } } },
       "then": { "properties": { "data": { "$ref": "#/$defs/data/notification" } } }
     },
@@ -203,6 +210,7 @@
         "WORKER_FINISHED",
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
+        "WIP_COMMITTED",
         "GATE_PASSED",
         "GATE_FAILED",
         "REVIEW_RECEIVED",
@@ -299,6 +307,16 @@
           "tokens": { "type": "integer", "minimum": 0 },
           "diff_lines": { "type": "integer", "minimum": 0 },
           "last_tool": { "type": "string" }
+        }
+      },
+      "wipCommitted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run", "sha", "lines"],
+        "properties": {
+          "run": { "$ref": "#/$defs/ulid" },
+          "sha": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+          "lines": { "type": "integer", "minimum": 0 }
         }
       },
       "workerStalled": {

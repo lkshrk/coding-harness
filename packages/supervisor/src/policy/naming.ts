@@ -2,6 +2,7 @@ import type { Run } from '../ports/records'
 import type { Ms } from '../ports/sandbox'
 
 export const BRANCH_PREFIX = 'ns/'
+export const WIP_PREFIX = 'wip:'
 
 const UNIT_MS: Record<string, number> = { s: 1_000, m: 60_000, h: 3_600_000 }
 const UNIT_TOKENS: Record<string, number> = { k: 1_000, M: 1_000_000 }

@@ -123,6 +123,66 @@ describe('contextInput', () => {
     expect(input.vaultPages).toEqual([])
   })
 
+  test('a retry continuing from a WIP commit tells the worker to finish, squash or drop it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ns-ctx-wip-'))
+    try {
+      const base = repoWithBase(dir)
+      git(dir, 'add', '-A')
+      git(
+        dir,
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'user.name=t',
+        'commit',
+        '-q',
+        '-m',
+        'wip: FOR-2 attempt 1 (step_cap)',
+      )
+      const wipSha = git(dir, 'rev-parse', 'HEAD')
+      const config = testConfig()
+      const omni = config.repositories.omni as NonNullable<typeof config.repositories.omni>
+      const cfg = { ...config, repositories: { ...config.repositories, omni: { ...omni, path: dir } } }
+      const db = openState(':memory:')
+      const runs = new RunStore(db, { now: () => new Date(0), ulid: createUlid() })
+      const spec = {
+        issue: 'FOR-2',
+        agent: 'fixer',
+        profile: 'cloud',
+        model: 'm',
+        repository: 'omni',
+        baseSha: base,
+        attempt: 1,
+      }
+      const prior = runs.create(spec)
+      runs.update(prior.id, { headSha: wipSha })
+      const current = runs.create({ ...spec, attempt: 2 })
+      const d = {
+        config: () => cfg,
+        db,
+        linear: new FakeLinear(cfg, () => new Date(0)),
+        builder: {} as never,
+      }
+      const start = { run: current, issue: snapshot({ identifier: 'FOR-2' }), files: [] }
+
+      const fresh = await contextInput(d, start)
+      expect(fresh.attempts).toEqual([])
+
+      const input = await contextInput(d, { ...start, repairFrom: { run: prior.id, headSha: wipSha } })
+      expect(input.attempts).toEqual([
+        { attempt: 1, agent: 'fixer', failureClass: 'queued', summary: '', wipCommit: wipSha },
+      ])
+      const message = await new FencedContextBuilder({
+        count: async (t) => t.length,
+        source: gitObjectSource,
+      }).build(input, { inputTokens: 100_000, model: 'm' })
+      expect(message.message).toContain(`Your branch starts with WIP commit ${wipSha.slice(0, 12)}`)
+      expect(message.message).toContain('`git reset --soft HEAD~1`')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('a description outside the template is rejected', async () => {
     const config = testConfig()
     const db = openState(':memory:')

@@ -116,6 +116,9 @@ export function historyItems(input: ContextInput): Item[] {
       text: joinParts([
         `## Attempt ${a.attempt} (${a.agent}): ${a.failureClass}`,
         a.summary.trim(),
+        a.wipCommit
+          ? `Your branch starts with WIP commit ${a.wipCommit.slice(0, 12)}: this attempt's uncommitted work, saved when it ended. Review it, then finish it, squash it into your commit or drop it (\`git reset --soft HEAD~1\` keeps the changes staged). Never leave a commit whose message starts with \`wip:\` at the branch tip; integration refuses it.`
+          : '',
         a.gateTail?.trim() ? `Gate output:\n${codeBlock(a.gateTail.trim(), 'text')}` : '',
         a.findings?.trim()
           ? `Review findings (fix these; keep everything that already passed):\n${a.findings.trim()}`
