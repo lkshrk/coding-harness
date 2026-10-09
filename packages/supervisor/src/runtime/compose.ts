@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
+  buildFinishMcp,
   buildFinishPlugin,
   type Config,
   countTokens,
@@ -27,6 +28,7 @@ import { type SignalInbox, signalApi, signalChannel } from '../adapters/signal'
 import {
   type DockerCli,
   DockerSandbox,
+  DshDriver,
   dockerCli,
   fileSessionStore,
   memoryMb,
@@ -170,10 +172,14 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
     if (!supervisor) throw new Error('gate step ran before the supervisor was composed')
     return supervisor
   }
-  const opencode = o.worker
-    ? undefined
-    : new OpenCodeDriver({ sandbox, sessions: fileSessionStore(join(state, 'sessions')) })
-  const worker = o.worker ?? (opencode as OpenCodeDriver)
+  const sessions = fileSessionStore(join(state, 'sessions'))
+  const opencode =
+    o.worker || config.sandbox.harness === 'dsh' ? undefined : new OpenCodeDriver({ sandbox, sessions })
+  const worker =
+    o.worker ??
+    (config.sandbox.harness === 'dsh'
+      ? new DshDriver({ sandbox, sessions, finishMcp: await buildFinishMcp() })
+      : (opencode as OpenCodeDriver))
   const executor = new WorkerExecutor({
     config: workerConfig(),
     sandbox,

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+home="${NIGHTSHIFT_WORKER_HOME:-$HOME/.nightshift/dsh}"
+mkdir -p "$home/dsh"
+
+export DSH_HOME="$home/dsh" DSH_PERMISSION_MODE=danger-full-access \
+  DSH_TELEMETRY_DISABLED=1 DSH_TELEMETRY_MODE=DISABLED
+
+ca_env="$(nightshift-ca-env)"
+eval "$ca_env"
+
+exec dsh "$@"

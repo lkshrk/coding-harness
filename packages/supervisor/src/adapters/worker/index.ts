@@ -7,6 +7,8 @@ export {
   dockerCli,
   memoryMb,
 } from './docker'
+export { DSH_EVENTS, DSH_FINISH_FILE, DSH_HOME, DshDriver, type DshDriverOptions, dshPatch } from './dsh'
+export { DshEventMapper } from './dsh-events'
 export {
   branchOf,
   CA_MOUNT,

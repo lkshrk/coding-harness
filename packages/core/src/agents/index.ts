@@ -15,6 +15,8 @@ export {
   outputValidator,
   validateFinish,
 } from './finish'
+export { buildFinishMcp } from './finish-mcp/build'
+export { FINISH_MCP_SERVER, FINISH_MCP_TOOL, finishServer } from './finish-mcp/server'
 export {
   type AgentFrontmatter,
   type OpenCodeAgentFields,

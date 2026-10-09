@@ -2,7 +2,7 @@
   "id": "agent-layer",
   "version": "0.1.0",
   "name": "nightshift agent layer",
-  "description": "OpenCode v2 worker harness, rtk, git, gh, ripgrep, ast-grep, codebase-memory, semgrep, gitleaks, osv-scanner, actionlint, shellcheck, bats, bash-language-server, the gateway CA entrypoint and the opencode-worker wrapper.",
+  "description": "OpenCode v2 and DeepSeek Harness worker harnesses, rtk, git, gh, ripgrep, ast-grep, codebase-memory, semgrep, gitleaks, osv-scanner, actionlint, shellcheck, bats, bash-language-server, the gateway CA entrypoint and the opencode-worker and dsh-worker wrappers.",
   "options": {},
   "entrypoint": "/usr/local/bin/nightshift-entrypoint",
   "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]

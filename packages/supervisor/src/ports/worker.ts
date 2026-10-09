@@ -29,7 +29,7 @@ export type HarnessEvent =
   | { kind: 'error'; message: string; fatal: boolean }
 
 export interface WorkerDriver {
-  readonly harness: 'opencode' | 'acp'
+  readonly harness: 'opencode' | 'acp' | 'dsh'
   start(w: WorkerStart): Promise<WorkerSession>
   events(s: WorkerSession): AsyncIterable<HarnessEvent>
   send(s: WorkerSession, message: string): Promise<void>
