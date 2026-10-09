@@ -38,6 +38,7 @@ import {
   copySources,
   GRAPH_CACHE,
   linkIndex,
+  pinnedRepo,
   prepareWorkspace,
   REPO_MOUNT,
   shellJoin,
@@ -47,6 +48,8 @@ export { failureReason, GRACE_MESSAGE, type WorkerCallbacks } from './run-watch'
 export { REPO_MOUNT, shellJoin } from './workspace'
 
 export const CA_MOUNT = '/etc/nightshift/ca.pem'
+export const KNOWLEDGE_SOURCE = '/mnt/knowledge-source.git'
+export const KNOWLEDGE_REPOS = '/tmp/knowledge-repos'
 
 export type WorkerExecutorDeps = {
   config: Config
@@ -109,7 +112,7 @@ export class WorkerExecutor implements RunExecutor {
     this.detached = true
   }
 
-  async start({ run, issue, files, sourceFiles, repairFrom }: ExecutorStart): Promise<void> {
+  async start({ run, issue, files, sourceFiles, repairFrom, knowledgeRepo }: ExecutorStart): Promise<void> {
     const def = this.d.agents.get(run.agent)
     if (!def) throw new Error(`no agent '${run.agent}'`)
     const repo = this.d.config.repositories[run.repository]
@@ -123,6 +126,7 @@ export class WorkerExecutor implements RunExecutor {
     this.storeContext(run, context, home)
     const gateway = this.d.config.gateway
     const workdir = workdirOf(run)
+    const known = knowledgeRepo ? this.d.config.repositories[knowledgeRepo] : undefined
     const worker = await this.d.image(run)
     const image = worker.image
     const sandbox = await this.d.sandbox.create({
@@ -139,8 +143,20 @@ export class WorkerExecutor implements RunExecutor {
           ? [{ hostPath: expandHome(gateway.ca_bundle, home), guestPath: CA_MOUNT, readOnly: true as const }]
           : []),
         ...(index ? [{ hostPath: index, guestPath: INDEX_MOUNT, readOnly: true as const }] : []),
+        ...(known
+          ? [
+              {
+                hostPath: join(expandHome(known.path, home), '.git'),
+                guestPath: KNOWLEDGE_SOURCE,
+                readOnly: true as const,
+              },
+            ]
+          : []),
       ],
-      env: index ? { CBM_CACHE_DIR: GRAPH_CACHE, NS_GRAPH_PROJECT: run.repository } : {},
+      env: {
+        ...(index ? { CBM_CACHE_DIR: GRAPH_CACHE, NS_GRAPH_PROJECT: run.repository } : {}),
+        ...(known ? { KNOWLEDGE_REPOS } : {}),
+      },
       egress: { allow: [new URL(gateway.base_url).host, ...worker.egress] },
       workdir: '/work',
       labels: { nightshift: '1', run: run.id, issue: run.issue },
@@ -152,6 +168,14 @@ export class WorkerExecutor implements RunExecutor {
       await copySources(this.d.sandbox, sandbox, workdir, sourceFiles)
       if (repairFrom) await continueFrom(this.d.sandbox, sandbox, workdir, run, repairFrom)
       if (index) await linkIndex(this.d.sandbox, sandbox, run)
+      if (known && knowledgeRepo)
+        await pinnedRepo(
+          this.d.sandbox,
+          sandbox,
+          KNOWLEDGE_SOURCE,
+          `${KNOWLEDGE_REPOS}/${knowledgeRepo}`,
+          known,
+        )
       const rendered = renderAgent(def, renderContext(this.d.config, run.profile))
       const plugin = renderFinishPlugin([def], OPENCODE_CONFIG_DIR, this.d.finishPlugin)
       const skills = def.skills.flatMap((s) =>

@@ -298,6 +298,15 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       driver: config.sandbox.driver,
       artifacts,
       out,
+      repos: (name) => {
+        const repo = current().repositories[name]
+        return repo
+          ? {
+              gitDir: join(expandHome(repo.path, home), '.git'),
+              ref: `refs/remotes/${repo.remote}/${repo.base}`,
+            }
+          : undefined
+      },
     }),
     ...(usesRbw ? { secretsLocked: () => secrets.locked() } : {}),
     ...agentResolver(agents),

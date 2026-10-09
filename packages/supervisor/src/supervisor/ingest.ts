@@ -134,6 +134,7 @@ export class Ingest {
         issue: view.snapshot,
         files: prepared.files,
         sourceFiles: prepared.sourceFiles,
+        ...(view.repository ? { knowledgeRepo: view.repository } : {}),
       })
     } catch (e) {
       await this.ingestRunFailed(run.id, `start: ${(e as Error).message}`)
