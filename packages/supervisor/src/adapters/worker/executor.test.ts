@@ -514,6 +514,7 @@ describe('WorkerExecutor watching', () => {
       tokens: 22,
       diff_lines: 6,
       last_tool: 'read',
+      tools: { read: 1 },
     })
     expect(sandbox.execs.at(-1)?.cmd.at(-1)).toBe('base1')
   })

@@ -20,6 +20,7 @@ const PATCH = `${DSH_HOME}/patch.yml`
 const MESSAGE = `${DSH_HOME}/message.md`
 const FINISH_MCP = `${DSH_HOME}/finish-mcp.mjs`
 const PID_FILE = `${DSH_HOME}/pid`
+const SKILLS = `${DSH_HOME}/skills`
 const KEY_ENV = 'NIGHTSHIFT_GATEWAY_KEY'
 const BATCH = 150
 
@@ -27,7 +28,7 @@ const quote = (v: string) => JSON.stringify(v)
 
 export function dshPatch(
   w: Pick<WorkerStart, 'model' | 'gateway' | 'workdir'>,
-  o: { prompt?: string; contextWindow?: number } = {},
+  o: { prompt?: string; skills?: boolean; contextWindow?: number } = {},
 ) {
   const { id } = modelRef(w.model)
   return [
@@ -61,6 +62,15 @@ export function dshPatch(
     '- id: otel',
     '  disabled: true',
     ...(o.prompt ? ['- id: system-prompt', '  config:', `    personaSuffix: ${quote(o.prompt)}`] : []),
+    ...(o.skills
+      ? [
+          '- id: skill-filesystem',
+          '  config:',
+          '    includeDefaultRoots: false',
+          `    customSkillDirs: [${quote(SKILLS)}]`,
+          '    watch: false',
+        ]
+      : []),
     '- insert:',
     `    - id: mcp-${FINISH_MCP_SERVER}`,
     '      name: "@deepseek-ai/dsh-mcp-client"',
@@ -107,8 +117,12 @@ export class DshDriver implements WorkerDriver {
   async start(w: WorkerStart): Promise<WorkerSession> {
     const sb = this.o.sandbox
     const prompt = agentPrompt(w)
+    const skills = w.agent.files
+      .filter((f) => f.path.startsWith('skills/'))
+      .map((f) => ({ path: `${DSH_HOME}/${f.path}`, content: f.content }))
     const files = [
-      { path: PATCH, content: dshPatch(w, prompt ? { prompt } : {}) },
+      { path: PATCH, content: dshPatch(w, { ...(prompt ? { prompt } : {}), skills: skills.length > 0 }) },
+      ...skills,
       { path: FINISH_MCP, content: this.o.finishMcp },
       { path: MESSAGE, content: w.taskMessage },
     ]
