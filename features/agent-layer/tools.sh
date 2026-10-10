@@ -76,7 +76,7 @@ UV_URL() { printf '%s' "https://github.com/astral-sh/uv/releases/download/$UV_VE
 PYTHON_VERSION="3.14.8"
 
 # renovate: datasource=pypi depName=semgrep
-SEMGREP_VERSION="1.179.0"
+SEMGREP_VERSION="1.180.0"
 
 # renovate: datasource=node-version depName=node
 NODE_VERSION="24.21.0"
