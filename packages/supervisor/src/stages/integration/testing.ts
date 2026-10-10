@@ -124,7 +124,8 @@ export class FakeGh {
     }
     if (cmd[1] === 'api' && cmd[3] === 'POST' && cmd[4]?.endsWith('/replies')) {
       const to = Number(cmd[4].split('/').at(-2))
-      const thread = this.threads.find((t) => t.comments.some((c) => c.databaseId === to))
+      // GitHub accepts replies only to a thread's top-level comment.
+      const thread = this.threads.find((t) => t.comments[0]?.databaseId === to)
       if (!thread) return { exitCode: 1, stdout: '', stderr: 'HTTP 404: Not Found' }
       const databaseId = 9000 + this.calls.length
       const { body } = JSON.parse(o.stdin ?? '{}') as { body: string }

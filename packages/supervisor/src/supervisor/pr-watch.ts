@@ -147,8 +147,9 @@ export class PullRequestWatch {
     const open: string[] = []
     for (const thread of round.pending.threads) {
       const outcome = outcomes.get(thread.id)
-      const last = thread.comments.at(-1)
-      if (!outcome || !last) {
+      // GitHub accepts replies only to a thread's top-level comment, not to an earlier reply.
+      const root = thread.comments[0]
+      if (!outcome || !root) {
         open.push(`${thread.path}: no outcome reported`)
         continue
       }
@@ -158,7 +159,7 @@ export class PullRequestWatch {
         continue
       }
       const body = fixed ? `Fixed in ${record.headSha}. ${outcome.reason}` : `Not changed: ${outcome.reason}`
-      const reply = await host.replyToThread(record, last.id, body)
+      const reply = await host.replyToThread(record, root.id, body)
       seen = Math.max(seen, reply.id)
       if (fixed) await host.resolveThread(record, thread.id)
       else open.push(`${thread.path}: ${outcome.reason}`)

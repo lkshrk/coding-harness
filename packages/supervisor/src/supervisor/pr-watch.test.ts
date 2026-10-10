@@ -294,6 +294,28 @@ describe('pull request watching', () => {
     }
   })
 
+  test('a thread with an existing discussion is replied to at its root comment', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      const discussed = fakeThread('T1', 11, 'Trim the name before saving.')
+      discussed.comments.push({ databaseId: 12, author: { login: 'lkshrk' }, body: 'Agreed, please trim.' })
+      h.gh.threads = [discussed]
+      await h.first.tick()
+      await h.first.tick()
+      const head = await repaired(h, {
+        threads: [{ id: 'T1', outcome: 'addressed', reason: 'Names are trimmed in save().' }],
+      })
+      const replies = h.gh.calls.filter((c) => c.cmd[4]?.endsWith('/replies')).map((c) => c.cmd[4])
+      expect(replies).toEqual(['repos/lkshrk/omni/pulls/1/comments/11/replies'])
+      const [thread] = h.gh.threads
+      expect(thread?.isResolved).toBe(true)
+      expect(thread?.comments.at(-1)?.body).toBe(`Fixed in ${head}. Names are trimmed in save().`)
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('a disputed thread gets a reply with the reason, stays open and holds the issue', async () => {
     const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
     try {
