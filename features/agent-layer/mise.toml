@@ -1,0 +1,39 @@
+[tools]
+"aqua:rtk-ai/rtk" = "0.51.0"
+"aqua:cli/cli" = "2.102.0"
+"aqua:BurntSushi/ripgrep" = "15.2.0"
+"aqua:ast-grep/ast-grep" = "0.45.3"
+"aqua:gitleaks/gitleaks" = "8.30.1"
+"aqua:google/osv-scanner" = "2.6.0"
+"aqua:rhysd/actionlint" = "1.7.12"
+"aqua:bats-core/bats-core" = "1.14.0"
+python = "3.14.8"
+node = "24.21.0"
+
+# opencode v2 ships from opencode.ai, not GitHub releases; its Homebrew tap publishes the checksums.
+[tools."http:opencode"]
+# renovate: datasource=custom.opencode-v2 depName=opencode
+version = "2.0.26"
+checksum_url = "https://raw.githubusercontent.com/anomalyco/homebrew-tap/HEAD/opencode-v2.rb"
+checksum_expr = '"sha256:" + split(split(body, "url \"" + url + "\"")[1], "\"")[1]'
+platforms.linux-x64 = { url = "https://opencode.ai/files/bin/{{ version }}/opencode-linux-x64-baseline.tar.gz" }
+platforms.linux-arm64 = { url = "https://opencode.ai/files/bin/{{ version }}/opencode-linux-arm64.tar.gz" }
+
+[tools."github:DeusData/codebase-memory-mcp"]
+version = "0.11.0"
+platforms.linux-x64 = { asset_pattern = "codebase-memory-mcp-linux-amd64.tar.gz" }
+platforms.linux-arm64 = { asset_pattern = "codebase-memory-mcp-linux-arm64.tar.gz" }
+
+# aqua locks the .tar.xz build; the .tar.gz keeps the checksums of the former hand pins.
+[tools."github:koalaman/shellcheck"]
+version = "0.11.0"
+platforms.linux-x64 = { asset_pattern = "shellcheck-v*.linux.x86_64.tar.gz" }
+platforms.linux-arm64 = { asset_pattern = "shellcheck-v*.linux.aarch64.tar.gz" }
+
+[tools."github:astral-sh/uv"]
+version = "0.13.0"
+platforms.linux-x64 = { asset_pattern = "uv-x86_64-unknown-linux-gnu.tar.gz" }
+platforms.linux-arm64 = { asset_pattern = "uv-aarch64-unknown-linux-gnu.tar.gz" }
+
+[settings]
+lockfile = true
