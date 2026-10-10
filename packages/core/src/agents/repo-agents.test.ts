@@ -28,7 +28,8 @@ const ctx: RenderContext = {
 }
 
 // The lead's planning skills are not written yet.
-const PENDING_SKILLS = ['discover', 'design', 'decompose', 'status', 'replan', 'intake']
+const PENDING_SKILLS = ['decompose', 'status', 'replan', 'intake']
+const LEAD_SKILLS = ['discover', 'design']
 const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,
@@ -153,18 +154,42 @@ describe('lead', () => {
   })
 })
 
-describe('CLI skills', () => {
-  test.each(CLI_SKILLS)('%s has a when/when-not description and stays under 140 lines', (name) => {
-    const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8')
-    const split = splitFrontmatter(text)
-    expect(split).toBeDefined()
-    const fm = parse(split?.frontmatter ?? '')
-    expect(fm.name).toBe(name)
-    expect(fm.description).toMatch(/Use when/)
-    expect(fm.description).toMatch(/Not for|Do not use/)
-    expect(text.split('\n').length).toBeLessThan(140)
-    expect(text).not.toMatch(/lin_api_|ghp_|gho_|https?:\/\/(?!github\.com|linear\.app)[a-z0-9.-]+:\d+/i)
+describe('design publish script', () => {
+  const script = join(ROOT, 'skills/design/scripts/publish.sh')
+
+  test('the lead may run it only with approval, and nothing else writes the repository', () => {
+    const bash = rendered(agents.get('lead') as AgentDef).frontmatter.permission.bash
+    expect(bash['*/skills/design/scripts/publish.sh *']).toBe('ask')
+    const writes = Object.entries(bash).filter(
+      ([p, action]) => /^git (commit|push|checkout|switch|worktree|add|reset)/.test(p) && action !== 'deny',
+    )
+    expect(writes).toEqual([])
   })
+
+  test('refuses an argument that is not an issue ID', () => {
+    const res = Bun.spawnSync(['bash', script, ROOT, '../escape', join(ROOT, 'package.json')], {
+      stderr: 'pipe',
+    })
+    expect(res.exitCode).toBe(2)
+    expect(res.stderr.toString()).toContain('is not an issue ID')
+  })
+})
+
+describe('CLI skills', () => {
+  test.each([...CLI_SKILLS, ...LEAD_SKILLS])(
+    '%s has a when/when-not description and stays under 140 lines',
+    (name) => {
+      const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8')
+      const split = splitFrontmatter(text)
+      expect(split).toBeDefined()
+      const fm = parse(split?.frontmatter ?? '')
+      expect(fm.name).toBe(name)
+      expect(fm.description).toMatch(/Use when/)
+      expect(fm.description).toMatch(/Not for|Do not use/)
+      expect(text.split('\n').length).toBeLessThan(140)
+      expect(text).not.toMatch(/lin_api_|ghp_|gho_|https?:\/\/(?!github\.com|linear\.app)[a-z0-9.-]+:\d+/i)
+    },
+  )
 
   test('linear pins the CLI version', () => {
     const fm = parse(
