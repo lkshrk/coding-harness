@@ -328,6 +328,8 @@ export class Supervisor {
     this.m.lifecycle.sandboxCreated(runId, info)
   workerProgress = (runId: string, progress: Progress): Promise<void> =>
     this.m.lifecycle.workerProgress(runId, progress)
+  wipCommitted = (runId: string, info: { sha: string; lines: number }): Promise<void> =>
+    this.m.lifecycle.wipCommitted(runId, info)
   workerStarted = (runId: string, info: WorkerStartedInfo): Promise<void> =>
     this.m.lifecycle.workerStarted(runId, info)
   workerStalled = (runId: string, signal: string, detail?: string): Promise<void> =>

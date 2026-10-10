@@ -14,6 +14,7 @@ export interface WorkerCallbacks {
   workerFinished(runId: string, payload: unknown): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
   workerProgress?(runId: string, progress: Progress): Promise<void>
+  wipCommitted?(runId: string, info: { sha: string; lines: number }): Promise<void>
 }
 
 export type RunLimits = ConstructorParameters<typeof Watcher>[0] & { graceTurns: number }

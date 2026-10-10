@@ -50,6 +50,8 @@ export { REPO_MOUNT, shellJoin } from './workspace'
 export const CA_MOUNT = '/etc/nightshift/ca.pem'
 export const KNOWLEDGE_SOURCE = '/mnt/knowledge-source.git'
 export const KNOWLEDGE_REPOS = '/tmp/knowledge-repos'
+const WIP_MARKER = 'nightshift-wip'
+const WIP_LINE = new RegExp(`^${WIP_MARKER} (\\d+)$`, 'gm')
 
 export type WorkerExecutorDeps = {
   config: Config
@@ -81,6 +83,7 @@ const DETACHED: WorkerCallbacks = {
   workerFinished: dropped('finish'),
   workerFailed: dropped('failure'),
   workerProgress: dropped('progress'),
+  wipCommitted: dropped('wip commit'),
 }
 
 export class WorkerExecutor implements RunExecutor {
@@ -248,18 +251,39 @@ export class WorkerExecutor implements RunExecutor {
     if (session !== null) await this.d.worker.stop({ id: session, attach: [] }, reason)
   }
 
-  async captureHead(run: Run): Promise<string | undefined> {
+  async captureHead(run: Run, status = 'ended'): Promise<string | undefined> {
     if (run.sandbox === null) return undefined
     const repo = this.d.config.repositories[run.repository]
     if (!repo) return undefined
     const handle: SandboxHandle = { driver: this.d.config.sandbox.driver, id: run.sandbox, name: run.id }
+    const wip = await this.commitWip(handle, run, status)
     const exported = await this.d.sandbox.exportCommits(handle, workdirOf(run), branchOf(run))
     if (run.baseSha && exported.headSha === run.baseSha) return undefined
     const checkout = expandHome(repo.path, this.d.home ?? homedir())
     const head = importBundle(checkout, exported.bundle, branchOf(run), run.id)
     if (head !== exported.headSha)
       throw new Error(`imported ${head} but the worker reported ${exported.headSha}`)
+    if (wip !== undefined) await this.cb().wipCommitted?.(run.id, { sha: head, lines: wip })
     return head
+  }
+
+  private async commitWip(handle: SandboxHandle, run: Run, status: string): Promise<number | undefined> {
+    const script = [
+      'test -n "$(git status --porcelain)" || exit 0',
+      'git add -A',
+      'git commit --quiet --no-verify -m "$1"',
+      `git diff --numstat --no-renames HEAD~1 HEAD | awk '{ n += $1 + $2 } END { printf "${WIP_MARKER} %d\\n", n }'`,
+    ].join(' && ')
+    const message = `wip: ${run.issue} attempt ${run.attempt} (${status})`
+    const res = await this.d.sandbox
+      .exec(handle, ['sh', '-c', script, 'sh', message], { cwd: workdirOf(run), timeoutMs: 60_000 })
+      .catch((e: Error) => ({ exitCode: -1, stdoutTail: '', stderrTail: e.message }))
+    if (res.exitCode !== 0) {
+      console.error(`${run.issue}: WIP commit of run ${run.id} failed: ${res.stderrTail.trim()}`)
+      return undefined
+    }
+    const marker = [...res.stdoutTail.matchAll(WIP_LINE)].at(-1)
+    return marker ? Number(marker[1]) : undefined
   }
 
   private storeContext(run: Run, context: BuiltContext, home: string): void {

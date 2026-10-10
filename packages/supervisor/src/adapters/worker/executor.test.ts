@@ -71,6 +71,9 @@ class Callbacks implements WorkerCallbacks {
   async workerProgress(runId: string, progress: unknown) {
     this.calls.push(['progress', runId, progress])
   }
+  async wipCommitted(runId: string, info: unknown) {
+    this.calls.push(['wip', runId, info])
+  }
 
   of(kind: string) {
     return this.calls.filter((c) => c[0] === kind)
@@ -572,6 +575,50 @@ describe('WorkerExecutor.captureHead', () => {
 
   test('a run without a sandbox yields no head', async () => {
     expect(await executor().captureHead(run)).toBeUndefined()
+  })
+
+  test('a dirty worktree is committed as wip before export and reported', async () => {
+    const fx = withCommit()
+    const order: string[] = []
+    sandbox.onExec = (cmd) => {
+      if (!cmd.join(' ').includes('status --porcelain')) return undefined
+      order.push('wip')
+      return { stdoutTail: 'nightshift-wip 6\n' }
+    }
+    sandbox.exportCommits = async () => {
+      order.push('export')
+      return fx.bundle(run.id)
+    }
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'BLOCKED',
+    )
+    expect(order).toEqual(['wip', 'export'])
+    const wip = sandbox.execs.find((e) => e.cmd.join(' ').includes('status --porcelain'))
+    expect(wip?.cmd).toContain('wip: FOR-1 attempt 1 (BLOCKED)')
+    expect(wip?.opts.cwd).toBe('/work/omni')
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 6 }]])
+  })
+
+  test('hook output around a successful wip commit still reports it', async () => {
+    const fx = withCommit()
+    sandbox.onExec = (cmd) =>
+      cmd.join(' ').includes('status --porcelain')
+        ? { stdoutTail: 'husky - running post-commit\nlint ok\nnightshift-wip 6\n' }
+        : undefined
+    sandbox.exportCommits = async () => fx.bundle(run.id)
+    const head = await executor().captureHead(
+      { ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` },
+      'step_cap',
+    )
+    expect(cb.of('wip')).toEqual([['wip', run.id, { sha: head, lines: 6 }]])
+  })
+
+  test('a clean worktree produces no wip commit and no report', async () => {
+    const fx = withCommit()
+    sandbox.onExec = (cmd) => (cmd.join(' ').includes('status --porcelain') ? { stdoutTail: '' } : undefined)
+    await executor().captureHead({ ...run, baseSha: fx.base, sandbox: `ctr-${run.id}` }, 'step_cap')
+    expect(cb.of('wip')).toEqual([])
   })
 })
 

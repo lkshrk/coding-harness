@@ -37,6 +37,12 @@ export class RunLifecycle {
     this.rt.log.append({ type: 'WORKER_PROGRESS', run: runId, data: progress })
   }
 
+  async wipCommitted(runId: string, info: { sha: string; lines: number }): Promise<void> {
+    if (this.late(runId, 'wip commit')) return
+    const run = this.rt.requireRun(runId)
+    this.rt.log.append({ type: 'WIP_COMMITTED', issue: run.issue, run: run.id, data: info })
+  }
+
   async workerStarted(runId: string, info: WorkerStartedInfo): Promise<void> {
     if (this.late(runId, 'start')) return
     const run = this.rt.runs.update(runId, { sandbox: info.sandbox, session: info.session })
@@ -109,7 +115,7 @@ export class RunLifecycle {
       this.flow.schedule(gating)
       return
     }
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, String(finish.status))
     await this.end(runId, 'failed', event)
     this.flow.releaseLease(run.issue)
     if (finish.status === 'NEEDS_CONTEXT') {
@@ -134,7 +140,7 @@ export class RunLifecycle {
       run: run.id,
       data: { reason, ...(detail ? { detail } : {}) },
     })
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, reason)
     await this.end(runId, 'failed', event)
     this.stalls.delete(runId)
     this.flow.releaseLease(run.issue)
@@ -151,7 +157,7 @@ export class RunLifecycle {
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.rt.deps.executor.stop(run, reason)
-    await this.preserveHead(runId)
+    await this.preserveHead(runId, 'stopped')
     const event = this.rt.log.append({
       type: 'WORKER_FAILED',
       issue: run.issue,
@@ -187,11 +193,11 @@ export class RunLifecycle {
     return { driver: this.rt.config().sandbox.driver, id: run.sandbox ?? '', name: run.id }
   }
 
-  async preserveHead(runId: string): Promise<void> {
+  async preserveHead(runId: string, status?: string): Promise<void> {
     const run = this.rt.requireRun(runId)
     if (run.headSha !== null || run.sandbox === null || run.agent === INGEST_AGENT) return
     try {
-      const head = await this.rt.deps.executor.captureHead?.(run)
+      const head = await this.rt.deps.executor.captureHead?.(run, status)
       if (head) this.rt.runs.update(runId, { headSha: head })
     } catch (e) {
       console.error(`${run.issue}: keeping the commits of run ${run.id} failed: ${(e as Error).message}`)

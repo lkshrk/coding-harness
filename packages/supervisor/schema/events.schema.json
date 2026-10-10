@@ -76,6 +76,10 @@
       "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "finish.schema.json" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "WIP_COMMITTED" } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/wip" } } }
+    },
+    {
       "if": { "properties": { "type": { "enum": ["WORKER_NO_FINISH", "WORKER_FAILED"] } } },
       "then": {
         "required": ["issue", "run"],
@@ -203,6 +207,7 @@
         "WORKER_FINISHED",
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
+        "WIP_COMMITTED",
         "GATE_PASSED",
         "GATE_FAILED",
         "REVIEW_RECEIVED",
@@ -332,6 +337,15 @@
           },
           "detail": { "type": "string" },
           "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "wip": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha", "lines"],
+        "properties": {
+          "sha": { "type": "string", "description": "commit holding the worker's uncommitted changes" },
+          "lines": { "type": "integer", "minimum": 0, "description": "added plus deleted lines" }
         }
       },
       "gate": {
