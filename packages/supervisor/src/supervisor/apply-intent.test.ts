@@ -22,6 +22,34 @@ function sources(dir: string): string[] {
   })
 }
 
+const transpiler = new Bun.Transpiler({ loader: 'ts' })
+
+// Any reference to `linear.update`, however it is spaced, optional-chained or bracketed.
+const UPDATE_REF =
+  /\blinear\s*(?:\?\.\s*|\.\s*)(?:update\b|\[\s*["'`]update["'`]\s*\])|\blinear\s*\[\s*["'`]update["'`]\s*\]/g
+
+// Counts references to linear.update inside and outside the body of applyIntent. The source is
+// transpiled first, so comments, types and formatting cannot hide or fake a call.
+function linearWriters(source: string): { inside: number; outside: number } {
+  const code = transpiler.transformSync(source)
+  const head = /^([ \t]*)async applyIntent\(.*\{$/m.exec(code)
+  let start = -1
+  let end = -1
+  if (head) {
+    start = head.index
+    const close = new RegExp(`^${head[1]}\\}$`, 'm').exec(code.slice(start + head[0].length))
+    end = close ? start + head[0].length + close.index : code.length
+  }
+  let inside = 0
+  let outside = 0
+  for (const ref of code.matchAll(UPDATE_REF)) {
+    const at = ref.index ?? 0
+    if (start >= 0 && at > start && at < end) inside += 1
+    else outside += 1
+  }
+  return { inside, outside }
+}
+
 describe('applyIntent is the only Linear writer', () => {
   test('no module calls linear.update, writeStatus or relabel outside applyIntent', () => {
     const offenders: string[] = []
@@ -30,18 +58,42 @@ describe('applyIntent is the only Linear writer', () => {
       const name = relative(root, file)
       const source = readFileSync(file, 'utf8')
       if (/\b(writeStatus|relabel)\b/.test(source)) offenders.push(`${name}: writeStatus/relabel`)
-      const calls = [...source.matchAll(/\blinear\??\.update\(/g)]
-      if (!calls.length) continue
-      const start = source.indexOf('async applyIntent(')
-      const end = start < 0 ? -1 : source.indexOf('\n  }\n', start)
-      for (const call of calls) {
-        const at = call.index ?? 0
-        if (start >= 0 && at > start && at < end) inside += 1
-        else offenders.push(`${name}: linear.update outside applyIntent`)
-      }
+      const found = linearWriters(source)
+      inside += found.inside
+      if (found.outside) offenders.push(`${name}: linear.update outside applyIntent (${found.outside})`)
     }
     expect(offenders, offenders.join('\n')).toEqual([])
     expect(inside).toBe(1)
+  })
+
+  test('the boundary detects every call form of linear.update', () => {
+    const forms = [
+      'linear.update(id, change)',
+      'linear.update (id, change)',
+      'linear.update\t(id, change)',
+      'linear\n  .update(id, change)',
+      'linear.update\n  (id, change)',
+      'linear . update (id, change)',
+      'linear?.update(id, change)',
+      'linear?.update?.(id, change)',
+      'linear.update /* x */ (id, change)',
+      "linear['update'](id, change)",
+      'linear["update"] (id, change)',
+      'linear?.["update"](id, change)',
+      'linear.update<IssueUpdate>(id, change)',
+      'linear.update.call(linear, id, change)',
+    ]
+    for (const form of forms) {
+      const outsideOnly = `class A {\n  async other(): Promise<void> {\n    await this.rt.deps.${form}\n  }\n}\n`
+      expect(linearWriters(outsideOnly), form).toEqual({ inside: 0, outside: 1 })
+      const insideOnly = `class A {\n  async applyIntent(id: string): Promise<void> {\n    if (id) {\n      await this.rt.deps.${form}\n    }\n  }\n\n  other() {}\n}\n`
+      expect(linearWriters(insideOnly), form).toEqual({ inside: 1, outside: 0 })
+    }
+  })
+
+  test('comments mentioning linear.update are not calls', () => {
+    const source = `// linear.update(id)\nconst s = 1\n/* linear.update (x) */\n`
+    expect(linearWriters(source)).toEqual({ inside: 0, outside: 0 })
   })
 })
 
