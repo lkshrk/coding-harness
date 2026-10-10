@@ -47,7 +47,7 @@
     },
     {
       description: 'Stack tool pins: safe to merge once CI is green; the agent layer stays manual',
-      matchManagers: ['custom.regex'],
+      matchManagers: ['custom.regex', 'mise'],
       matchFileNames: ['features/stack-*/**'],
       matchUpdateTypes: ['minor', 'patch'],
       automerge: true,
