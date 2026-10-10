@@ -7,13 +7,14 @@ import type { ExecutorStart } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
 import type { PullRequestRecord } from '../ports/git-host'
+import { BaseConflictError } from '../ports/worker'
 import { TaskTooLargeError } from '../stages/context'
 import type { LeaseStore } from '../state/leases'
 import { isTerminal, type Run } from '../state/runs'
 import { isIssueRef } from '../state/targets'
 import type { RunFlow, SupervisorRuntime } from './runtime'
 
-type PrHead = { ref: string; headSha: string; baseSha: string }
+type PrHead = { ref: string; headSha: string }
 
 type DispatchOverride = {
   agent?: string
@@ -47,10 +48,7 @@ export class Dispatcher {
     if (agent === undefined) return undefined
     const profile = o.profile ?? this.profileFor(view)
     const model = this.rt.deps.modelFor(agent, profile, this.rt.config())
-    const from = o.continueFrom ?? (last?.failure === 'implementation_defect' ? last : undefined)
-    const baseSha =
-      o.continueRef?.baseSha ||
-      (from?.headSha && from.baseSha ? from.baseSha : await this.rt.deps.repos.baseSha(repository))
+    const baseSha = await this.rt.deps.repos.baseSha(repository)
     const run = this.rt.runs.create({ issue: id, agent, profile, model, repository, baseSha, attempt })
     const dispatched = this.rt.log.append({
       type: 'DISPATCHED',
@@ -106,7 +104,7 @@ export class Dispatcher {
         this.flow.gatewayReachable(true, `run ${run.id} started`)
     } catch (e) {
       const reason =
-        e instanceof TaskTooLargeError
+        e instanceof TaskTooLargeError || e instanceof BaseConflictError
           ? e.reason
           : e instanceof GatewayError
             ? 'gateway_error'
@@ -227,7 +225,7 @@ export class Dispatcher {
         `${identifier}: fetched ${ref} at ${fetched}, but the open PR head is ${headSha}`,
       )
     }
-    return { ref, headSha, baseSha: this.rt.runs.get(pr.run)?.baseSha ?? '' }
+    return { ref, headSha }
   }
 
   runRole(view: IssueView, stage: string, agent: string | undefined): void {

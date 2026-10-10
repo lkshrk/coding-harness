@@ -2,6 +2,7 @@ import type { OpenCodePluginEntry, WorkerImage } from '@nightshift/core'
 import { branchOf, runRef } from '../../policy/naming'
 import type { ExecutorStart, SandboxDriver, SandboxHandle } from '../../ports'
 import type { Run } from '../../ports/records'
+import { BaseConflictError } from '../../ports/worker'
 import { INDEX_MOUNT, indexDb } from '../codegraph'
 import { OPENCODE_CONFIG_DIR, WORKER_HOME } from './opencode'
 
@@ -108,6 +109,42 @@ export async function continueFrom(
   if (res.exitCode !== 0 || head !== from.headSha) {
     throw new Error(`continuing from ${from.headSha.slice(0, 12)} failed: ${res.stderrTail.trim() || head}`)
   }
+  if (run.baseSha) await mergeBase(sb, sandbox, workdir, run.baseSha, from.headSha)
+}
+
+const CONFLICT_EXIT = 3
+
+// Merge, never rebase: the continued commits keep their hashes, so an open PR branch still fast-forwards.
+async function mergeBase(
+  sb: Exec,
+  sandbox: SandboxHandle,
+  workdir: string,
+  baseSha: string,
+  headSha: string,
+): Promise<void> {
+  const script = [
+    'git merge-base --is-ancestor "$1" HEAD && exit 0',
+    'git merge --quiet --no-ff --no-edit --no-verify -m "$2" "$1" >/dev/null 2>&1 && exit 0',
+    'files=$(git diff --name-only --diff-filter=U)',
+    'test -n "$files" || { git merge --abort 2>/dev/null; echo "git merge $1 failed" >&2; exit 1; }',
+    'printf "%s\\n" "$files"',
+    'git merge --abort',
+    `exit ${CONFLICT_EXIT}`,
+  ].join('\n')
+  const res = await sb.exec(
+    sandbox,
+    ['sh', '-c', script, 'sh', baseSha, `Merge base ${baseSha.slice(0, 12)} into continued attempt`],
+    { cwd: workdir },
+  )
+  if (res.exitCode === 0) return
+  if (res.exitCode === CONFLICT_EXIT) {
+    const files = res.stdoutTail
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+    throw new BaseConflictError(baseSha, headSha, files)
+  }
+  throw new Error(`merging base ${baseSha.slice(0, 12)} failed: ${res.stderrTail.trim()}`)
 }
 
 export async function linkIndex(sb: Exec, sandbox: SandboxHandle, run: Run): Promise<void> {

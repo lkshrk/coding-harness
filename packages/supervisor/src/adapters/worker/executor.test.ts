@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentDef, Config } from '@nightshift/core'
 import type { BuiltContext, HarnessEvent, WorkerDriver, WorkerSession, WorkerStart } from '../../ports'
+import { BaseConflictError } from '../../ports/worker'
 import { git, gitFixture } from '../../stages/gates/testing'
 import type { Run } from '../../state/runs'
 import { snapshot, testConfig } from '../../testing/testing'
@@ -373,6 +374,83 @@ describe('WorkerExecutor.start', () => {
     ).rejects.toThrow('continuing from head1 failed')
     expect(worker.starts).toEqual([])
     expect(sandbox.destroyed).toHaveLength(1)
+  })
+
+  describe('a continuation after the base moved', () => {
+    // Runs the merge step for real on a local clone holding the continued head.
+    function continued(
+      files: { base: Record<string, string>; head: Record<string, string> },
+      merged = false,
+    ) {
+      const root = join(state, 'merge')
+      const repo = join(root, 'repo')
+      mkdirSync(repo, { recursive: true })
+      git(repo, 'init', '-q', '-b', 'main')
+      writeFileSync(join(repo, 'shared.txt'), 'one\n')
+      git(repo, 'add', '-A')
+      git(repo, 'commit', '-q', '-m', 'old base')
+      git(repo, 'checkout', '-q', '-b', 'attempt')
+      for (const [p, c] of Object.entries(files.head)) writeFileSync(join(repo, p), c)
+      git(repo, 'add', '-A')
+      git(repo, 'commit', '-q', '-m', 'attempt work')
+      git(repo, 'checkout', '-q', 'main')
+      for (const [p, c] of Object.entries(files.base)) writeFileSync(join(repo, p), c)
+      git(repo, 'add', '-A')
+      git(repo, 'commit', '-q', '--allow-empty', '-m', 'new base')
+      const base = git(repo, 'rev-parse', 'HEAD')
+      git(repo, 'checkout', '-q', 'attempt')
+      if (merged) git(repo, 'merge', '-q', '--no-edit', 'main')
+      const head = git(repo, 'rev-parse', 'HEAD')
+      git(repo, 'config', 'user.name', 'nightshift')
+      git(repo, 'config', 'user.email', 'nightshift@localhost')
+      sandbox.onExec = (cmd) => {
+        if (cmd[2]?.includes('refs/nightshift/previous')) return { stdoutTail: `${head}\n` }
+        if (!cmd[2]?.includes('git merge')) return undefined
+        const r = Bun.spawnSync(cmd, { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+        return { exitCode: r.exitCode, stdoutTail: r.stdout.toString(), stderrTail: r.stderr.toString() }
+      }
+      return { repo, head, base }
+    }
+
+    const start = (base: string, head: string) =>
+      executor().start({
+        run: { ...run, attempt: 2, baseSha: base },
+        issue: snapshot({ identifier: 'FOR-1' }),
+        files: [],
+        repairFrom: { run: '01JPREV', headSha: head },
+      })
+
+    test('merges the moved base into the continued head, keeping its commits, before the worker starts', async () => {
+      const fx = continued({ base: { 'base.txt': 'new\n' }, head: { 'work.txt': 'work\n' } })
+      await start(fx.base, fx.head)
+      expect(git(fx.repo, 'rev-parse', 'HEAD^1')).toBe(fx.head)
+      expect(git(fx.repo, 'rev-parse', 'HEAD^2')).toBe(fx.base)
+      expect(git(fx.repo, 'log', '-1', '--format=%an <%ae>')).toBe('nightshift <nightshift@localhost>')
+      expect(git(fx.repo, 'ls-tree', '--name-only', 'HEAD').split('\n').sort()).toEqual([
+        'base.txt',
+        'shared.txt',
+        'work.txt',
+      ])
+      expect(worker.starts).toHaveLength(1)
+    })
+
+    test('a conflict ends the start as base_conflict naming the files; no worker starts', async () => {
+      const fx = continued({ base: { 'shared.txt': 'base\n' }, head: { 'shared.txt': 'attempt\n' } })
+      const failed = start(fx.base, fx.head)
+      await expect(failed).rejects.toBeInstanceOf(BaseConflictError)
+      await expect(failed).rejects.toMatchObject({ reason: 'base_conflict', files: ['shared.txt'] })
+      await expect(failed).rejects.toThrow('conflicts in: shared.txt')
+      expect(worker.starts).toEqual([])
+      expect(sandbox.destroyed).toHaveLength(1)
+      expect(git(fx.repo, 'rev-parse', 'HEAD')).toBe(fx.head)
+    })
+
+    test('a head that already contains the base is used as is', async () => {
+      const fx = continued({ base: { 'base.txt': 'new\n' }, head: { 'work.txt': 'work\n' } }, true)
+      await start(fx.base, fx.head)
+      expect(git(fx.repo, 'rev-parse', 'HEAD')).toBe(fx.head)
+      expect(worker.starts).toHaveLength(1)
+    })
   })
 
   test('mounts the code-graph index read-only and links it into a writable cbm cache', async () => {

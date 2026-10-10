@@ -90,7 +90,7 @@ describe('failures and retries', () => {
     expect(h.sup.escalationCount('FOR-1')).toBe(1)
   })
 
-  test('a failed review is an implementation defect: the repairer continues from the failed commit on its base', async () => {
+  test('a failed review is an implementation defect: the repairer continues from the failed commit on the current base', async () => {
     let bases = 0
     let classifications = 0
     const h = harness({
@@ -142,7 +142,7 @@ describe('failures and retries', () => {
     h.advance(5_000)
     await h.sup.tick()
     const next = h.sup.runs.forIssue('FOR-1').at(-1)
-    expect(next).toMatchObject({ attempt: 2, agent: 'repairer', baseSha: 'base1' })
+    expect(next).toMatchObject({ attempt: 2, agent: 'repairer', baseSha: 'base2' })
     expect(classifications).toBe(0)
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: run.id, headSha: 'head1' })
   })
