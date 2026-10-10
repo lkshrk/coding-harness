@@ -449,7 +449,7 @@ describe('lspConfig', () => {
     const { stacks } = loadStacks(join(NIGHTSHIFT_ROOT, 'features'))
     const lsp = lspConfig([stacks.get('node'), stacks.get('bun')] as Stack[])
     expect(Object.keys(lsp).sort()).toEqual(['biome', 'eslint', 'typescript'])
-    expect(lsp.typescript?.command).toEqual(['typescript-language-server', '--stdio'])
+    expect(lsp.typescript?.command).toEqual(['tsc', '--lsp', '--stdio'])
     const extensions = lsp.typescript?.extensions ?? []
     expect(new Set(extensions).size).toBe(extensions.length)
   })

@@ -70,7 +70,7 @@ install_npm_tools() {
   npm_config_cache="$tmp/npm-cache" "$npm" ci --prefix "$prefix/npm" --omit=dev --ignore-scripts \
     --no-audit --no-fund --loglevel=error
   modules="$prefix/npm/node_modules/.bin"
-  for tool in typescript-language-server vscode-eslint-language-server eslint prettier; do
+  for tool in tsc vscode-eslint-language-server eslint prettier; do
     wrapper "$tool" "$(readlink -f "$modules/$tool")" "$node"
   done
 }

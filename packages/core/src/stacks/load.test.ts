@@ -119,7 +119,7 @@ describe('loadStacks', () => {
     expect(errors).toEqual([])
     const bun = stacks.get('bun')
     expect(bun?.markers).toEqual([{ file: 'bun.lock' }, { file: 'bun.lockb' }])
-    expect(bun?.lsp.typescript?.command).toEqual(['typescript-language-server', '--stdio'])
+    expect(bun?.lsp.typescript?.command).toEqual(['tsc', '--lsp', '--stdio'])
     expect(bun?.lsp.biome?.command).toEqual(['biome', 'lsp-proxy'])
     expect(bun?.checks.map((c) => c.run)).toEqual(['bun run lint', 'bun test'])
     expect(bun?.egress).toEqual(['registry.npmjs.org'])

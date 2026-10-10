@@ -2,7 +2,6 @@
   "name": "nightshift-stack-bun-tools",
   "private": true,
   "dependencies": {
-    "typescript": "7.0.2",
-    "typescript-language-server": "6.0.2"
+    "typescript": "7.0.2"
   }
 }

@@ -54,9 +54,9 @@ EOF
 }
 
 bun --version
-typescript-language-server --version
+tsc --version
 biome --version
 oxlint --version
 
-lsp_initialize typescript-language-server --stdio
+lsp_initialize tsc --lsp --stdio
 lsp_initialize biome lsp-proxy
