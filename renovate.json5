@@ -32,6 +32,19 @@
       automerge: true,
     },
     {
+      description: 'Base image digests: safe to merge once CI is green',
+      matchManagers: ['dockerfile'],
+      matchUpdateTypes: ['digest', 'pin'],
+      automerge: true,
+    },
+    {
+      description: 'Stack tool pins: safe to merge once CI is green; the agent layer stays manual',
+      matchManagers: ['custom.regex'],
+      matchFileNames: ['features/stack-*/**'],
+      matchUpdateTypes: ['minor', 'patch'],
+      automerge: true,
+    },
+    {
       description: 'Harness and agent-layer versions change agent behaviour: review by hand, re-run the evaluation',
       matchDepNames: ['@opencode/cli', 'opencode', 'rtk-ai/rtk'],
       automerge: false,
