@@ -16,33 +16,14 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-case "$(uname -m)" in
-  x86_64 | amd64) arch=amd64 ;;
-  aarch64 | arm64) arch=arm64 ;;
-  *)
-    echo "unsupported architecture $(uname -m)" >&2
-    exit 1
-    ;;
-esac
-
-sha() {
-  local var="${1}_SHA256_${arch^^}"
-  printf '%s' "${!var}"
-}
-
+mise_install=/opt/nightshift/mise/bin/nightshift-mise-install
+if [ ! -x "$mise_install" ]; then
+  echo "$mise_install not found; the mise Feature must be installed first" >&2
+  exit 1
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-
-fetch() {
-  local url="$1" sum="$2" out="$tmp/$3"
-  curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$out" "$url"
-  if ! echo "$sum  $out" | sha256sum -c --quiet -; then
-    echo "checksum mismatch for $url" >&2
-    exit 1
-  fi
-  printf '%s' "$out"
-}
 
 ensure_packages() {
   export DEBIAN_FRONTEND=noninteractive
@@ -72,17 +53,17 @@ checkout() {
 }
 
 install_lua_language_server() {
-  local archive dir="$prefix/lua-language-server"
-  archive="$(fetch "$(LUA_LANGUAGE_SERVER_URL)" "$(sha LUA_LANGUAGE_SERVER)" luals.tgz)"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  tar -xzf "$archive" -C "$dir"
-  chmod -R a+rX "$dir"
+  local exe
+  "$mise_install" "$here" lua-language-server
+  exe="$(readlink -f "$bin/lua-language-server")"
+  chmod -R a+rX "$(dirname "$(dirname "$exe")")"
+  # Replace the helper's symlink so the wrapper is not written through it into the binary.
+  rm -f "$bin/lua-language-server"
   cat >"$bin/lua-language-server" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 state="\${TMPDIR:-/tmp}/lua-language-server-\$(id -u)"
-exec "$dir/bin/lua-language-server" --logpath="\$state/log" --metapath="\$state/meta" "\$@"
+exec "$exe" --logpath="\$state/log" --metapath="\$state/meta" "\$@"
 EOF
   chmod 0755 "$bin/lua-language-server"
 }

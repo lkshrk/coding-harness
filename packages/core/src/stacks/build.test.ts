@@ -341,7 +341,7 @@ describe('WoW stack', () => {
     expect((await s.builder.plan('routivo')).tag).not.toBe(image.tag)
   })
 
-  test.each(['stack-wow/install.sh', 'stack-wow/wow-tools.py', 'mise/tools.sh'])(
+  test.each(['stack-wow/install.sh', 'stack-wow/wow-tools.py', 'stack-wow/mise.lock', 'mise/tools.sh'])(
     'invalidates the image when %s changes',
     async (file) => {
       const root = mkdtempSync(join(tmp, 'wow-root-'))
