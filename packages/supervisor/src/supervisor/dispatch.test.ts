@@ -145,6 +145,51 @@ describe('manual retry', () => {
     })
   })
 
+  test('a retry from integration with an open PR goes back to implementation and continues from the PR head', async () => {
+    let bases = 0
+    const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(first.id, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(first.id, 'head1')
+    await h.sup.stopRun(first.id, 'done elsewhere')
+    const pr = {
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: first.id,
+      headSha: 'head1',
+      mode: 'manual' as const,
+      draft: false,
+      ci: 'passed' as const,
+    }
+    h.sup.pullRequests.put(pr)
+    h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+
+    const next = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1', agent: 'implementer' })
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+    expect(h.linear.get('FOR-1')).toMatchObject({
+      status: 'In Progress',
+      labels: ['ai-stage:implementation'],
+    })
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(h.sup.runs.get(next.id)?.state).not.toBe('stopped')
+    expect(h.of('WORKER_FAILED').filter((e) => e.run === next.id)).toEqual([])
+    expect(h.linear.get('FOR-1').status).toBe('In Progress')
+    expect(h.sup.pullRequests.get('FOR-1')).toEqual(pr)
+  })
+
   test('a plain retry after a failure with a commit starts fresh from the current base', async () => {
     let bases = 0
     const h = harness({ repos: { baseSha: async () => `base${++bases}` } })

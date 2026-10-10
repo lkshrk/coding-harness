@@ -281,5 +281,5 @@ export function integrationHarness(
     return first.runs.get(run.id) as Run
   }
 
-  return { fx, config, db, linear, gh, remote, handler, first, make, of, out, integrated }
+  return { fx, config, db, linear, gh, remote, handler, first, make, of, out, executor, integrated }
 }
