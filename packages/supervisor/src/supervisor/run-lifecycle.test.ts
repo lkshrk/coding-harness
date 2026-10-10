@@ -158,6 +158,29 @@ describe('worker lifecycle', () => {
     expect(h.sup.leases.get('FOR-1')?.run).toBe(run.id)
   })
 
+  test('stopRun keeps the work in progress by default', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.executor.heads.set(run.id, 'head1')
+    await h.sup.stopRun(run.id, 'stopped by you')
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'stopped', headSha: 'head1' })
+  })
+
+  test('stopRun with keepWork false skips preserveHead but still destroys the sandbox and releases the lease', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.executor.heads.set(run.id, 'head1')
+    await h.sup.stopRun(run.id, 'dropped', { keepWork: false })
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'stopped', headSha: null })
+    expect(h.executor.ops('captureHead')).toEqual([])
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.sup.leases.get('FOR-1')).toBeUndefined()
+  })
+
   test('an executor that cannot start the run fails it as a sandbox error', async () => {
     const h = harness()
     h.executor.failStart = 'docker not running'

@@ -6,7 +6,13 @@ import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/w
 import { type Event, EventValidationError } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'
 import { activeRun } from '../state/targets'
-import { type FinishLike, INGEST_AGENT, type RunFlow, type SupervisorRuntime } from './runtime'
+import {
+  type FinishLike,
+  INGEST_AGENT,
+  type RunFlow,
+  type StopOptions,
+  type SupervisorRuntime,
+} from './runtime'
 
 const NO_FINISH_REASONS = ['step_cap', 'time_cap', 'token_cap', 'no_finish']
 
@@ -153,12 +159,13 @@ export class RunLifecycle {
     this.rt.runs.update(runId, { sandbox: null })
   }
 
-  async stopRun(runId: string, reason: string, by?: By): Promise<void> {
+  async stopRun(runId: string, reason: string, opts: StopOptions = {}): Promise<void> {
+    const { by, keepWork = true } = opts
     await this.flow.cancelSteps(runId)
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.rt.deps.executor.stop(run, reason)
-    await this.preserveHead(runId, 'stopped')
+    if (keepWork) await this.preserveHead(runId, 'stopped')
     const event = this.rt.log.append({
       type: 'WORKER_FAILED',
       issue: run.issue,
@@ -179,7 +186,7 @@ export class RunLifecycle {
 
   async stopForUser(target: string, reason: string | undefined, by: By): Promise<Run> {
     const run = this.requireActive(target)
-    await this.stopRun(run.id, reason ?? 'stopped by you', by)
+    await this.stopRun(run.id, reason ?? 'stopped by you', { by })
     const issue = this.rt.cache.get(run.issue) ?? (await this.rt.deps.linear.issue(run.issue))
     const stage = (issue && viewIssue(issue, this.rt.config())?.stage) ?? ''
     await this.flow.holdForYou(run.issue, { kind: 'escalated', stage })
