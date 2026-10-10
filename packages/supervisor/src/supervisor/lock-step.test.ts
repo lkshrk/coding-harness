@@ -129,6 +129,18 @@ describe('lock step', () => {
     expect(git(h.fx.checkout, 'status', '--porcelain')).toBe('?? scratch.txt')
   })
 
+  test('a Feature path with non-ASCII characters is locked, not skipped by quoted git paths', async () => {
+    const h = harness()
+    commitFeature(h.fx, { 'features/stäck-ü/mise.toml': '[tools]\nbun = "1.4.3"\n' })
+    await h.step()
+
+    expect(h.failed).toEqual([])
+    expect(h.locks).toEqual([{ feature: 'stäck-ü', changed: true }])
+    expect(git(h.fx.checkout, 'show', `${h.imported[0]}:features/stäck-ü/mise.lock`)).toBe(
+      lockFor('[tools]\nbun = "1.4.3"\n').trim(),
+    )
+  })
+
   test('a lock mise leaves unchanged adds no commit and keeps the head', async () => {
     const h = harness()
     const toml = '[tools]\nbun = "1.4.3"\n'

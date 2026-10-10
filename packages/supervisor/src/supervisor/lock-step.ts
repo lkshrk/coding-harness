@@ -36,12 +36,13 @@ export function changedFeatures(checkout: string, base: string, headSha: string)
     '--no-renames',
     '--diff-filter=AM',
     '--name-only',
+    '-z',
     base,
     headSha,
     '--',
     'features',
   )
-    .split('\n')
+    .split('\0')
     .flatMap((p) => MISE_TOML.exec(p)?.[1] ?? [])
 }
 
