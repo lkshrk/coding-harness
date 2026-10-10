@@ -163,6 +163,7 @@ export class Supervisor {
   async tick(): Promise<TickReport> {
     const report: TickReport = { dispatched: [], unblocked: [], stopped: [], waiting: [] }
     this.m.leasing.renewLeases()
+    await this.d.syncVault?.()
     for (const lease of this.leases.expired(this.now())) await this.m.leasing.expireLease(lease)
     await this.m.linearSync.sync()
     await this.m.questions.checkQuestions()

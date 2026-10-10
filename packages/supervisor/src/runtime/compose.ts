@@ -172,6 +172,15 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
     if (!supervisor) throw new Error('gate step ran before the supervisor was composed')
     return supervisor
   }
+  const syncVault = o.sandbox
+    ? undefined
+    : vaultSync({
+        dir: expandHome(config.paths.vault, home),
+        token: (owner) => githubTokens.ownerToken(owner),
+        authEnv: gitAuthEnv,
+        owner: githubOwner,
+        out,
+      })
   const sessions = fileSessionStore(join(state, 'sessions'))
   const opencode =
     o.worker || config.sandbox.harness === 'dsh' ? undefined : new OpenCodeDriver({ sandbox, sessions })
@@ -214,17 +223,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
                 out,
               }),
             }),
-            ...(o.sandbox
-              ? {}
-              : {
-                  syncVault: vaultSync({
-                    dir: expandHome(config.paths.vault, home),
-                    token: (owner) => githubTokens.ownerToken(owner),
-                    authEnv: gitAuthEnv,
-                    owner: githubOwner,
-                    out,
-                  }),
-                }),
+            ...(syncVault ? { syncVault } : {}),
           })(start, budget),
     gatewayKey: async () => secrets.resolve(current().gateway.worker_key),
     runStep: gateStep({
@@ -295,6 +294,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
     }),
     stageHandler: new IntegrationHandler({ config: current, host: gitHost, callbacks, home, out }),
     gitHost,
+    ...(syncVault ? { syncVault } : {}),
     ingest: ingestRuntime({
       dir: expandHome(config.paths.vault, home),
       token: (owner) => githubTokens.ownerToken(owner),
