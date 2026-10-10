@@ -107,6 +107,23 @@ describe('GhGitHost.push', () => {
     expect(git(remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(moved)
   })
 
+  test('a leased push fails when the branch moved to the very commit being pushed', async () => {
+    const { fx, remote, host, headSha } = setup()
+    await host.push({ repository: 'omni', source: runRef('RUN1'), branch: 'ns/FOR-1' })
+    git(fx.worker, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'two')
+    const moved = importBundle(fx.checkout, fx.bundle('two').bundle, fx.branch, 'RUN2')
+    await host.push({ repository: 'omni', source: runRef('RUN2'), branch: 'ns/FOR-1' })
+    const failed = host.push({
+      repository: 'omni',
+      source: runRef('RUN2'),
+      branch: 'ns/FOR-1',
+      expected: headSha,
+    })
+    await expect(failed).rejects.toBeInstanceOf(PushRejectedError)
+    await expect(failed).rejects.toMatchObject({ branch: 'ns/FOR-1', expected: headSha, actual: moved })
+    expect(git(remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(moved)
+  })
+
   test('never pushes outside ns/ or to the base branch', async () => {
     const { gh, host } = setup()
     for (const branch of ['main', 'feature/x', 'ns-FOR-1']) {

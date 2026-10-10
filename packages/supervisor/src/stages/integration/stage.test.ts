@@ -208,7 +208,8 @@ describe('integration stage (manual)', () => {
     expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ run: first.id, headSha: first.headSha })
     await h.first.tick()
     await h.first.tick()
-    expect(h.gh.calls.filter((c) => c.cmd.includes('push'))).toHaveLength(2)
+    expect(h.gh.calls.filter((c) => c.cmd.includes('push'))).toHaveLength(1)
+    expect(h.gh.calls.filter((c) => c.cmd.includes('ls-remote'))).toHaveLength(1)
   })
 
   test('a change touching a risk path opens a draft PR and says so', async () => {

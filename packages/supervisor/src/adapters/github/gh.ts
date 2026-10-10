@@ -96,6 +96,16 @@ export class GhGitHost implements GitHost {
     const ref = `refs/heads/${o.branch}`
     await this.o.tokens.withToken(o.repository, async (token) => {
       const env = gitAuthEnv(token)
+      const remoteHead = async (): Promise<string> => {
+        const ls = await this.run(['git', '-C', checkout, 'ls-remote', target, ref], { env })
+        this.check(ls, `git ls-remote ${o.branch}`)
+        return ls.stdout.trim().split(/\s+/)[0] ?? ''
+      }
+      // git skips the lease when the remote already holds the pushed commit, so compare first.
+      if (o.expected) {
+        const actual = await remoteHead()
+        if (actual !== o.expected) throw new PushRejectedError(o.branch, o.expected, actual)
+      }
       const r = await this.run(
         [
           'git',
@@ -111,11 +121,9 @@ export class GhGitHost implements GitHost {
         { env },
       )
       if (r.exitCode !== 0 && o.expected) {
-        const remote = await this.run(['git', '-C', checkout, 'ls-remote', target, ref], { env })
-        if (remote.exitCode === 0) {
-          const actual = remote.stdout.trim().split(/\s+/)[0] ?? ''
-          if (actual !== o.expected) throw new PushRejectedError(o.branch, o.expected, actual)
-        }
+        const actual = await remoteHead().catch(() => undefined)
+        if (actual !== undefined && actual !== o.expected)
+          throw new PushRejectedError(o.branch, o.expected, actual)
       }
       this.check(r, `git push ${o.branch}`)
     })
