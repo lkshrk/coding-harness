@@ -72,17 +72,21 @@ checkout() {
 }
 
 install_lua_language_server() {
-  local archive dir="$prefix/lua-language-server"
-  archive="$(fetch "$(LUA_LANGUAGE_SERVER_URL)" "$(sha LUA_LANGUAGE_SERVER)" luals.tgz)"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-  tar -xzf "$archive" -C "$dir"
-  chmod -R a+rX "$dir"
+  local mise exe
+  mise="$(fetch "$(MISE_URL)" "$(sha MISE)" mise)"
+  chmod 0755 "$mise"
+  export MISE_DATA_DIR="$prefix/mise" MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config"
+  export MISE_STATE_DIR="$tmp/mise-state" MISE_YES=1 MISE_LOCKED=1
+  "$mise" trust -q "$here/mise.toml"
+  (cd "$here" && "$mise" install --locked)
+  exe="$(cd "$here" && "$mise" which lua-language-server)"
+  chmod -R a+rX "$prefix/mise"
+  # Call the binary itself: workers run offline and must not resolve a repository's own mise or .tool-versions.
   cat >"$bin/lua-language-server" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 state="\${TMPDIR:-/tmp}/lua-language-server-\$(id -u)"
-exec "$dir/bin/lua-language-server" --logpath="\$state/log" --metapath="\$state/meta" "\$@"
+exec "$exe" --logpath="\$state/log" --metapath="\$state/meta" "\$@"
 EOF
   chmod 0755 "$bin/lua-language-server"
 }

@@ -13,15 +13,18 @@ temporary diagnostic files and LuaLS logs go under `/tmp`.
 
 ## Pins
 
-`tools.sh` is the pin manifest, also installed as `$WOW_HOME/pins.sh`:
+LuaLS is pinned in `mise.toml` and `mise.lock` (linux-x64 and linux-arm64);
+`install.sh` runs `mise install --locked` with the mise binary pinned in
+`tools.sh`, and mise is not on PATH in the image. Relock with
+`mise lock --platform linux-x64,linux-arm64` (mise >= 2026.10.7).
+`tools.sh` holds the other pins and is also installed as `$WOW_HOME/pins.sh`:
 
 | Component | Pin |
 | --- | --- |
 | Lua (Debian) | `5.1.5-11` |
 | luacheck (Debian) | `1.2.0-1` |
-| LuaLS | `3.19.1` |
-| LuaLS amd64 SHA256 | `e9235d2d72ef55bc41cf8c99cda2ed64777682024b4bb81f5dea425060c5cbb8` |
-| LuaLS arm64 SHA256 | `abd2572e8fc929dc838a81ffb8473c5bce0bf39bfe8edb4b120b3b623176ce83` |
+| LuaLS (mise) | `3.19.1` |
+| mise | `2026.10.7` |
 | Ketho/vscode-wow-api | `d0b5b51fac4c52c493371b9b18e66ce604ea4326` |
 | Gethe/wow-ui-source | `09b9db7948abc9b9648dedaab51eb0cf3ee67b31` |
 | Ketho/BlizzardInterfaceResources | `36dd01db2d8fa5086dffda5cbfb3d55f4a70e526` |
