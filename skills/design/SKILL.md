@@ -1,18 +1,17 @@
 ---
 name: design
-description: "Design how to build an approved feature: investigate the code, write at least two alternatives, critique them and record a decision as docs/designs/<ID>.md in the repository, opened as a pull request the user approves by merging. Use when a feature issue has approved requirements and sits in the design stage. Not for gathering requirements (`discover`), creating issues (`decompose`) or small changes that need no alternatives."
+description: "Design how to build an approved feature: investigate the code, write at least two alternatives, critique them and record a decision as a design comment on the feature's parent issue, then stop for the user's approval and save the decision to the vault. Use when a feature issue has approved requirements and sits in the design stage. Not for gathering requirements (`discover`), creating issues (`decompose`) or small changes that need no alternatives."
 license: MIT
 ---
 
 # Design
 
-Decide how to build the feature, with the reasoning visible. The design is a file in the feature's repository, `docs/designs/<ID>.md`, using the headings in `design-template.md`. It reaches the repository only as a pull request, and merging that pull request is the user's approval.
+Decide how to build the feature, with the reasoning visible. The working design is a comment on the feature's parent issue, using the headings in `design-template.md`; it lives and closes with the ticket. Only the decision outlives it, as a vault page. Only the user approves a design.
 
 ## Prerequisites
 
 - The feature's parent issue has an approved requirements comment (the newest one counts). If not, stop and run `discover` first.
 - Read the requirements comment, the other issue comments and the vault pages for this repository before investigating.
-- One repository owns the design. For a feature spanning several, ask the user which one.
 
 ## Investigate
 
@@ -38,19 +37,17 @@ Decide how to build the feature, with the reasoning visible. The design is a fil
 - Pick one, or a synthesis of several, and say why in terms of the critique.
 - Name what was rejected and why, so it is not re-proposed.
 - List the interfaces between the parts: names, shapes and owners. `decompose` splits along them.
-- List the risks that remain and how a worker or a check will catch them.
+- List the risks that remain and how a worker or a check will catch them, and the implementation order `decompose` should follow.
 
-## Publishing and approval
+## Posting and approval
 
 - Draft the full design in `/tmp/<ID>-design.md` and show it to the user.
-- After an explicit yes, publish it; never edit the repository any other way:
-  `<skills>/design/scripts/publish.sh ~/Dev/<repo> <ID> /tmp/<ID>-design.md`
-  It commits only `docs/designs/<ID>.md` on branch `design/<ID>` from a private worktree (the user's checkout is not touched) and prints the pull request URL.
-- Comment on the parent issue with the pull request link (`linear issue comment add <ID> --body-file …`). The supervisor holds the issue at the design checkpoint; do not move its status.
-- Review feedback: revise the draft and run `publish.sh` again; it adds a commit to the same pull request.
-- The design is approved when the pull request is merged. A decision that should outlive the feature also goes to the vault as a decision page.
+- After an explicit yes, post it as the user: `linear issue comment add <ID> --body-file /tmp/<ID>-design.md`. Never with a Nightshift app login.
+- The supervisor holds the issue at the design checkpoint; do not move its status.
+- Review feedback: revise and post the full design again as a new comment that starts with what changed. The newest design comment is the current one.
+- The design is approved when the user says so in a comment or in the session. Then write the decision (chosen, rejected and why, remaining risks) to the vault as a decision page for the repository and link it in a comment.
 
 ## Done
 
-- `docs/designs/<ID>.md` is merged, and the parent issue links to it.
+- The parent issue has an approved design comment, and the vault has the decision page.
 - Tell the user the next step is `decompose`, and stop.
