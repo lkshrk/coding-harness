@@ -124,6 +124,91 @@ describe('vault ingest lifecycle', () => {
     expect(h.executor.starts).toHaveLength(1)
   })
 
+  test('successful ingest destroys the sandbox after publishing', async () => {
+    const h = setup()
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    const run = h.executor.starts[0]?.run
+    if (!run) throw new Error('ingester not started')
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 'vault-session' })
+    let aliveAtPublish = false
+    const publish = h.ingest.publish
+    h.ingest.publish = async (r) => {
+      aliveAtPublish = h.sandbox.sandboxes.has(`sb-${r.id}`)
+      return publish(r)
+    }
+    await h.sup.workerFinished(run.id, {
+      status: 'DONE',
+      summary: 'Ingested',
+      evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
+    })
+    expect(aliveAtPublish).toBe(true)
+    expect(h.of('VAULT_INGESTED')).toHaveLength(1)
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'done', sandbox: null })
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.of('SANDBOX_DESTROYED').map((e) => [e.run, e.data])).toEqual([
+      [run.id, { driver: 'docker', id: `sb-${run.id}` }],
+    ])
+  })
+
+  test.each(['blocked', 'crash', 'publish'])('failed ingest destroys the sandbox (%s)', async (failure) => {
+    const h = setup()
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    const run = h.executor.starts[0]?.run
+    if (!run) throw new Error('ingester not started')
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 'vault-session' })
+    if (failure === 'crash') await h.sup.workerFailed(run.id, 'sandbox_error', 'missing tooling')
+    else {
+      if (failure === 'publish')
+        h.ingest.publish = async () => {
+          throw new Error('push rejected')
+        }
+      await h.sup.workerFinished(
+        run.id,
+        failure === 'blocked'
+          ? {
+              status: 'BLOCKED',
+              summary: 'No lint',
+              blocker: { needs: 'environment', reason: 'missing tooling' },
+            }
+          : {
+              status: 'DONE',
+              summary: 'Ingested',
+              evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
+            },
+      )
+    }
+    expect(h.of('VAULT_INGEST_FAILED')).toHaveLength(1)
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'failed', sandbox: null })
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.of('SANDBOX_DESTROYED').map((e) => e.run)).toEqual([run.id])
+  })
+
+  test('a destroy failure does not change the ingest outcome', async () => {
+    const h = setup()
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    const run = h.executor.starts[0]?.run
+    if (!run) throw new Error('ingester not started')
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 'vault-session' })
+    h.sandbox.destroy = async () => {
+      throw new Error('docker gone')
+    }
+    await h.sup.workerFinished(run.id, {
+      status: 'DONE',
+      summary: 'Ingested',
+      evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
+    })
+    expect(h.sup.runs.get(run.id)?.state).toBe('done')
+    expect(h.of('VAULT_INGESTED')).toHaveLength(1)
+    expect(h.of('VAULT_INGEST_FAILED')).toEqual([])
+    expect(h.of('SANDBOX_DESTROYED')).toEqual([])
+  })
+
   test('preparation failure and interrupted starts are not retried', async () => {
     const h = setup()
     h.ingest.prepare = async () => {

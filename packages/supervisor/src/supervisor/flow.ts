@@ -78,6 +78,7 @@ export function runFlow(h: FlowHost): RunFlow {
     requireActive: (target) => h.modules().lifecycle.requireActive(target),
     profileFor: (view) => h.modules().dispatcher.profileFor(view),
     forgetStalls: (runId) => h.modules().lifecycle.forgetStalls(runId),
+    releaseSandbox: (runId) => h.modules().lifecycle.releaseSandbox(runId),
     sandboxDestroyed: (runId, handle) => h.modules().lifecycle.sandboxDestroyed(runId, handle),
     sandboxHandle: (run) => h.modules().lifecycle.handle(run),
   }
