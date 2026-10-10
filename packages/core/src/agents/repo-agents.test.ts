@@ -27,13 +27,11 @@ const ctx: RenderContext = {
   stepsLimit: parseConfigSection('limits', defaults.limits).worker.steps,
 }
 
-// The lead's planning skills are not written yet.
-const PENDING_SKILLS = ['status', 'replan', 'intake']
-const LEAD_SKILLS = ['discover', 'design', 'decompose']
+const LEAD_SKILLS = ['discover', 'design', 'decompose', 'status', 'replan', 'intake']
 const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,
-  externalSkills: [...PENDING_SKILLS, 'wiki-ingest'],
+  externalSkills: ['wiki-ingest'],
 })
 const workers = [...agents.values()].filter((d) => d.kind === 'worker')
 const SELECTED = ['implementer', 'explorer', 'fixer', 'repairer', 'refactorer', 'migrator', 'ingester']
@@ -130,13 +128,9 @@ describe('repository agents', () => {
 describe('lead', () => {
   const text = readFileSync(join(ROOT, 'agents/lead.md'), 'utf8')
 
-  test('loads with only the planning skills pending', () => {
-    const own = loadAgents(join(ROOT, 'agents'), { profiles, externalSkills: ['wiki-ingest'] })
-    const pending = own.errors.filter((e) => e.file === 'agents/lead.md').map(formatAgentError)
-    expect(pending).toEqual(
-      PENDING_SKILLS.map((s) => expect.stringContaining(`no skill '${s}'`) as unknown as string),
-    )
-    expect(agents.get('lead')?.skills).toEqual(expect.arrayContaining(CLI_SKILLS))
+  test('loads with every listed skill present', () => {
+    expect(errors.filter((e) => e.file === 'agents/lead.md').map(formatAgentError)).toEqual([])
+    expect(agents.get('lead')?.skills).toEqual(expect.arrayContaining([...LEAD_SKILLS, ...CLI_SKILLS]))
   })
 
   test('names no stage: or agent: labels and only verified linear commands', () => {
