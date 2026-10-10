@@ -68,8 +68,8 @@ BATS_URL() { printf '%s' "https://github.com/bats-core/bats-core/archive/refs/ta
 
 # renovate: datasource=github-releases depName=astral-sh/uv
 UV_VERSION="0.13.0"
-UV_SHA256_AMD64="9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6"
-UV_SHA256_ARM64="6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f"
+UV_SHA256_AMD64="1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
+UV_SHA256_ARM64="3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
 UV_URL() { printf '%s' "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu).tar.gz"; }
 
 # renovate: datasource=python-version depName=python
