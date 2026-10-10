@@ -21,7 +21,10 @@ for arg in "$@"; do
   cp -R "$features/$feature" "$work/.devcontainer/$feature"
   entries="$entries, \"./$feature\": $options"
 done
-printf '{"image": "debian:trixie", "features": {%s}}\n' "$entries" >"$work/.devcontainer/devcontainer.json"
+order='[]'
+[ ! -d "$work/.devcontainer/mise" ] || order='["./mise"]'
+printf '{"image": "debian:trixie", "features": {%s}, "overrideFeatureInstallOrder": %s}\n' "$entries" "$order" \
+  >"$work/.devcontainer/devcontainer.json"
 
 "$root/node_modules/.bin/devcontainer" build --workspace-folder "$work" --image-name "$image" \
   ${PLATFORM:+--platform "$PLATFORM"}

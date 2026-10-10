@@ -2,8 +2,6 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=tools.sh
-source "$here/tools.sh"
 
 prefix=/opt/nightshift/stack-bun
 bin=/usr/local/bin
@@ -14,33 +12,14 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-case "$(uname -m)" in
-  x86_64 | amd64) arch=amd64 ;;
-  aarch64 | arm64) arch=arm64 ;;
-  *)
-    echo "unsupported architecture $(uname -m)" >&2
-    exit 1
-    ;;
-esac
-
-sha() {
-  local var="${1}_SHA256_${arch^^}"
-  printf '%s' "${!var}"
-}
-
+mise_install=/opt/nightshift/mise/bin/nightshift-mise-install
+if [ ! -x "$mise_install" ]; then
+  echo "$mise_install not found; the mise Feature must be installed first" >&2
+  exit 1
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-
-fetch() {
-  local url="$1" sum="$2" out="$tmp/$3"
-  curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$out" "$url"
-  if ! echo "$sum  $out" | sha256sum -c --quiet -; then
-    echo "checksum mismatch for $url" >&2
-    exit 1
-  fi
-  printf '%s' "$out"
-}
 
 ensure_packages() {
   local missing=()
@@ -76,21 +55,6 @@ EOF
   chmod 0755 "$bin/$name"
 }
 
-install_mise_tools() {
-  local mise tool path
-  mise="$(fetch "$(MISE_URL)" "$(sha MISE)" mise)"
-  chmod 0755 "$mise"
-  export MISE_DATA_DIR="$prefix/mise" MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config"
-  export MISE_STATE_DIR="$tmp/mise-state" MISE_YES=1 MISE_LOCKED=1
-  "$mise" trust -q "$here/mise.toml"
-  (cd "$here" && "$mise" install --locked)
-  # Link the binaries themselves: workers run offline and must not resolve a repository's own mise or .tool-versions.
-  for tool in bun bunx biome oxlint; do
-    path="$(cd "$here" && "$mise" which "$tool")"
-    ln -sf "$path" "$bin/$tool"
-  done
-}
-
 install_npm_tools() {
   local node npm
   node="$(find_node)"
@@ -109,6 +73,6 @@ prepare_cache() {
 }
 
 ensure_packages
-install_mise_tools
+"$mise_install" "$here" bun bunx biome oxlint
 install_npm_tools
 prepare_cache

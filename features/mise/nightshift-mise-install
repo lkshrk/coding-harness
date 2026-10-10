@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# usage: nightshift-mise-install <feature dir> <tool>...
+# Installs the tools locked in <feature dir>/mise.lock and links the named ones into /usr/local/bin.
+set -euo pipefail
+
+if [ "$#" -lt 2 ]; then
+  echo "usage: nightshift-mise-install <feature dir> <tool>..." >&2
+  exit 2
+fi
+dir="$(cd "$1" && pwd)"
+shift
+prefix=/opt/nightshift/mise
+mise="$prefix/bin/mise"
+bin=/usr/local/bin
+
+for file in mise.toml mise.lock; do
+  if [ ! -f "$dir/$file" ]; then
+    echo "$dir/$file missing" >&2
+    exit 1
+  fi
+done
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+export MISE_DATA_DIR="$prefix/data" MISE_CACHE_DIR="$tmp/cache" MISE_CONFIG_DIR="$tmp/config"
+export MISE_STATE_DIR="$tmp/state" MISE_YES=1 MISE_LOCKED=1
+
+"$mise" trust -q "$dir/mise.toml"
+(cd "$dir" && "$mise" install --locked)
+for tool in "$@"; do
+  path="$(cd "$dir" && "$mise" which "$tool")"
+  ln -sf "$path" "$bin/$tool"
+done

@@ -123,6 +123,7 @@ describe('DevcontainerEnvironmentBuilder', () => {
     expect(build.cmd[build.cmd.indexOf('--workspace-folder') + 1]).toEndWith('/workspace')
     const features = JSON.parse(build.cmd[build.cmd.indexOf('--additional-features') + 1] as string)
     expect(Object.keys(features)).toEqual([
+      './.nightshift/mise',
       './.nightshift/stack-node',
       './.nightshift/stack-python',
       './.nightshift/agent-layer',
@@ -132,6 +133,7 @@ describe('DevcontainerEnvironmentBuilder', () => {
     const devcontainer = JSON.parse(build.devcontainer as string)
     expect(devcontainer.image).toStartWith('debian:trixie@sha256:')
     expect(devcontainer.overrideFeatureInstallOrder).toEqual([
+      './.nightshift/mise',
       'ghcr.io/devcontainers/features/common-utils',
       'ghcr.io/devcontainers/features/node',
       './.nightshift/stack-node',
@@ -152,6 +154,7 @@ describe('DevcontainerEnvironmentBuilder', () => {
     const used = JSON.parse(s.builds()[0]?.devcontainer as string)
     expect(used.image).toBe('mcr.microsoft.com/devcontainers/base:trixie')
     expect(used.overrideFeatureInstallOrder).toEqual([
+      './.nightshift/mise',
       'ghcr.io/devcontainers/features/node',
       './.nightshift/stack-node',
       './.nightshift/stack-python',
@@ -206,10 +209,15 @@ describe('DevcontainerEnvironmentBuilder', () => {
     expect(image.stacks).toEqual(['bun'])
     const build = s.builds()[0] as Call
     const features = JSON.parse(build.cmd[build.cmd.indexOf('--additional-features') + 1] as string)
-    expect(Object.keys(features)).toEqual(['./.nightshift/stack-bun', './.nightshift/agent-layer'])
+    expect(Object.keys(features)).toEqual([
+      './.nightshift/mise',
+      './.nightshift/stack-bun',
+      './.nightshift/agent-layer',
+    ])
     const devcontainer = JSON.parse(build.devcontainer as string)
     expect(devcontainer.build).toEqual({ dockerfile: 'Dockerfile' })
     expect(devcontainer.overrideFeatureInstallOrder).toEqual([
+      './.nightshift/mise',
       'ghcr.io/devcontainers/features/common-utils',
       'ghcr.io/devcontainers/features/node',
       './.nightshift/stack-bun',
@@ -303,8 +311,13 @@ describe('WoW stack', () => {
     const worker = await workerImageFor(s.builder, 'routivo')
     const build = s.builds()[0] as Call
     const features = JSON.parse(build.cmd[build.cmd.indexOf('--additional-features') + 1] as string)
-    expect(features).toEqual({ './.nightshift/stack-wow': {}, './.nightshift/agent-layer': {} })
+    expect(features).toEqual({
+      './.nightshift/mise': {},
+      './.nightshift/stack-wow': {},
+      './.nightshift/agent-layer': {},
+    })
     expect(JSON.parse(build.devcontainer as string).overrideFeatureInstallOrder).toEqual([
+      './.nightshift/mise',
       'ghcr.io/devcontainers/features/common-utils',
       './.nightshift/stack-wow',
     ])
@@ -328,21 +341,24 @@ describe('WoW stack', () => {
     expect((await s.builder.plan('routivo')).tag).not.toBe(image.tag)
   })
 
-  test.each(['install.sh', 'wow-tools.py'])('invalidates the image when %s changes', async (file) => {
-    const root = mkdtempSync(join(tmp, 'wow-root-'))
-    mkdirSync(join(root, 'features'))
-    for (const feature of ['stack-wow', 'agent-layer']) {
-      cpSync(join(NIGHTSHIFT_ROOT, 'features', feature), join(root, 'features', feature), {
-        recursive: true,
-      })
-    }
-    const s = setup(addon, { root })
-    const image = await s.builder.build('routivo')
-    const path = join(root, 'features/stack-wow', file)
-    writeFileSync(path, `${readFileSync(path, 'utf8')}\n# changed cached tooling\n`)
-    expect(await s.builder.current('routivo')).toBeUndefined()
-    expect((await s.builder.plan('routivo')).tag).not.toBe(image.tag)
-  })
+  test.each(['stack-wow/install.sh', 'stack-wow/wow-tools.py', 'mise/tools.sh'])(
+    'invalidates the image when %s changes',
+    async (file) => {
+      const root = mkdtempSync(join(tmp, 'wow-root-'))
+      mkdirSync(join(root, 'features'))
+      for (const feature of ['mise', 'stack-wow', 'agent-layer']) {
+        cpSync(join(NIGHTSHIFT_ROOT, 'features', feature), join(root, 'features', feature), {
+          recursive: true,
+        })
+      }
+      const s = setup(addon, { root })
+      const image = await s.builder.build('routivo')
+      const path = join(root, 'features', file)
+      writeFileSync(path, `${readFileSync(path, 'utf8')}\n# changed cached tooling\n`)
+      expect(await s.builder.current('routivo')).toBeUndefined()
+      expect((await s.builder.plan('routivo')).tag).not.toBe(image.tag)
+    },
+  )
 })
 
 describe('browser stack', () => {

@@ -109,7 +109,7 @@ export class DevcontainerEnvironmentBuilder implements EnvironmentBuilder {
     const agentLayer = join(this.o.root, 'features', 'agent-layer')
     const version = JSON.parse(readFileSync(join(agentLayer, 'devcontainer-feature.json'), 'utf8')).version
     const hash = await environmentHash(tree, stacks, {
-      agentLayerVersion: `${version}+${featureDigest(agentLayer)}`,
+      agentLayerVersion: `${version}+${featureDigest(agentLayer)}+${featureDigest(join(this.o.root, 'features', 'mise'))}`,
       environmentFiles: environment.files,
       inputFiles: {
         ...(await inputFiles(tree, inputPatterns(devcontainer))),
