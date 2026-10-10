@@ -1,5 +1,5 @@
 [tools]
-bun = "1.4.2"
+bun = "1.4.3"
 "aqua:biomejs/biome" = "2.5.15"
 
 [tools."github:oxc-project/oxc"]
