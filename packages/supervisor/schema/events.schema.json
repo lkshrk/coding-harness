@@ -348,7 +348,8 @@
               "stopped",
               "supervisor_restart",
               "no_finish",
-              "task_too_large"
+              "task_too_large",
+              "base_conflict"
             ]
           },
           "detail": { "type": "string" },
