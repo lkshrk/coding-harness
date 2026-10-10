@@ -2,9 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { importBundle } from '../adapters/git/host'
 import type { Classifier, FailureSignal } from '../ports'
 import { attemptsOf } from '../stages/context'
-import { integrationHarness } from '../stages/integration/testing'
+import { git } from '../stages/gates/testing'
+import { FINISH, fakeThread, gate, integrationHarness, until } from '../stages/integration/testing'
+import type { Run } from '../state/runs'
 import { issueBody, snapshot } from '../testing/testing'
 
 describe('pull request watching', () => {
@@ -190,6 +193,138 @@ describe('pull request watching', () => {
       await h.first.tick()
       expect(h.of('MERGED')).toEqual([])
       expect(h.first.pullRequests.all()).toEqual([])
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  async function repaired(h: Awaited<ReturnType<typeof watching>>, report: unknown, commit = true) {
+    const repair = h.first.runs.forIssue('FOR-1').at(-1) as Run
+    expect(repair.id).not.toBe(h.run.id)
+    if (commit) git(h.fx.worker, 'commit', '-q', '--allow-empty', '-m', 'fix: trim before saving')
+    await h.first.workerStarted(repair.id, { sandbox: 'sb-2', session: 's-2' })
+    await h.first.workerFinished(repair.id, { ...FINISH, report })
+    const head = importBundle(h.fx.checkout, h.fx.bundle('run2').bundle, h.fx.branch, repair.id)
+    await h.first.headImported(repair.id, head)
+    await h.first.gatesFinished(repair.id, [gate('test')])
+    await h.first.reviewFinished(repair.id, {
+      kind: 'verdict',
+      review: { verdict: 'pass', findings: [] },
+      model: 'glm',
+    })
+    await h.first.tick()
+    await until(() => h.first.pullRequests.get('FOR-1')?.headSha === head, 'PR head updated')
+    return head
+  }
+
+  test('an unresolved review thread starts one remediation run carrying the thread verbatim', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      h.gh.threads = [fakeThread('T1', 11, 'Trim the name before saving.')]
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED').map((e) => e.data)).toEqual([
+        {
+          class: 'implementation_defect',
+          action: 'retry_same',
+          evidence: '1 unresolved review thread on https://github.com/lkshrk/omni/pull/1',
+          fallback: false,
+        },
+      ])
+      const [attempt] = attemptsOf(h.db, 'FOR-1', 'next')
+      expect(attempt?.reviewThreads).toEqual([
+        {
+          id: 'T1',
+          resolved: false,
+          outdated: false,
+          path: 'src/b.ts',
+          line: 1,
+          comments: [{ id: 11, author: 'agent-npa', body: 'Trim the name before saving.' }],
+        },
+      ])
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(2)
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('resolved and outdated threads start no run, and a repeated poll starts none', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      h.gh.threads = [
+        fakeThread('T1', 11, 'done', { isResolved: true }),
+        fakeThread('T2', 21, 'old line', { isOutdated: true }),
+      ]
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.gh.threadReads()).toHaveLength(2)
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('addressed threads get a reply naming the pushed commit and are resolved', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      h.gh.threads = [fakeThread('T1', 11, 'Trim the name before saving.')]
+      await h.first.tick()
+      await h.first.tick()
+      const head = await repaired(h, {
+        threads: [{ id: 'T1', outcome: 'addressed', reason: 'Names are trimmed in save().' }],
+      })
+      const [thread] = h.gh.threads
+      expect(thread?.isResolved).toBe(true)
+      expect(thread?.comments.at(-1)?.body).toBe(`Fixed in ${head}. Names are trimmed in save().`)
+      expect(thread?.comments.at(-1)?.body).not.toMatch(/claude|co-authored|generated (with|by)|\bAI\b/i)
+      expect(h.linear.get('FOR-1').status).toBe('In Review')
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+      const runs = h.first.runs.forIssue('FOR-1').length
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(runs)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a disputed thread gets a reply with the reason, stays open and holds the issue', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      h.gh.threads = [
+        fakeThread('T1', 11, 'Trim the name before saving.'),
+        fakeThread('T2', 21, 'Lower-case the name.'),
+      ]
+      await h.first.tick()
+      await h.first.tick()
+      await repaired(h, {
+        threads: [
+          { id: 'T1', outcome: 'addressed', reason: 'Names are trimmed in save().' },
+          { id: 'T2', outcome: 'disputed', reason: 'Names are case-sensitive by design.' },
+        ],
+      })
+      const [fixed, disputed] = h.gh.threads
+      expect(fixed?.isResolved).toBe(true)
+      expect(disputed?.isResolved).toBe(false)
+      expect(disputed?.comments.at(-1)?.body).toBe('Not changed: Names are case-sensitive by design.')
+      expect(h.linear.get('FOR-1').status).toBe('Blocked')
+      expect(h.first.awaiting('FOR-1')).toEqual({
+        kind: 'escalated',
+        stage: 'integration',
+        reason: 'review_disputed',
+      })
+      const runs = h.first.runs.forIssue('FOR-1').length
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(runs)
+      expect(disputed?.comments).toHaveLength(2)
     } finally {
       h.cleanup()
     }

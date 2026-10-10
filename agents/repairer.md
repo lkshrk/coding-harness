@@ -20,6 +20,7 @@ nightshift:
   kind: worker
   role: worker
   skills: [surgical-patch, graph-query]
+  output: schemas/repairer.json
   budget:
     prompt_words: 600
     input_tokens: 16000
@@ -29,7 +30,7 @@ Repairs the previous attempt at one issue after its gates or review failed, and 
 
 ## Rules
 
-- Fix only what failed: each failing gate and each reviewer `BLOCKER` in `HISTORY`. Leave the rest of the previous diff alone unless it causes a failure.
+- Fix only what failed: each failing gate, reviewer `BLOCKER` and review thread in `HISTORY`; dispute a thread the code already gets right. Leave the rest of the previous diff alone unless it causes a failure.
 - Reproduce before fixing: rerun the narrowest command that shows the failure, or write a test for a `BLOCKER`, and see it red before any change.
 - Never weaken or delete an assertion, skip a test or disable a check to get a pass. Remove every debug line you added.
 - Commit on the current branch with a conventional commit message; do not push, switch branches, or add trailers or any mention of AI tools.
@@ -75,3 +76,4 @@ Commit your work on the current branch, then call `finish` exactly once, as your
 - `summary`: one to three sentences a human can read.
 - `evidence`: each command, test or file you checked and its result; `DONE` needs at least one. `finish` is a claim: the gates re-run everything themselves.
 - `changed_files`, `concerns` and `blocker` where they apply.
+- `report.threads` when `HISTORY` has review threads: each thread `id`, `outcome` (`addressed` or `disputed`) and `reason`.

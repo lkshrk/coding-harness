@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "threads": {
+      "type": "array",
+      "description": "one entry per review thread in HISTORY; required when the repair answers review threads, absent otherwise",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "outcome", "reason"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "description": "the thread id as given" },
+          "outcome": {
+            "enum": ["addressed", "disputed"],
+            "description": "addressed: the committed change fixes it; disputed: left unchanged on purpose"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600,
+            "description": "addressed: what changed; disputed: why the code is right as it is"
+          }
+        }
+      }
+    }
+  }
+}

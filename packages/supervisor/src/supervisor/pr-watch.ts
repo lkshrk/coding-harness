@@ -1,7 +1,11 @@
 import { INTEGRATION, lifecycleOf, viewIssue } from '../policy/stages'
-import type { CiState } from '../ports'
-import { CiFailureStore, type PullRequestRecord } from '../stages/integration/records'
+import type { CiState, GitHost, ReviewThread } from '../ports'
+import { CiFailureStore, type PullRequestRecord, ReviewRoundStore } from '../stages/integration/records'
 import type { RunFlow, SupervisorRuntime } from './runtime'
+
+type ThreadOutcome = { id: string; outcome: 'addressed' | 'disputed'; reason: string }
+
+const newestComment = (t: ReviewThread): number => Math.max(0, ...t.comments.map((c) => c.id))
 
 export class PullRequestWatch {
   constructor(
@@ -32,6 +36,7 @@ export class PullRequestWatch {
     await this.rt.deps.linear.attachLink(record.issue, record.url, `PR #${record.number}: ${title}`)
     if (!this.rt.runs.active().some((r) => r.issue === record.issue))
       await this.flow.applyIntent(record.issue, { kind: 'prOpened' })
+    await this.closeReviewRound(record)
     if (!logged) {
       await this.rt.notify(`PR #${record.number} ready for review`, record.issue, {
         kind: 'pr',
@@ -58,7 +63,10 @@ export class PullRequestWatch {
         if (lifecycle === 'done' && state.state !== 'merged') this.rt.pullRequests.remove(pr.issue)
         else if (state.state === 'merged') await this.pullRequestMerged(pr)
         else if (state.state === 'closed') await this.pullRequestClosed(pr)
-        else if (pr.ci === 'pending') await this.checkCi(pr, await host.ci(pr))
+        else {
+          if (pr.ci === 'pending') await this.checkCi(pr, await host.ci(pr))
+          await this.checkReviews(pr, host)
+        }
       } catch (e) {
         console.error(`watch ${pr.url} (${pr.issue}): ${(e as Error).message}`)
       }
@@ -94,6 +102,85 @@ export class PullRequestWatch {
     const run = this.rt.runs.get(pr.run)
     if (run) await this.flow.remediate(run, 'ci_failed', `failed checks: ${checks}`)
     await this.flow.refresh(pr.issue)
+  }
+
+  async checkReviews(pr: PullRequestRecord, host: GitHost): Promise<void> {
+    const store = new ReviewRoundStore(this.rt.deps.db)
+    const round = store.get(pr.issue)
+    if (round.pending || this.rt.runs.active().some((r) => r.issue === pr.issue)) return
+    // A CI repair is already under way; its push resets ci to pending and the threads follow.
+    if (this.rt.pullRequests.get(pr.issue)?.ci === 'failed') return
+    const open = (await host.reviewThreads(pr)).filter((t) => !t.resolved && !t.outdated)
+    const fresh = open.filter((t) => newestComment(t) > round.seen)
+    if (!fresh.length) return
+    const run = this.rt.runs.get(pr.run)
+    if (!run) return
+    store.put(pr.issue, {
+      seen: Math.max(round.seen, ...open.map(newestComment)),
+      pending: { run: run.id, threads: fresh },
+    })
+    await this.flow.remediate(
+      run,
+      'review_comments',
+      `${fresh.length} unresolved review thread${fresh.length === 1 ? '' : 's'} on ${pr.url}`,
+    )
+    await this.flow.refresh(pr.issue)
+  }
+
+  // After the repair is pushed: reply to and resolve addressed threads, reply to disputed ones.
+  async closeReviewRound(record: PullRequestRecord): Promise<void> {
+    const host = this.rt.deps.gitHost
+    const store = new ReviewRoundStore(this.rt.deps.db)
+    const round = store.get(record.issue)
+    if (!host || !round.pending) return
+    const from = this.rt.runs.get(round.pending.run)
+    const repair = this.rt.runs
+      .forIssue(record.issue)
+      .filter((r) => r.state === 'done' && r.attempt > (from?.attempt ?? 0))
+      .at(-1)
+    if (!repair) return
+    // Only a commit the repair pushed can carry a fix; otherwise nothing is resolved.
+    const pushed = repair.headSha === record.headSha && record.headSha !== from?.headSha
+    const finish = (repair.finish ?? {}) as { report?: { threads?: ThreadOutcome[] } }
+    const outcomes = new Map((finish.report?.threads ?? []).map((t) => [t.id, t]))
+    let seen = round.seen
+    const open: string[] = []
+    for (const thread of round.pending.threads) {
+      const outcome = outcomes.get(thread.id)
+      const last = thread.comments.at(-1)
+      if (!outcome || !last) {
+        open.push(`${thread.path}: no outcome reported`)
+        continue
+      }
+      const fixed = outcome.outcome === 'addressed' && pushed
+      if (outcome.outcome === 'addressed' && !pushed) {
+        open.push(`${thread.path}: reported addressed, but no new commit was pushed`)
+        continue
+      }
+      const body = fixed ? `Fixed in ${record.headSha}. ${outcome.reason}` : `Not changed: ${outcome.reason}`
+      const reply = await host.replyToThread(record, last.id, body)
+      seen = Math.max(seen, reply.id)
+      if (fixed) await host.resolveThread(record, thread.id)
+      else open.push(`${thread.path}: ${outcome.reason}`)
+    }
+    store.put(record.issue, { seen })
+    if (!open.length) return
+    await this.rt.postOnce(
+      record.issue,
+      `review-threads-${record.run}`,
+      `Review threads on ${record.url} left open for you:\n${open.map((o) => `- ${o}`).join('\n')}`,
+    )
+    await this.flow.holdForYou(record.issue, {
+      kind: 'escalated',
+      stage: INTEGRATION,
+      reason: 'review_disputed',
+    })
+    await this.rt.notify(`review threads left open on PR #${record.number}`, record.issue, {
+      kind: 'blocked',
+      url: record.url,
+      context: open,
+      action: 'Answer the open review threads, then merge or retry',
+    })
   }
 
   async pullRequestMerged(pr: PullRequestRecord): Promise<void> {

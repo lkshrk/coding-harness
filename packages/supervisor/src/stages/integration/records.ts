@@ -1,4 +1,4 @@
-import type { CiFailure } from '../../ports'
+import type { CiFailure, ReviewThread } from '../../ports'
 import type { PullRequestRecord } from '../../ports/git-host'
 import type { Db } from '../../state/db'
 
@@ -32,6 +32,38 @@ export class CiFailureStore {
   private read(): Record<string, CiFailure[]> {
     const row = this.db.query<{ value: string }, [string]>('SELECT value FROM meta WHERE key = ?').get(CI_KEY)
     return row ? (JSON.parse(row.value) as Record<string, CiFailure[]>) : {}
+  }
+}
+
+const THREADS_KEY = 'review_threads'
+
+export type ReviewRound = { seen: number; pending?: { run: string; threads: ReviewThread[] } }
+
+// Per issue: the newest review comment id already handled, and the round awaiting its close-out.
+export class ReviewRoundStore {
+  constructor(private readonly db: Db) {}
+
+  get(issue: string): ReviewRound {
+    return this.read()[issue] ?? { seen: 0 }
+  }
+
+  put(issue: string, round: ReviewRound): void {
+    this.db
+      .query(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(THREADS_KEY, JSON.stringify({ ...this.read(), [issue]: round }))
+  }
+
+  threadsFor(run: string): ReviewThread[] {
+    return Object.values(this.read()).find((r) => r.pending?.run === run)?.pending?.threads ?? []
+  }
+
+  private read(): Record<string, ReviewRound> {
+    const row = this.db
+      .query<{ value: string }, [string]>('SELECT value FROM meta WHERE key = ?')
+      .get(THREADS_KEY)
+    return row ? (JSON.parse(row.value) as Record<string, ReviewRound>) : {}
   }
 }
 

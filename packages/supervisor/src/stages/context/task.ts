@@ -13,7 +13,7 @@ import type { Db } from '../../state/db'
 import { EventLog } from '../../state/events'
 import { type Run, RunStore } from '../../state/runs'
 import { createUlid } from '../../state/ulid'
-import { CiFailureStore } from '../integration/records'
+import { CiFailureStore, ReviewRoundStore } from '../integration/records'
 import { selectVaultPages } from './vault'
 
 export type { TaskMessage, TaskStart } from '../../ports/context'
@@ -81,6 +81,7 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
   const stores = { now: () => new Date(), ulid: createUlid() }
   const log = new EventLog(db, stores)
   const ci = new CiFailureStore(db)
+  const reviews = new ReviewRoundStore(db)
   return new RunStore(db, stores)
     .forIssue(issue)
     .filter((r) => r.id !== current && r.failure !== null)
@@ -88,6 +89,7 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
       const gateTail = gateTailOf(r, log)
       const findings = findingsOf(r, log)
       const ciFailures = ci.get(r.id).filter((f) => f.log !== '')
+      const reviewThreads = reviews.threadsFor(r.id)
       return {
         attempt: r.attempt,
         agent: r.agent,
@@ -96,6 +98,7 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
         ...(gateTail ? { gateTail } : {}),
         ...(findings ? { findings } : {}),
         ...(ciFailures.length ? { ciFailures } : {}),
+        ...(reviewThreads.length ? { reviewThreads } : {}),
       }
     })
 }
