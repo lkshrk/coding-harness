@@ -117,6 +117,26 @@ describe('mismatch on a running issue', () => {
     })
   }
 
+  test('an operator move to Canceled stops the run without recording its work in progress', async () => {
+    const { h, run } = await running()
+    h.executor.heads.set(run.id, 'head1')
+    h.linear.patch('FOR-1', { status: 'Canceled' })
+    await h.sup.tick()
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'stopped', headSha: null })
+    expect(h.executor.ops('captureHead')).toEqual([])
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.sup.leases.get('FOR-1')).toBeUndefined()
+  })
+
+  for (const status of ['Todo', 'Backlog', 'Blocked', 'Done'])
+    test(`an operator move to ${status} stops the run with its work in progress recorded`, async () => {
+      const { h, run } = await running()
+      h.executor.heads.set(run.id, 'head1')
+      h.linear.patch('FOR-1', { status })
+      await h.sup.tick()
+      expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'stopped', headSha: 'head1' })
+    })
+
   test('an operator move to Blocked holds the run even when the issue no longer has a view', async () => {
     const { h, run } = await running()
     h.linear.patch('FOR-1', { status: 'Blocked', delegated: false })

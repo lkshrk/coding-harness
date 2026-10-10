@@ -33,7 +33,7 @@ import { Questions } from './questions'
 import { Recovery } from './recovery'
 import { Remediation } from './remediation'
 import { RunLifecycle } from './run-lifecycle'
-import { type RecoveryReport, type SupervisorDeps, SupervisorRuntime } from './runtime'
+import { type RecoveryReport, type StopOptions, type SupervisorDeps, SupervisorRuntime } from './runtime'
 import { Verification } from './verification'
 
 export type { By } from '../ports/control'
@@ -359,8 +359,8 @@ export class Supervisor {
     this.m.lifecycle.workerFailed(runId, reason, detail)
   headImported = (runId: string, headSha: string): Promise<void> =>
     this.m.lifecycle.headImported(runId, headSha)
-  stopRun = (runId: string, reason: string, by?: By): Promise<void> =>
-    this.m.lifecycle.stopRun(runId, reason, by)
+  stopRun = (runId: string, reason: string, opts?: StopOptions): Promise<void> =>
+    this.m.lifecycle.stopRun(runId, reason, opts)
   stopForUser = (target: string, reason: string | undefined, by: By): Promise<Run> =>
     this.m.lifecycle.stopForUser(target, reason, by)
   retryRun = (

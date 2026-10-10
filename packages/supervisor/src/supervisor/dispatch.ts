@@ -192,7 +192,7 @@ export class Dispatcher {
       throw new ControlError('refused', `${identifier}: no worker agent for stage ${stage}`)
     }
     const active = this.rt.runs.active().find((r) => r.issue === identifier)
-    if (active) await this.flow.stopRun(active.id, 'retry requested', by)
+    if (active) await this.flow.stopRun(active.id, 'retry requested', { by })
     this.flow.setAwaiting(identifier, null)
     const run = await this.dispatch(view, {
       agent,

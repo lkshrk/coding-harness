@@ -4,14 +4,14 @@ import { humanOutcome, type Intent, transition } from '../policy/transition'
 import type { Awaiting, IssueSnapshot } from '../ports'
 import { isTerminal, type Run } from '../state/runs'
 import type { Waiting } from '../state/status'
-import { INGEST_AGENT, type SupervisorRuntime } from './runtime'
+import { INGEST_AGENT, type StopOptions, type SupervisorRuntime } from './runtime'
 
 export type LinearSyncPeers = {
   coveredSet: () => Set<string>
   uncover: (issue: string) => void
   viewOptions: (issue: string) => ViewOptions
   setAwaiting: (issue: string, value: Awaiting | null) => void
-  stopRun: (runId: string, reason: string) => Promise<void>
+  stopRun: (runId: string, reason: string, opts?: StopOptions) => Promise<void>
 }
 
 export class LinearSync {
@@ -79,9 +79,13 @@ export class LinearSync {
         ...(next.status !== undefined ? { status: next.status } : {}),
         ...(next.stage !== undefined ? { stage: next.stage } : {}),
       })
-    if (next.runAction === 'stop' || next.runAction === 'stopKeepWip')
+    if (next.runAction === 'stop' || next.runAction === 'stopKeepWip') {
+      // Only an operator drop discards the work; other stops keep it as before.
+      const keepWork = !(human && next.runAction === 'stop')
       for (const run of this.rt.runs.active())
-        if (run.issue === identifier && run.agent !== INGEST_AGENT) await this.peers.stopRun(run.id, next.log)
+        if (run.issue === identifier && run.agent !== INGEST_AGENT)
+          await this.peers.stopRun(run.id, next.log, { keepWork })
+    }
     if (next.status === undefined && next.stage === undefined) return
     const prefix = `${LABEL_GROUPS.stage}:`
     const labels =
@@ -144,7 +148,7 @@ export class LinearSync {
       await this.applyIntent(id, { kind: 'humanChanged', to: lifecycle })
       // applyIntent needs a covered view; when even that is missing the operator change still ends the run.
       if (!isTerminal(this.rt.requireRun(run.id).state))
-        await this.peers.stopRun(run.id, 'issue changed in Linear')
+        await this.peers.stopRun(run.id, 'issue changed in Linear', { keepWork: action !== 'drop' })
     }
     return isTerminal(this.rt.requireRun(run.id).state)
   }

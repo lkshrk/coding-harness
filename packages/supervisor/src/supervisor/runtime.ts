@@ -53,6 +53,8 @@ export type SupervisorDeps = {
   retry?: { baseMs: number; maxMs: number }
 }
 
+export type StopOptions = { by?: By; keepWork?: boolean }
+
 export type FinishLike = {
   status?: unknown
   blocker?: { needs?: string; reason?: string; question?: string; options?: string[] }
@@ -154,7 +156,7 @@ export type RunFlow = {
   ingestFinished(run: Run, event: Event, finish: FinishLike): Promise<void>
   ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
-  stopRun(runId: string, reason: string, by?: By): Promise<void>
+  stopRun(runId: string, reason: string, opts?: StopOptions): Promise<void>
   end(runId: string, to: 'done' | 'failed' | 'stopped', cause: Event): Promise<Run>
   resolveRun(target: string): Run | undefined
   completeStage(identifier: string): Promise<void>
