@@ -45,6 +45,25 @@ const ROLLUP: Record<string, { status: string; conclusion: string }> = {
   skipping: { status: 'COMPLETED', conclusion: 'SKIPPED' },
 }
 
+export type FakeThread = {
+  id: string
+  isResolved: boolean
+  isOutdated: boolean
+  path: string
+  line: number | null
+  comments: { databaseId: number; author: { login: string } | null; body: string }[]
+}
+
+export const fakeThread = (id: string, commentId: number, body: string, over: Partial<FakeThread> = {}) => ({
+  id,
+  isResolved: false,
+  isOutdated: false,
+  path: 'src/b.ts',
+  line: 1,
+  comments: [{ databaseId: commentId, author: { login: 'agent-npa' }, body }],
+  ...over,
+})
+
 export type FakeCheck = { name: string; bucket: string; run?: number; job?: number }
 
 const rollupItem = (c: FakeCheck) => ({
@@ -61,6 +80,7 @@ export class FakeGh {
   readonly prs: FakePr[] = []
   checks: FakeCheck[] = []
   logs: Record<string, string | HostCommandResult> = {}
+  threads: FakeThread[] = []
   failNext: HostCommandResult | undefined
 
   constructor(private readonly slug = 'lkshrk/omni') {}
@@ -91,6 +111,27 @@ export class FakeGh {
       if (log === undefined) return { exitCode: 1, stdout: '', stderr: 'HTTP 404: Not Found' }
       return typeof log === 'string' ? ok(log) : log
     }
+    if (cmd[1] === 'api' && cmd[2] === 'graphql') {
+      const id = cmd.find((a) => a.startsWith('id='))?.slice(3)
+      if (id !== undefined) {
+        const thread = this.threads.find((t) => t.id === id)
+        if (!thread) return { exitCode: 1, stdout: '', stderr: `no thread ${id}` }
+        thread.isResolved = true
+        return ok(JSON.stringify({ data: { resolveReviewThread: { thread: { id, isResolved: true } } } }))
+      }
+      const nodes = this.threads.map((t) => ({ ...t, comments: { nodes: t.comments } }))
+      return ok(JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } }))
+    }
+    if (cmd[1] === 'api' && cmd[3] === 'POST' && cmd[4]?.endsWith('/replies')) {
+      const to = Number(cmd[4].split('/').at(-2))
+      // GitHub accepts replies only to a thread's top-level comment.
+      const thread = this.threads.find((t) => t.comments[0]?.databaseId === to)
+      if (!thread) return { exitCode: 1, stdout: '', stderr: 'HTTP 404: Not Found' }
+      const databaseId = 9000 + this.calls.length
+      const { body } = JSON.parse(o.stdin ?? '{}') as { body: string }
+      thread.comments.push({ databaseId, author: { login: 'nightshift' }, body })
+      return ok(JSON.stringify({ id: databaseId }))
+    }
     if (cmd[1] === 'api' && cmd[3] === 'PATCH') return ok('{}')
     if (verb === 'edit') return ok('')
     if (verb === 'view' && arg('--json') === 'statusCheckRollup')
@@ -118,6 +159,10 @@ export class FakeGh {
 
   logReads(): Call[] {
     return this.calls.filter((c) => c.cmd[1] === 'run' && c.cmd.includes('--log-failed'))
+  }
+
+  threadReads(): Call[] {
+    return this.calls.filter((c) => c.cmd[2] === 'graphql' && !c.cmd.some((a) => a.startsWith('id=')))
   }
 
   ciReads(): Call[] {

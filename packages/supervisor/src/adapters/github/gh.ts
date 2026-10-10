@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { type Config, expandHome, githubAccount } from '@nightshift/core'
 import { BRANCH_PREFIX } from '../../policy/naming'
-import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState } from '../../ports'
+import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState, ReviewThread } from '../../ports'
 import { PushRejectedError } from '../../ports/git-host'
 import { ACTIONS_URL, bucketOf, type GhRollupItem, logExcerpt, MAX_CI_LOG, MAX_JOB_LOG } from './ci-log'
 import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from './github-tokens'
@@ -57,6 +57,46 @@ async function gitRemote(checkout: string, remote: string): Promise<string> {
 }
 
 export { BRANCH_PREFIX }
+
+export const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          path
+          line
+          comments(first: 100) { nodes { databaseId author { login } body } }
+        }
+      }
+    }
+  }
+}`
+
+export const RESOLVE_MUTATION = `mutation($id: ID!) {
+  resolveReviewThread(input: { threadId: $id }) { thread { id isResolved } }
+}`
+
+export type GhThreadsResponse = {
+  data?: {
+    repository?: {
+      pullRequest?: {
+        reviewThreads?: {
+          nodes?: {
+            id: string
+            isResolved: boolean
+            isOutdated: boolean
+            path: string
+            line?: number | null
+            comments?: { nodes?: { databaseId: number; author?: { login: string } | null; body: string }[] }
+          }[]
+        }
+      }
+    }
+  }
+}
 
 export class GhGitHost implements GitHost {
   private readonly run: HostCommandRunner
@@ -308,6 +348,72 @@ export class GhGitHost implements GitHost {
     const merged = await this.state(pr)
     if (merged.state !== 'merged' || !merged.mergeSha) throw new Error(`${pr.url} is not merged`)
     return { sha: merged.mergeSha }
+  }
+
+  async reviewThreads(pr: PullRequest): Promise<ReviewThread[]> {
+    const [owner, name] = pr.repo.split('/')
+    return this.o.tokens.withToken(pr.repository, async (token) => {
+      const r = await this.run(
+        [
+          'gh',
+          'api',
+          'graphql',
+          '-f',
+          `query=${THREADS_QUERY}`,
+          '-f',
+          `owner=${owner}`,
+          '-f',
+          `name=${name}`,
+          '-F',
+          `number=${pr.number}`,
+        ],
+        { env: gitAuthEnv(token) },
+      )
+      this.check(r, 'gh api graphql reviewThreads')
+      const nodes =
+        (JSON.parse(r.stdout) as GhThreadsResponse).data?.repository?.pullRequest?.reviewThreads?.nodes ?? []
+      return nodes.map((t) => ({
+        id: t.id,
+        resolved: t.isResolved,
+        outdated: t.isOutdated,
+        path: t.path,
+        line: t.line ?? null,
+        comments: (t.comments?.nodes ?? []).map((c) => ({
+          id: c.databaseId,
+          author: c.author?.login ?? '',
+          body: c.body,
+        })),
+      }))
+    })
+  }
+
+  async replyToThread(pr: PullRequest, commentId: number, body: string): Promise<{ id: number }> {
+    return this.o.tokens.withToken(pr.repository, async (token) => {
+      const r = await this.run(
+        [
+          'gh',
+          'api',
+          '-X',
+          'POST',
+          `repos/${pr.repo}/pulls/${pr.number}/comments/${commentId}/replies`,
+          '--input',
+          '-',
+        ],
+        { env: gitAuthEnv(token), stdin: JSON.stringify({ body }) },
+      )
+      this.check(r, 'gh api reply')
+      return { id: (JSON.parse(r.stdout) as { id: number }).id }
+    })
+  }
+
+  async resolveThread(pr: PullRequest, threadId: string): Promise<void> {
+    await this.o.tokens.withToken(pr.repository, async (token) => {
+      const r = await this.run(
+        ['gh', 'api', 'graphql', '-f', `query=${RESOLVE_MUTATION}`, '-f', `id=${threadId}`],
+        { env: gitAuthEnv(token) },
+      )
+      this.check(r, 'gh api graphql resolveReviewThread')
+    })
   }
 
   private repo(repository: string) {

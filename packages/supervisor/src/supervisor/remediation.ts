@@ -6,7 +6,7 @@ import type { RunFlow, SupervisorRuntime } from './runtime'
 
 const ENVIRONMENT_STREAK_PAUSE = 3
 const ENVIRONMENT_REASONS = ['sandbox_error', 'gateway_error', 'supervisor_restart']
-const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed']
+const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed', 'review_comments']
 
 const TASK_TOO_LARGE_CLASS: Classification = { class: 'task_too_large', action: 'split' }
 // Conflicts between a continued attempt and the moved base are resolved by the user, not retried.

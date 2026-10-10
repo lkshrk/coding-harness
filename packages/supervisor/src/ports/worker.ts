@@ -1,4 +1,4 @@
-import type { CiFailure } from './git-host'
+import type { CiFailure, ReviewThread } from './git-host'
 import type { IssueSnapshot } from './linear'
 import type { Run } from './records'
 import type { Ms, SandboxHandle } from './sandbox'
@@ -47,6 +47,7 @@ export type Attempt = {
   gateTail?: string
   findings?: string
   ciFailures?: CiFailure[]
+  reviewThreads?: ReviewThread[]
 }
 
 export type ExecutorStart = {

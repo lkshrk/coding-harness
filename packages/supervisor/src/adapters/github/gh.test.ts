@@ -10,6 +10,7 @@ import {
   bareRemote,
   FakeGh,
   fakeHost,
+  fakeThread,
   hostConfig,
   PERSONAL_TOKEN,
 } from '../../stages/integration/testing'
@@ -371,6 +372,78 @@ describe('GhGitHost pull requests', () => {
     })
     expect(gh.gh('list')).toHaveLength(2)
     expect(gh.gh('create')).toHaveLength(1)
+  })
+})
+
+describe('GhGitHost review threads', () => {
+  const pr: PullRequest = {
+    url: 'https://github.com/lkshrk/omni/pull/7',
+    number: 7,
+    repository: 'omni',
+    repo: 'lkshrk/omni',
+    branch: 'ns/FOR-1',
+    base: 'main',
+    account: 'agent',
+  }
+
+  test('reviewThreads maps the GraphQL response', async () => {
+    const { gh, host } = setup()
+    gh.threads = [
+      fakeThread('T1', 11, 'trim before saving'),
+      fakeThread('T2', 21, 'old', { isResolved: true, isOutdated: true, line: null }),
+    ]
+    gh.threads[1]?.comments.push({ databaseId: 22, author: null, body: 'done' })
+    expect(await host.reviewThreads(pr)).toEqual([
+      {
+        id: 'T1',
+        resolved: false,
+        outdated: false,
+        path: 'src/b.ts',
+        line: 1,
+        comments: [{ id: 11, author: 'agent-npa', body: 'trim before saving' }],
+      },
+      {
+        id: 'T2',
+        resolved: true,
+        outdated: true,
+        path: 'src/b.ts',
+        line: null,
+        comments: [
+          { id: 21, author: 'agent-npa', body: 'old' },
+          { id: 22, author: '', body: 'done' },
+        ],
+      },
+    ])
+    const [read] = gh.threadReads()
+    expect(read?.cmd).toContain('owner=lkshrk')
+    expect(read?.cmd).toContain('name=omni')
+    expect(read?.cmd).toContain('number=7')
+    expect(read?.env.GH_TOKEN).toBe(AGENT_TOKEN)
+  })
+
+  test('reply posts to the comment replies endpoint and resolve sends the mutation', async () => {
+    const { gh, host } = setup()
+    gh.threads = [fakeThread('T1', 11, 'trim before saving')]
+    const reply = await host.replyToThread(pr, 11, 'Fixed in abc123.')
+    const post = gh.calls.find((c) => c.cmd.includes('POST'))
+    expect(post?.cmd).toEqual([
+      'gh',
+      'api',
+      '-X',
+      'POST',
+      'repos/lkshrk/omni/pulls/7/comments/11/replies',
+      '--input',
+      '-',
+    ])
+    expect(JSON.parse(post?.stdin ?? '')).toEqual({ body: 'Fixed in abc123.' })
+    expect(gh.threads[0]?.comments.at(-1)).toMatchObject({ databaseId: reply.id, body: 'Fixed in abc123.' })
+    await host.resolveThread(pr, 'T1')
+    const resolve = gh.calls.at(-1)
+    expect(resolve?.cmd.slice(0, 3)).toEqual(['gh', 'api', 'graphql'])
+    expect(resolve?.cmd.find((a) => a.startsWith('query='))).toContain('resolveReviewThread')
+    expect(resolve?.cmd).toContain('id=T1')
+    expect(resolve?.env.GH_TOKEN).toBe(AGENT_TOKEN)
+    expect(gh.threads[0]?.isResolved).toBe(true)
   })
 })
 

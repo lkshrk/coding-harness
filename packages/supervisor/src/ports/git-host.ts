@@ -21,6 +21,17 @@ export type CiState = {
 
 export type PullRequestState = { state: 'open' | 'merged' | 'closed'; mergeSha?: string; headSha?: string }
 
+export type ReviewComment = { id: number; author: string; body: string }
+
+export type ReviewThread = {
+  id: string
+  resolved: boolean
+  outdated: boolean
+  path: string
+  line: number | null
+  comments: ReviewComment[]
+}
+
 export class PushRejectedError extends Error {
   constructor(
     readonly branch: string,
@@ -50,6 +61,9 @@ export interface GitHost {
   ci(pr: PullRequest): Promise<CiState>
   state(pr: PullRequest): Promise<PullRequestState>
   merge(pr: PullRequest, method: 'squash' | 'merge' | 'rebase'): Promise<{ sha: string }>
+  reviewThreads(pr: PullRequest): Promise<ReviewThread[]>
+  replyToThread(pr: PullRequest, commentId: number, body: string): Promise<{ id: number }>
+  resolveThread(pr: PullRequest, threadId: string): Promise<void>
 }
 
 export interface RepoInspector {
