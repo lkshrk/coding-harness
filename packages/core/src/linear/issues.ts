@@ -2,6 +2,7 @@ import type { LinearRequest } from '@linear/sdk'
 
 import {
   COMMENTS,
+  HISTORY,
   ISSUE,
   ISSUE_BLOCKERS,
   ISSUE_LABELS,
@@ -16,6 +17,7 @@ import {
   PROJECT_TTL_MS,
   PROJECTS,
   type RawComment,
+  type RawHistory,
   type RawIssue,
   type RawLabel,
   type RawProject,
@@ -57,6 +59,8 @@ export type LinearIssueComment = {
   parentId: string | null
   by: string
 }
+
+export type LinearChange = { actor: string; app: boolean; at: string; status?: string; labels?: string[] }
 
 export type ActOn = { delegated: boolean; labels: readonly string[] }
 
@@ -172,6 +176,37 @@ export class LinearIssueReader {
     return {
       issueId: data.issue.id,
       comments: raw.map(toComment).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    }
+  }
+
+  async lastChange(identifier: string): Promise<LinearChange | null> {
+    type Data = { issue: { history: Page<RawHistory> } }
+    const page = (after: string | null) =>
+      this.request<Data, { id: string; after: string | null }>(HISTORY, { id: identifier, after })
+    let history: Page<RawHistory>
+    try {
+      history = (await page(null)).issue.history
+    } catch (e) {
+      if (notFound(e)) return null
+      throw e
+    }
+    // History arrives newest first; the first page holding a status or label change holds the newest one.
+    let newest: RawHistory | undefined
+    for (;;) {
+      newest = history.nodes
+        .filter((h) => h.toState || h.addedLabels?.length || h.removedLabels?.length)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+      if (newest || !history.pageInfo.hasNextPage || !history.pageInfo.endCursor) break
+      history = (await page(history.pageInfo.endCursor)).issue.history
+    }
+    if (!newest) return null
+    const labelChange = Boolean(newest.addedLabels?.length || newest.removedLabels?.length)
+    return {
+      actor: newest.actor?.name ?? newest.botActor?.name ?? 'unknown',
+      app: Boolean(newest.actor?.app || newest.botActor),
+      at: newest.createdAt,
+      ...(newest.toState ? { status: newest.toState.name } : {}),
+      ...(labelChange ? { labels: (newest.addedLabels ?? []).map(labelName) } : {}),
     }
   }
 

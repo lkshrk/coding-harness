@@ -32,6 +32,7 @@ export function createLinearPort(opts: LinearPortOptions): LinearPort {
     candidates: (q) => issues.candidates(q),
     issue: (identifier) => issues.issue(identifier),
     comments: (identifier) => issues.comments(identifier),
+    lastChange: (identifier) => issues.lastChange(identifier),
     async update(identifier, change) {
       await writer.update(identifier, (team) => issueChange(config(), team, change))
     },

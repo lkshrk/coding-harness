@@ -5,6 +5,7 @@ export * from './doctor'
 export {
   type ActOn,
   type LinearBlocker,
+  type LinearChange,
   type LinearIssue,
   type LinearIssueComment,
   type LinearIssueProject,
