@@ -147,6 +147,14 @@ export class Dispatcher {
     if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
     this.flow.observeIssue(snapshot)
     const pr = this.rt.pullRequests.get(identifier)
+    const runs = this.rt.runs.forIssue(identifier)
+    const prRun = pr ? runs.filter((r) => r.headSha === pr.headSha).at(-1) : undefined
+    if (pr && !prRun) {
+      throw new ControlError(
+        'refused',
+        `${identifier}: the open PR head ${pr.headSha.slice(0, 12)} was not produced by any run; cannot continue the PR from it`,
+      )
+    }
     const before = viewIssue(snapshot, this.rt.config(), this.flow.viewOptions(identifier))
     if (pr && before?.stage === INTEGRATION && before.lifecycle !== 'done' && before.lifecycle !== 'canceled')
       await this.flow.applyIntent(identifier, { kind: 'retryRequested' })
@@ -162,8 +170,6 @@ export class Dispatcher {
     if (o.profile && !profileEntries(this.rt.config().profiles).some(([name]) => name === o.profile)) {
       throw new ControlError('refused', `no profile '${o.profile}'`)
     }
-    const runs = this.rt.runs.forIssue(identifier)
-    const prRun = pr ? runs.filter((r) => r.headSha === pr.headSha).at(-1) : undefined
     const continueFrom = prRun ?? (o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined)
     if (o.continue && !continueFrom) {
       throw new ControlError('refused', `${identifier}: no earlier attempt has a commit to continue from`)

@@ -231,6 +231,40 @@ describe('manual retry', () => {
     expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({ continues: first.id })
   })
 
+  test.each([
+    ['a plain retry', {}],
+    ['--continue', { continue: true }],
+  ])('%s with an open PR whose head no run produced is refused, not started from elsewhere', async (_, o) => {
+    const h = harness()
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.headImported(first.id, 'head1')
+    await h.sup.workerFailed(first.id, 'crash', 'segfault')
+    h.sup.pullRequests.put({
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: first.id,
+      headSha: 'pushed-elsewhere',
+      mode: 'manual',
+      draft: false,
+      ci: 'passed',
+    })
+    h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+
+    await expect(h.sup.retryRun('FOR-1', o, 'cli')).rejects.toMatchObject({
+      code: 'refused',
+      message: expect.stringContaining('pushed-elsew'),
+    })
+    expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
+    expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
+  })
+
   test('a plain retry after a failure with a commit starts fresh from the current base', async () => {
     let bases = 0
     const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
