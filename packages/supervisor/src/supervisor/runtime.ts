@@ -168,6 +168,7 @@ export type RunFlow = {
   requireActive(target: string): Run
   profileFor(view: IssueView): string
   forgetStalls(runId: string): void
+  releaseSandbox(runId: string): Promise<void>
   sandboxDestroyed(runId: string, handle: SandboxHandle): void
   sandboxHandle(run: Run): SandboxHandle
 }

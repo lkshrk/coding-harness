@@ -9,6 +9,7 @@ export type IngestPeers = {
   profileFor: (view: IssueView) => string
   end: (runId: string, to: 'done' | 'failed' | 'stopped', cause: Event) => Promise<Run>
   forgetStalls: (runId: string) => void
+  releaseSandbox: (runId: string) => Promise<void>
   observeIssue: (issue: IssueSnapshot) => void
   viewOptions: (issue: string) => ViewOptions
 }
@@ -159,6 +160,8 @@ export class Ingest {
     this.rt.runs.transition(run.id, 'reviewing', event)
     await this.peers.end(run.id, 'done', event)
     this.rt.log.append({ type: 'VAULT_INGESTED', issue: run.issue, data: { commits } })
+    // The commits are pushed by publish, so the sandbox holds nothing left to keep.
+    await this.peers.releaseSandbox(run.id)
   }
 
   async ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void> {
@@ -178,6 +181,7 @@ export class Ingest {
     }
     this.peers.forgetStalls(runId)
     await this.ingestFailed(run.issue, reason)
+    await this.peers.releaseSandbox(runId)
   }
 
   async ingestFailed(issue: string, reason: string): Promise<void> {
