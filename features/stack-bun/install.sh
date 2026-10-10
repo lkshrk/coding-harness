@@ -28,9 +28,6 @@ sha() {
   printf '%s' "${!var}"
 }
 
-pick() {
-  if [ "$arch" = amd64 ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
-}
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -82,7 +79,7 @@ EOF
 install_bun() {
   local dir archive
   dir="bun-linux-$(pick x64-baseline aarch64)"
-  archive="$(fetch "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/$dir.zip" "$(sha BUN)" bun.zip)"
+  archive="$(fetch "$(BUN_URL)" "$(sha BUN)" bun.zip)"
   unzip -q -o "$archive" "$dir/bun" -d "$tmp"
   install -D -m 0755 "$tmp/$dir/bun" "$prefix/bin/bun"
   ln -sf "$prefix/bin/bun" "$bin/bun"
@@ -91,14 +88,13 @@ install_bun() {
 
 install_biome() {
   local binary
-  binary="$(fetch "https://github.com/biomejs/biome/releases/download/@biomejs/biome@$BIOME_VERSION/biome-linux-$(pick x64 arm64)" "$(sha BIOME)" biome)"
+  binary="$(fetch "$(BIOME_URL)" "$(sha BIOME)" biome)"
   install -m 0755 "$binary" "$bin/biome"
 }
 
 install_oxlint() {
-  local triple archive
-  triple="$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)"
-  archive="$(fetch "https://github.com/oxc-project/oxc/releases/download/oxlint_v$OXLINT_VERSION/oxlint-$triple.tar.gz" "$(sha OXLINT)" oxlint.tgz)"
+  local archive
+  archive="$(fetch "$(OXLINT_URL)" "$(sha OXLINT)" oxlint.tgz)"
   mkdir -p "$tmp/oxlint"
   tar -xzf "$archive" -C "$tmp/oxlint"
   install -m 0755 "$(find "$tmp/oxlint" -type f -name 'oxlint*' | head -n 1)" "$bin/oxlint"

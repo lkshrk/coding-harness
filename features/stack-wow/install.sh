@@ -30,9 +30,6 @@ sha() {
   printf '%s' "${!var}"
 }
 
-pick() {
-  if [ "$arch" = amd64 ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
-}
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -76,7 +73,7 @@ checkout() {
 
 install_lua_language_server() {
   local archive dir="$prefix/lua-language-server"
-  archive="$(fetch "https://github.com/LuaLS/lua-language-server/releases/download/$LUA_LANGUAGE_SERVER_VERSION/lua-language-server-$LUA_LANGUAGE_SERVER_VERSION-linux-$(pick x64 arm64).tar.gz" "$(sha LUA_LANGUAGE_SERVER)" luals.tgz)"
+  archive="$(fetch "$(LUA_LANGUAGE_SERVER_URL)" "$(sha LUA_LANGUAGE_SERVER)" luals.tgz)"
   rm -rf "$dir"
   mkdir -p "$dir"
   tar -xzf "$archive" -C "$dir"
