@@ -120,22 +120,29 @@ describe('transition rule table', () => {
 })
 
 describe('humanChanged on a running issue', () => {
-  const cases: [LifecycleState, object][] = [
-    ['backlog', { runAction: 'stopKeepWip' }],
-    ['ready', { runAction: 'stopKeepWip' }],
-    ['blocked', { runAction: 'stop', awaiting: escalated('implementation') }],
-    ['canceled', { runAction: 'stop', awaiting: null }],
-    ['done', { runAction: 'stop', awaiting: null }],
-    ['running', { runAction: 'none' }],
+  const cases: [LifecycleState, string, object][] = [
+    ['backlog', 'requeue', { runAction: 'stopKeepWip' }],
+    ['ready', 'requeue', { runAction: 'stopKeepWip' }],
+    ['blocked', 'hold', { runAction: 'stopKeepWip', awaiting: escalated('implementation') }],
+    ['canceled', 'drop', { status: 'canceled', runAction: 'stop', awaiting: null }],
+    ['done', 'finish', { status: 'done', runAction: 'stopKeepWip', awaiting: null }],
+    ['running', 'continue', { runAction: 'none' }],
   ]
-  for (const [to, want] of cases) {
-    test(`to ${to}`, () => {
+  for (const [to, outcome, want] of cases) {
+    test(`to ${to}: ${outcome}`, () => {
       const result = transition(view('running'), { kind: 'humanChanged', to }, ctx)
-      expect(result).toMatchObject(want)
-      expect(result.status).toBeUndefined()
-      expect(result.stage).toBeUndefined()
+      expect(result).toEqual({ ...want, log: expect.stringContaining(outcome) })
     })
   }
+
+  test('hold, finish, drop and requeue produce distinct writes', () => {
+    const actionable = (to: LifecycleState) => {
+      const { log: _, ...rest } = transition(view('running'), { kind: 'humanChanged', to }, ctx)
+      return JSON.stringify(rest)
+    }
+    const outcomes = ['backlog', 'blocked', 'done', 'canceled', 'running'] as const
+    expect(new Set(outcomes.map(actionable)).size).toBe(outcomes.length)
+  })
 
   test('is ignored when no run is live', () => {
     for (const state of STATES.filter((s) => s !== 'running'))

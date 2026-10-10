@@ -44,15 +44,53 @@ function cells<I extends Intent>(
   >
 }
 
-const humanRunAction: Record<LifecycleState, RunAction> = {
+// Operator status change on a running issue: Backlog or Todo re-queue keeping a WIP commit,
+// Blocked hold (WIP kept, escalated to you), Done finish (WIP kept, terminal), Canceled drop
+// (WIP discarded, terminal). Triage and Review take the run off the queue without keeping WIP.
+type HumanOutcome = 'requeue' | 'hold' | 'finish' | 'drop' | 'continue' | 'stop'
+
+const humanOutcome: Record<LifecycleState, HumanOutcome> = {
   triage: 'stop',
-  backlog: 'stopKeepWip',
-  ready: 'stopKeepWip',
-  running: 'none',
+  backlog: 'requeue',
+  ready: 'requeue',
+  running: 'continue',
   review: 'stop',
-  blocked: 'stop',
-  done: 'stop',
-  canceled: 'stop',
+  blocked: 'hold',
+  done: 'finish',
+  canceled: 'drop',
+}
+
+function humanChange(current: IssueView, to: LifecycleState): Transition {
+  const outcome = humanOutcome[to]
+  const log = `status changed to ${to} by you; ${outcome}`
+  switch (outcome) {
+    case 'requeue':
+      return { runAction: 'stopKeepWip', log: `${log}, work in progress kept` }
+    case 'hold':
+      return {
+        runAction: 'stopKeepWip',
+        awaiting: { kind: 'escalated', stage: current.stage ?? '' },
+        log: `${log}, work in progress kept until you release it`,
+      }
+    case 'finish':
+      return {
+        status: 'done',
+        runAction: 'stopKeepWip',
+        awaiting: null,
+        log: `${log}, work in progress kept`,
+      }
+    case 'drop':
+      return {
+        status: 'canceled',
+        runAction: 'stop',
+        awaiting: null,
+        log: `${log}, work in progress discarded`,
+      }
+    case 'continue':
+      return { runAction: 'none', log }
+    case 'stop':
+      return { runAction: 'stop', log }
+  }
 }
 
 export const RULES: Table = {
@@ -101,17 +139,7 @@ export const RULES: Table = {
   }),
   unblocked: cells(() => ({ status: 'ready', log: 'blockers done' }), ['backlog']),
   lost: cells(() => ({ status: 'ready', log: 'runtime state lost; dispatched again' }), ['running']),
-  humanChanged: cells(
-    (current, intent) => {
-      const runAction = humanRunAction[intent.to]
-      const log = `status changed to ${intent.to} by you; run ${runAction}`
-      if (intent.to === 'blocked')
-        return { awaiting: { kind: 'escalated', stage: current.stage ?? '' }, runAction, log }
-      if (intent.to === 'done' || intent.to === 'canceled') return { awaiting: null, runAction, log }
-      return { runAction, log }
-    },
-    ['running'],
-  ),
+  humanChanged: cells((current, intent) => humanChange(current, intent.to), ['running']),
 }
 
 export function transition(current: IssueView, intent: Intent, ctx: TransitionContext): Transition {
