@@ -89,6 +89,34 @@ describe('stage engine', () => {
     expect(h.of('STAGE_COMPLETED').at(-1)?.data).toEqual({ stage: 'acceptance', last: true })
   })
 
+  test('merging a child completes integration as the last stage and starts the ingest', async () => {
+    const h = harness({
+      ingest: {
+        prepare: async () => ({
+          repository: 'nightshift-vault',
+          baseSha: 'vault-base',
+          files: ['raw/linear/2026-10-10-FOR-3.md'],
+          sourceFiles: [{ path: 'raw/linear/2026-10-10-FOR-3.md', content: 'source' }],
+        }),
+        publish: async () => ['vault-commit'],
+      },
+    })
+    h.linear.put(
+      snapshot({
+        identifier: 'FOR-3',
+        status: 'In Review',
+        labels: ['ai-stage:integration'],
+        parent: 'FOR-1',
+      }),
+    )
+    await h.sup.start()
+    await h.sup.completeStage('FOR-3')
+    expect(h.of('STAGE_COMPLETED').map((e) => e.data)).toEqual([{ stage: 'integration', last: true }])
+    expect(h.of('STAGE_ENTERED')).toEqual([])
+    expect(h.of('VAULT_INGEST_STARTED')).toHaveLength(1)
+    expect(h.linear.get('FOR-3').labels).toEqual(['ai-stage:integration'])
+  })
+
   test('entering a stage with a checkpoint before holds it; ready releases it', async () => {
     const h = harness()
     h.config.stages.implementation = { automatic: true, human_checkpoint: 'before' }
