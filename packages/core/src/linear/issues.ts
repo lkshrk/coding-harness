@@ -2,6 +2,7 @@ import type { LinearRequest } from '@linear/sdk'
 
 import {
   COMMENTS,
+  HISTORY,
   ISSUE,
   ISSUE_BLOCKERS,
   ISSUE_LABELS,
@@ -16,6 +17,7 @@ import {
   PROJECT_TTL_MS,
   PROJECTS,
   type RawComment,
+  type RawHistory,
   type RawIssue,
   type RawLabel,
   type RawProject,
@@ -57,6 +59,8 @@ export type LinearIssueComment = {
   parentId: string | null
   by: string
 }
+
+export type LinearChange = { actor: string; app: boolean; at: string; status?: string; labels?: string[] }
 
 export type ActOn = { delegated: boolean; labels: readonly string[] }
 
@@ -172,6 +176,28 @@ export class LinearIssueReader {
     return {
       issueId: data.issue.id,
       comments: raw.map(toComment).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    }
+  }
+
+  async lastChange(identifier: string): Promise<LinearChange | null> {
+    let data: { issue: { history: { nodes: RawHistory[] } } }
+    try {
+      data = await this.request<typeof data, { id: string }>(HISTORY, { id: identifier })
+    } catch (e) {
+      if (notFound(e)) return null
+      throw e
+    }
+    const newest = data.issue.history.nodes
+      .filter((h) => h.toState || h.addedLabels?.length || h.removedLabels?.length)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    if (!newest) return null
+    const labelChange = Boolean(newest.addedLabels?.length || newest.removedLabels?.length)
+    return {
+      actor: newest.actor?.name ?? newest.botActor?.name ?? 'unknown',
+      app: Boolean(newest.actor?.app || newest.botActor),
+      at: newest.createdAt,
+      ...(newest.toState ? { status: newest.toState.name } : {}),
+      ...(labelChange ? { labels: (newest.addedLabels ?? []).map(labelName) } : {}),
     }
   }
 

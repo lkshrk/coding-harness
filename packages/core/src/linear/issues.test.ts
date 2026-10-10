@@ -399,3 +399,89 @@ describe('LinearIssueReader.comments', () => {
     expect(await reader.comments('FOR-999')).toEqual([])
   })
 })
+
+describe('LinearIssueReader.lastChange', () => {
+  const entry = (createdAt: string, over: Record<string, unknown> = {}) => ({
+    createdAt,
+    actor: null,
+    botActor: null,
+    toState: null,
+    addedLabels: null,
+    removedLabels: null,
+    ...over,
+  })
+
+  test('returns the newest status change with its actor', async () => {
+    const { reader, calls } = fakeLinear({
+      nsIssueHistory: () => ({
+        issue: {
+          history: conn([
+            entry('2026-01-03T00:00:00.000Z', { actor: { name: 'You', app: false }, toTitle: 'x' }),
+            entry('2026-01-02T00:00:00.000Z', {
+              actor: { name: 'You', app: false },
+              toState: { name: 'In Progress' },
+            }),
+            entry('2026-01-01T00:00:00.000Z', {
+              actor: { name: 'nightshift', app: true },
+              toState: { name: 'Todo' },
+            }),
+          ]),
+        },
+      }),
+    })
+    expect(await reader.lastChange('FOR-1')).toEqual({
+      actor: 'You',
+      app: false,
+      at: '2026-01-02T00:00:00.000Z',
+      status: 'In Progress',
+    })
+    expect(calls.map((c) => c.variables)).toEqual([{ id: 'FOR-1' }])
+    expect(calls[0]?.query).toContain('history(first: 5)')
+  })
+
+  test('returns a label-only change with the added grouped labels', async () => {
+    const { reader } = fakeLinear({
+      nsIssueHistory: () => ({
+        issue: {
+          history: conn([
+            entry('2026-01-02T00:00:00.000Z', {
+              actor: { name: 'nightshift', app: true },
+              addedLabels: [label('l1', 'verification', 'ai-stage')],
+              removedLabels: [label('l2', 'implementation', 'ai-stage')],
+            }),
+          ]),
+        },
+      }),
+    })
+    expect(await reader.lastChange('FOR-1')).toEqual({
+      actor: 'nightshift',
+      app: true,
+      at: '2026-01-02T00:00:00.000Z',
+      labels: ['ai-stage:verification'],
+    })
+  })
+
+  test('an integration bot counts as an app', async () => {
+    const { reader } = fakeLinear({
+      nsIssueHistory: () => ({
+        issue: {
+          history: conn([
+            entry('2026-01-02T00:00:00.000Z', { botActor: { name: 'GitHub' }, toState: { name: 'Done' } }),
+          ]),
+        },
+      }),
+    })
+    expect(await reader.lastChange('FOR-1')).toMatchObject({ actor: 'GitHub', app: true, status: 'Done' })
+  })
+
+  test('is null without a status or label change or for an unknown issue', async () => {
+    const { reader } = fakeLinear({
+      nsIssueHistory: (v) => {
+        if (v.id === 'FOR-999') throw new Error('Entity not found: Issue')
+        return { issue: { history: conn([entry('2026-01-02T00:00:00.000Z', { addedLabels: [] })]) } }
+      },
+    })
+    expect(await reader.lastChange('FOR-1')).toBeNull()
+    expect(await reader.lastChange('FOR-999')).toBeNull()
+  })
+})

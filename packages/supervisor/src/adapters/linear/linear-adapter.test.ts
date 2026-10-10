@@ -164,6 +164,49 @@ describe('createLinearPort', () => {
     expect(updates(calls)).toEqual([])
   })
 
+  test('lastChange maps the history actor and app flag', async () => {
+    const { port, calls } = fakeLinear({
+      nsIssueHistory: () => ({
+        issue: {
+          history: page([
+            {
+              createdAt: '2026-01-02T00:00:00.000Z',
+              actor: { name: 'nightshift', app: true },
+              botActor: null,
+              toState: { name: 'In Progress' },
+              addedLabels: [rawLabel('l-impl', 'implementation', 'ai-stage')],
+              removedLabels: [],
+            },
+          ]),
+        },
+      }),
+    })
+    expect(await port.lastChange('FOR-1')).toEqual({
+      actor: 'nightshift',
+      app: true,
+      at: '2026-01-02T00:00:00.000Z',
+      status: 'In Progress',
+      labels: ['ai-stage:implementation'],
+    })
+    expect(calls.map((c) => c.operation)).toEqual(['nsIssueHistory'])
+  })
+
+  test('fake lastChange records its own writes as app changes and is null otherwise', async () => {
+    const linear = new FakeLinear(testConfig(), () => new Date('2026-02-01T00:00:00.000Z'))
+    linear.put(snapshot({ identifier: 'FOR-1' }))
+    expect(await linear.lastChange('FOR-1')).toBeNull()
+    await linear.update('FOR-1', { status: 'running', stage: 'verification' })
+    expect(await linear.lastChange('FOR-1')).toEqual({
+      actor: 'nightshift',
+      app: true,
+      at: '2026-02-01T00:00:00.000Z',
+      status: 'In Progress',
+      labels: ['ai-stage:verification'],
+    })
+    linear.changes.set('FOR-1', { actor: 'You', app: false, at: '2026-02-01T00:00:01.000Z', status: 'Todo' })
+    expect((await linear.lastChange('FOR-1'))?.actor).toBe('You')
+  })
+
   test('comment is idempotent by marker and replies keep their parent', async () => {
     const posted: Record<string, unknown>[] = []
     const { port } = fakeLinear({

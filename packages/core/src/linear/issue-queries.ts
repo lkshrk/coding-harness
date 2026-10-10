@@ -46,6 +46,15 @@ export type RawComment = {
   externalUser: { name: string } | null
 }
 
+export type RawHistory = {
+  createdAt: string
+  actor: { name: string; app: boolean } | null
+  botActor: { name: string | null } | null
+  toState: { name: string } | null
+  addedLabels: RawLabel[] | null
+  removedLabels: RawLabel[] | null
+}
+
 export const ISSUE_PAGE = 25
 
 const NESTED_PAGE = 20
@@ -109,6 +118,19 @@ export const COMMENTS = `query nsIssueComments($id: String!, $after: String) {
     comments(first: ${COMMENT_PAGE}, after: $after) {
       nodes { ${COMMENT_FIELDS} }
       ${PAGE_INFO}
+    }
+  }
+}`
+
+export const HISTORY_PAGE = 5
+
+export const HISTORY = `query nsIssueHistory($id: String!) {
+  issue(id: $id) {
+    history(first: ${HISTORY_PAGE}) {
+      nodes {
+        createdAt actor { name app } botActor { name } toState { name }
+        addedLabels { id name parent { name } } removedLabels { id name parent { name } }
+      }
     }
   }
 }`

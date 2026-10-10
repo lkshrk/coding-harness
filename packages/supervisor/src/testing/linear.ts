@@ -1,6 +1,6 @@
 import type { Config, LinearWorkspace } from '@nightshift/core'
 import { optedIn } from '../policy/stages'
-import type { IssueSnapshot, IssueUpdate, LinearComment, LinearPort } from '../ports'
+import type { IssueSnapshot, IssueUpdate, LinearChange, LinearComment, LinearPort } from '../ports'
 import { issueBody, testWorkspace } from './config'
 
 let seq = 0
@@ -30,6 +30,7 @@ export class FakeLinear implements LinearPort {
   readonly threads = new Map<string, LinearComment[]>()
   readonly updates: { identifier: string; change: IssueUpdate }[] = []
   readonly attachments = new Map<string, { url: string; title: string }[]>()
+  readonly changes = new Map<string, LinearChange>()
   workspaceValue: LinearWorkspace = testWorkspace()
   stale: Map<string, IssueSnapshot> | null = null
   private ids = 0
@@ -120,6 +121,10 @@ export class FakeLinear implements LinearPort {
     return this.threads.get(identifier) ?? []
   }
 
+  async lastChange(identifier: string): Promise<LinearChange | null> {
+    return this.changes.get(identifier) ?? null
+  }
+
   async comment(identifier: string, body: string, opts: { parentId?: string } = {}): Promise<LinearComment> {
     this.ids += 1
     const c = {
@@ -156,5 +161,13 @@ export class FakeLinear implements LinearPort {
     if (change.stage !== undefined)
       labels = [...labels.filter((l) => !l.startsWith('ai-stage:')), `ai-stage:${change.stage}`]
     this.patch(identifier, { status, labels })
+    if (change.status !== undefined || change.stage !== undefined)
+      this.changes.set(identifier, {
+        actor: 'nightshift',
+        app: true,
+        at: this.now().toISOString(),
+        ...(change.status === undefined ? {} : { status }),
+        ...(change.stage === undefined ? {} : { labels: [`ai-stage:${change.stage}`] }),
+      })
   }
 }
