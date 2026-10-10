@@ -47,7 +47,7 @@ Control commands change the running system. Propose the exact command with one l
 | Start work on approved issues | `ns implement <issue>` |
 | Switch the model profile | `ns profile use <name>` |
 
-- `--continue` keeps the branch and open PR of the last attempt; without it the retry starts fresh.
+- `--continue` reuses the latest recorded commit for this issue on a new attempt branch; it does not preserve the old branch or guarantee reuse of its PR. Without it, an `implementation_defect` retry still continues the previous attempt's recorded commit; other failures start from the current repository base.
 - A retry without a change to its cause fails the same way. Name what changed (issue text, answer, profile) before proposing it.
 - Never touch issue status or `ai-stage:` labels to unblock something; the supervisor owns them.
 

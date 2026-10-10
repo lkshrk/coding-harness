@@ -19,7 +19,7 @@ An escalated issue failed for a reason another attempt will not fix: the work is
 ## task_too_large
 
 - Split into child issues of the escalated issue, using the `decompose` skill's template and check: one file per issue under `/tmp/<ID>-replan/`, `plan.json`, then `<skills>/decompose/scripts/plan-check.sh /tmp/<ID>-replan/plan.json`.
-- Keep what the worker finished: when its branch holds usable work, the first child continues from it and says so in `## Context`.
+- Inspect and record the parent's usable commit, but plan each new child against the repository base: `ns implement <child>` does not inherit the parent's branch. Include any unmerged work the child needs in its scope; do not count it as already present without a separately approved and verified transfer.
 - Each child gets its share of the original `## Files` and acceptance criteria; together they cover all of them. Nothing new joins the scope.
 - Every child `blocks` the original, so the original waits until its children are done and then only checks the whole.
 
