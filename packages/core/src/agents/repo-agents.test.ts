@@ -28,8 +28,8 @@ const ctx: RenderContext = {
 }
 
 // The lead's planning skills are not written yet.
-const PENDING_SKILLS = ['decompose', 'status', 'replan', 'intake']
-const LEAD_SKILLS = ['discover', 'design']
+const PENDING_SKILLS = ['status', 'replan', 'intake']
+const LEAD_SKILLS = ['discover', 'design', 'decompose']
 const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,

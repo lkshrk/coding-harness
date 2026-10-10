@@ -1,0 +1,6 @@
+{
+  "issues": [
+    { "key": "A", "title": "Retry queue", "description": "a.md", "estimate": 3 },
+    { "key": "C", "title": "Retry queue again", "description": "a.md" }
+  ]
+}
