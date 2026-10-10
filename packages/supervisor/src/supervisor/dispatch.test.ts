@@ -145,6 +145,127 @@ describe('manual retry', () => {
     })
   })
 
+  test('a retry from integration with an open PR goes back to implementation and continues from the PR head', async () => {
+    let bases = 0
+    const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(first.id, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(first.id, 'head1')
+    await h.sup.stopRun(first.id, 'done elsewhere')
+    const pr = {
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: first.id,
+      headSha: 'head1',
+      mode: 'manual' as const,
+      draft: false,
+      ci: 'passed' as const,
+    }
+    h.sup.pullRequests.put(pr)
+    h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+
+    const next = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1', agent: 'implementer' })
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+    expect(h.linear.get('FOR-1')).toMatchObject({
+      status: 'In Progress',
+      labels: ['ai-stage:implementation'],
+    })
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(h.sup.runs.get(next.id)?.state).not.toBe('stopped')
+    expect(h.of('WORKER_FAILED').filter((e) => e.run === next.id)).toEqual([])
+    expect(h.linear.get('FOR-1').status).toBe('In Progress')
+    expect(h.sup.pullRequests.get('FOR-1')).toEqual(pr)
+  })
+
+  test('--continue with an open PR resumes from the PR head, not a later unpushed attempt', async () => {
+    let bases = 0
+    const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(first.id, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(first.id, 'head1')
+    await h.sup.stopRun(first.id, 'done elsewhere')
+    h.sup.pullRequests.put({
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: first.id,
+      headSha: 'head1',
+      mode: 'manual',
+      draft: false,
+      ci: 'passed',
+    })
+    h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+
+    const second = await h.sup.retryRun('FOR-1', {}, 'cli')
+    await h.sup.workerStarted(second.id, { sandbox: 'sb2', session: 's2' })
+    await h.sup.headImported(second.id, 'head2')
+    await h.sup.workerFailed(second.id, 'crash', 'segfault')
+    expect(h.sup.runs.get(second.id)?.headSha).toBe('head2')
+
+    const third = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(third).toMatchObject({ attempt: 3, baseSha: 'base1' })
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+    expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({ continues: first.id })
+  })
+
+  test.each([
+    ['a plain retry', {}],
+    ['--continue', { continue: true }],
+  ])('%s with an open PR whose head is not a nightshift attempt is refused', async (_, o) => {
+    const h = harness()
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.headImported(first.id, 'head1')
+    await h.sup.workerFailed(first.id, 'crash', 'segfault')
+    h.sup.pullRequests.put({
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: first.id,
+      headSha: 'pushed-elsewhere',
+      mode: 'manual',
+      draft: false,
+      ci: 'passed',
+    })
+    h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+
+    await expect(h.sup.retryRun('FOR-1', o, 'cli')).rejects.toMatchObject({
+      code: 'refused',
+      message:
+        'FOR-1: the open PR head pushed-elsewhere is not a nightshift attempt; continuing from a PR head pushed outside nightshift is XXX-293',
+    })
+    expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
+    expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
+  })
+
   test('a plain retry after a failure with a commit starts fresh from the current base', async () => {
     let bases = 0
     const h = harness({ repos: { baseSha: async () => `base${++bases}` } })

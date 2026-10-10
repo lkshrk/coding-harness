@@ -4,7 +4,7 @@ import { BRANCH_PREFIX, runRef } from '../../policy/naming'
 import { INTEGRATION, lifecycleOf, viewIssue } from '../../policy/stages'
 import type { GitHost, StageHandler, StageWork } from '../../ports'
 import type { EventLog } from '../../state/events'
-import type { Run, RunStore } from '../../state/runs'
+import { isTerminal, type Run, type RunStore } from '../../state/runs'
 import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
 import { pullRequestBody, pullRequestTitle } from './body'
@@ -64,10 +64,12 @@ export class IntegrationHandler implements StageHandler {
     const id = work.issue.identifier
     const cb = this.d.callbacks()
     const config = this.d.config()
-    const run = cb.runs
-      .forIssue(id)
-      .filter((r) => r.state === 'done' && r.headSha !== null)
-      .at(-1)
+    const runs = cb.runs.forIssue(id)
+    if (runs.some((r) => !isTerminal(r.state))) {
+      this.d.out?.(`${id}: a run is active; integration waits for it`)
+      return
+    }
+    const run = runs.filter((r) => r.state === 'done' && r.headSha !== null).at(-1)
     if (!run?.headSha) {
       this.d.out?.(`${id}: integration has no finished run to push`)
       return

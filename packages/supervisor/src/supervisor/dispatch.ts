@@ -1,7 +1,7 @@
 import { GatewayError, profileEntries } from '@nightshift/core'
 import type { RetryQueue } from '../policy/retry'
 import { selectAgent } from '../policy/selection'
-import { type IssueView, viewIssue } from '../policy/stages'
+import { INTEGRATION, type IssueView, viewIssue } from '../policy/stages'
 import type { ExecutorStart } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
@@ -146,7 +146,20 @@ export class Dispatcher {
     const snapshot = await this.rt.deps.linear.issue(identifier)
     if (!snapshot) throw new ControlError('not_found', `unknown issue ${identifier}`)
     this.flow.observeIssue(snapshot)
-    const view = viewIssue(snapshot, this.rt.config(), this.flow.viewOptions(identifier))
+    const pr = this.rt.pullRequests.get(identifier)
+    const runs = this.rt.runs.forIssue(identifier)
+    const prRun = pr ? runs.filter((r) => r.headSha === pr.headSha).at(-1) : undefined
+    if (pr && !prRun) {
+      throw new ControlError(
+        'refused',
+        `${identifier}: the open PR head ${pr.headSha} is not a nightshift attempt; continuing from a PR head pushed outside nightshift is XXX-293`,
+      )
+    }
+    const before = viewIssue(snapshot, this.rt.config(), this.flow.viewOptions(identifier))
+    if (pr && before?.stage === INTEGRATION && before.lifecycle !== 'done' && before.lifecycle !== 'canceled')
+      await this.flow.applyIntent(identifier, { kind: 'retryRequested' })
+    const current = this.rt.cache.get(identifier) ?? snapshot
+    const view = viewIssue(current, this.rt.config(), this.flow.viewOptions(identifier))
     const stage = view?.stage ?? null
     if (!view || stage === null || view.repository === null || !this.rt.config().stages[stage]?.automatic) {
       throw new ControlError('refused', `${identifier}: stage ${stage ?? '(none)'} has no automatic role`)
@@ -157,8 +170,7 @@ export class Dispatcher {
     if (o.profile && !profileEntries(this.rt.config().profiles).some(([name]) => name === o.profile)) {
       throw new ControlError('refused', `no profile '${o.profile}'`)
     }
-    const runs = this.rt.runs.forIssue(identifier)
-    const continueFrom = o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined
+    const continueFrom = prRun ?? (o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined)
     if (o.continue && !continueFrom) {
       throw new ControlError('refused', `${identifier}: no earlier attempt has a commit to continue from`)
     }

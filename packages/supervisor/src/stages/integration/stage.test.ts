@@ -78,6 +78,51 @@ describe('integration stage (manual)', () => {
     expect(h.gh.calls.filter((c) => c.cmd.includes('push'))).toHaveLength(1)
   })
 
+  test('integration handler leaves status alone during an active run', async () => {
+    const h = integrationHarness(root)
+    await h.integrated()
+    const before = h.linear.get('FOR-1')
+    const retry = await h.first.retryRun('FOR-1', {}, 'cli')
+    expect(h.linear.get('FOR-1').status).toBe('In Progress')
+    await h.handler.run({ issue: before, stage: 'integration', agent: undefined })
+    await h.handler.run({ issue: h.linear.get('FOR-1'), stage: 'integration', agent: undefined })
+    const record = h.first.pullRequests.get('FOR-1')
+    if (record) await h.first.pullRequestOpened(record, 'FOR-1: Trim names')
+    expect(h.linear.get('FOR-1')).toMatchObject({
+      status: 'In Progress',
+      labels: ['ai-stage:implementation'],
+    })
+    await h.first.tick()
+    expect(h.first.runs.get(retry.id)?.state).not.toBe('stopped')
+  })
+
+  test('a retry with an open PR pushes its new commits to the same branch and keeps the PR', async () => {
+    const h = integrationHarness(root)
+    const first = await h.integrated()
+    const retry = await h.first.retryRun('FOR-1', {}, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: first.headSha ?? '' })
+    git(h.fx.worker, 'commit', '-q', '--allow-empty', '-m', 'address review')
+    await h.first.workerStarted(retry.id, { sandbox: 'sb-2', session: 's-2' })
+    await h.first.workerFinished(retry.id, FINISH)
+    const head = importBundle(h.fx.checkout, h.fx.bundle('run2').bundle, h.fx.branch, retry.id)
+    await h.first.headImported(retry.id, head)
+    await h.first.gatesFinished(retry.id, [gate('test')])
+    await h.first.reviewFinished(retry.id, {
+      kind: 'verdict',
+      review: { verdict: 'pass', findings: [] },
+      model: 'glm',
+    })
+    await h.first.tick()
+    await until(() => h.first.pullRequests.get('FOR-1')?.headSha === head, 'PR head updated')
+    await until(() => h.linear.get('FOR-1').status === 'In Review', 'status In Review')
+
+    expect(git(h.remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(head)
+    expect(h.gh.gh('create')).toHaveLength(1)
+    expect(h.gh.prs.map((p) => [p.number, p.state])).toEqual([[1, 'OPEN']])
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ number: 1, run: retry.id, headSha: head })
+    expect(h.of('PR_CREATED')).toHaveLength(1)
+  })
+
   test('a change touching a risk path opens a draft PR and says so', async () => {
     const h = integrationHarness(root, (c) => ({
       ...c,

@@ -30,7 +30,8 @@ export class PullRequestWatch {
       })
     }
     await this.rt.deps.linear.attachLink(record.issue, record.url, `PR #${record.number}: ${title}`)
-    await this.flow.applyIntent(record.issue, { kind: 'prOpened' })
+    if (!this.rt.runs.active().some((r) => r.issue === record.issue))
+      await this.flow.applyIntent(record.issue, { kind: 'prOpened' })
     if (!logged) {
       await this.rt.notify(`PR #${record.number} ready for review`, record.issue, {
         kind: 'pr',
