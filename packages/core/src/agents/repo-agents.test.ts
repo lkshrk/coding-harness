@@ -315,6 +315,23 @@ describe('reviewer', () => {
       expect(eventData('review')((await replay('reviewer', name)).output)).toEqual([])
   })
 
+  test('blocks only what ordinary use hits and stays within its budget', () => {
+    const def = agents.get('reviewer') as AgentDef
+    const rules = sections(def.body).get('Rules') ?? ''
+    expect(rules).toContain('ordinary use')
+    expect(rules).toMatch(
+      /security problem \(credential exposure, code execution across a trust boundary, privilege\)/,
+    )
+    expect(rules).toContain('concrete input')
+    expect(rules).toMatch(/`SUGGESTION`: a defect that needs an unusual setup to trigger/)
+    expect(rules).toContain('Suggestions never fail the run')
+    expect(rules).toMatch(
+      /acceptance criterion read literally against the issue's own Goal, Why or Constraints is a `SUGGESTION`/,
+    )
+    expect(def.budget.promptWords).toBe(400)
+    expect(def.body.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(def.budget.promptWords)
+  })
+
   test('a removed assertion yields a BLOCKER with evidence', async () => {
     const { output } = await replay<{ verdict: string; findings: Record<string, string>[] }>(
       'reviewer',
