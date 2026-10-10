@@ -21,3 +21,17 @@ describe('leases', () => {
     expect(h.sup.leases.get('FOR-1')?.expiresAt).toBe('2026-10-04T10:05:30.000Z')
   })
 })
+
+describe('vault sync', () => {
+  test('every tick syncs the vault, even with no work to dispatch', async () => {
+    let syncs = 0
+    const h = harness({
+      syncVault: async () => {
+        syncs += 1
+      },
+    })
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(syncs).toBe(2)
+  })
+})

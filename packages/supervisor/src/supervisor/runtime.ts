@@ -45,6 +45,7 @@ export type SupervisorDeps = {
   stageHandler?: StageHandler
   gitHost?: GitHost
   ingest?: VaultIngest
+  syncVault?: () => Promise<void>
   secretsLocked?: () => Promise<boolean>
   now?: () => Date
   instanceId?: string
