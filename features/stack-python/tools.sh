@@ -13,8 +13,8 @@ RUFF_SHA256_ARM64="dc0d74de837ef0a7bcc62ce98c48a622b075d057161f13b958be2934becd5
 
 # renovate: datasource=github-releases depName=astral-sh/ty
 TY_VERSION="0.0.86"
-TY_SHA256_AMD64="336bb36b7e917d844b8b16925d373b4614b326e452c881ff4ed6bc5904b65185"
-TY_SHA256_ARM64="d575243e0586742ae0e9186441358bd7e57e8160e319b3afb781430126762a39"
+TY_SHA256_AMD64="0024ef2bf1e95a56fca6d8f9be44d4abf28ee44860b05095ad2bc3cff6a6c767"
+TY_SHA256_ARM64="c40c4f4c72e1e7e29e71d2765b605b366393fa7e6296c903e0b21eb1927b59de"
 
 # Used when the repository declares no Python version; uv verifies the download it installs.
 # renovate: datasource=python-version depName=python

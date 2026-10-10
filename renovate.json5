@@ -22,6 +22,14 @@
         '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\S+?[=:]\\s*"?(?<currentValue>[^"\\s]+)"?',
       ],
     },
+    {
+      customType: 'regex',
+      description: 'biome.json schema URL follows the Biome version',
+      managerFilePatterns: ['/(^|/)biome\\.json$/'],
+      matchStrings: ['biomejs\\.dev/schemas/(?<currentValue>[^/]+)/schema\\.json'],
+      datasourceTemplate: 'npm',
+      depNameTemplate: '@biomejs/biome',
+    },
   ],
   packageRules: [
     {
@@ -43,6 +51,27 @@
       matchFileNames: ['features/stack-*/**'],
       matchUpdateTypes: ['minor', 'patch'],
       automerge: true,
+    },
+    {
+      description: 'uv: Feature pins (github-releases) and environment base images (docker) move together',
+      groupName: 'uv',
+      matchPackageNames: ['astral-sh/uv', 'ghcr.io/astral-sh/uv'],
+    },
+    {
+      description: 'Bun: Feature pin and the workspace packageManager move together',
+      groupName: 'bun',
+      matchPackageNames: ['bun', 'oven-sh/bun'],
+    },
+    {
+      description: 'Biome: Feature pin, workspace dependency and biome.json schema move together',
+      groupName: 'biome',
+      matchPackageNames: ['@biomejs/biome'],
+    },
+    {
+      description: 'TypeScript language tooling: one version across the stack Features',
+      groupName: 'typescript tooling',
+      matchFileNames: ['features/stack-*/npm/**'],
+      matchPackageNames: ['typescript', 'typescript-language-server'],
     },
     {
       description: 'Harness and agent-layer versions change agent behaviour: review by hand, re-run the evaluation',
