@@ -2,7 +2,7 @@
 # Renovate bumps versions; scripts/refresh-pins.sh recomputes the checksums from the *_URL functions.
 
 # renovate: datasource=github-releases depName=astral-sh/uv
-UV_VERSION="0.12.23"
+UV_VERSION="0.13.0"
 UV_SHA256_AMD64="9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6"
 UV_SHA256_ARM64="6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f"
 UV_URL() { printf '%s' "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu).tar.gz"; }
