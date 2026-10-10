@@ -124,13 +124,14 @@ export const COMMENTS = `query nsIssueComments($id: String!, $after: String) {
 
 export const HISTORY_PAGE = 5
 
-export const HISTORY = `query nsIssueHistory($id: String!) {
+export const HISTORY = `query nsIssueHistory($id: String!, $after: String) {
   issue(id: $id) {
-    history(first: ${HISTORY_PAGE}) {
+    history(first: ${HISTORY_PAGE}, after: $after) {
       nodes {
         createdAt actor { name app } botActor { name } toState { name }
         addedLabels { id name parent { name } } removedLabels { id name parent { name } }
       }
+      ${PAGE_INFO}
     }
   }
 }`

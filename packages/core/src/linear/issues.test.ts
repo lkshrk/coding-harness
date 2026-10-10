@@ -435,8 +435,8 @@ describe('LinearIssueReader.lastChange', () => {
       at: '2026-01-02T00:00:00.000Z',
       status: 'In Progress',
     })
-    expect(calls.map((c) => c.variables)).toEqual([{ id: 'FOR-1' }])
-    expect(calls[0]?.query).toContain('history(first: 5)')
+    expect(calls.map((c) => c.variables)).toEqual([{ id: 'FOR-1', after: null }])
+    expect(calls[0]?.query).toContain('history(first: 5')
   })
 
   test('returns a label-only change with the added grouped labels', async () => {
@@ -459,6 +459,59 @@ describe('LinearIssueReader.lastChange', () => {
       at: '2026-01-02T00:00:00.000Z',
       labels: ['ai-stage:verification'],
     })
+  })
+
+  test('pages past five unrelated entries to the newest status or label change', async () => {
+    const { reader, calls } = fakeLinear({
+      nsIssueHistory: (v) => ({
+        issue: {
+          history:
+            v.after === 'h1'
+              ? conn([
+                  entry('2026-01-01T00:00:00.000Z', {
+                    actor: { name: 'You', app: false },
+                    toState: { name: 'Blocked' },
+                  }),
+                ])
+              : conn(
+                  [5, 4, 3, 2, 1].map((n) =>
+                    entry(`2026-01-0${n + 1}T00:00:00.000Z`, { actor: { name: 'You', app: false } }),
+                  ),
+                  'h1',
+                ),
+        },
+      }),
+    })
+    expect(await reader.lastChange('FOR-1')).toEqual({
+      actor: 'You',
+      app: false,
+      at: '2026-01-01T00:00:00.000Z',
+      status: 'Blocked',
+    })
+    expect(calls.map((c) => c.variables)).toEqual([
+      { id: 'FOR-1', after: null },
+      { id: 'FOR-1', after: 'h1' },
+    ])
+  })
+
+  test('stops after the first page that holds a change', async () => {
+    const { reader, calls } = fakeLinear({
+      nsIssueHistory: () => ({
+        issue: {
+          history: conn(
+            [
+              entry('2026-01-02T00:00:00.000Z', {
+                actor: { name: 'You', app: false },
+                toState: { name: 'Done' },
+              }),
+            ],
+            'h1',
+          ),
+        },
+      }),
+    })
+    expect((await reader.lastChange('FOR-1'))?.status).toBe('Done')
+    expect(calls).toHaveLength(1)
   })
 
   test('an integration bot counts as an app', async () => {

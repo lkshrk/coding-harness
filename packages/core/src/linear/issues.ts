@@ -180,16 +180,25 @@ export class LinearIssueReader {
   }
 
   async lastChange(identifier: string): Promise<LinearChange | null> {
-    let data: { issue: { history: { nodes: RawHistory[] } } }
+    type Data = { issue: { history: Page<RawHistory> } }
+    const page = (after: string | null) =>
+      this.request<Data, { id: string; after: string | null }>(HISTORY, { id: identifier, after })
+    let history: Page<RawHistory>
     try {
-      data = await this.request<typeof data, { id: string }>(HISTORY, { id: identifier })
+      history = (await page(null)).issue.history
     } catch (e) {
       if (notFound(e)) return null
       throw e
     }
-    const newest = data.issue.history.nodes
-      .filter((h) => h.toState || h.addedLabels?.length || h.removedLabels?.length)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    // History arrives newest first; the first page holding a status or label change holds the newest one.
+    let newest: RawHistory | undefined
+    for (;;) {
+      newest = history.nodes
+        .filter((h) => h.toState || h.addedLabels?.length || h.removedLabels?.length)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+      if (newest || !history.pageInfo.hasNextPage || !history.pageInfo.endCursor) break
+      history = (await page(history.pageInfo.endCursor)).issue.history
+    }
     if (!newest) return null
     const labelChange = Boolean(newest.addedLabels?.length || newest.removedLabels?.length)
     return {
