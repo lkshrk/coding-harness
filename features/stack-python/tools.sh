@@ -1,27 +1,11 @@
 # shellcheck shell=bash disable=SC2034,SC2154
-# Renovate bumps versions; scripts/refresh-pins.sh recomputes the checksums from the *_URL functions.
+# Tool versions and checksums live in mise.toml and mise.lock; only the mise binary that installs them is pinned here.
 
-# renovate: datasource=github-releases depName=astral-sh/uv
-UV_VERSION="0.13.0"
-UV_SHA256_AMD64="1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
-UV_SHA256_ARM64="3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
-UV_URL() { printf '%s' "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu).tar.gz"; }
-
-# renovate: datasource=github-releases depName=astral-sh/ruff
-RUFF_VERSION="0.17.0"
-RUFF_SHA256_AMD64="c94fc1dc71f054d06d9f1149442dcb471516aa2b7d4b7e8124e05d082d4c91d3"
-RUFF_SHA256_ARM64="294e181ba6ccb0c2ffd778580e3c42b19f038bdbcb844f39fd9a6a26e8148804"
-RUFF_URL() { printf '%s' "https://github.com/astral-sh/ruff/releases/download/$RUFF_VERSION/ruff-$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu).tar.gz"; }
-
-# renovate: datasource=github-releases depName=astral-sh/ty
-TY_VERSION="0.0.86"
-TY_SHA256_AMD64="0024ef2bf1e95a56fca6d8f9be44d4abf28ee44860b05095ad2bc3cff6a6c767"
-TY_SHA256_ARM64="c40c4f4c72e1e7e29e71d2765b605b366393fa7e6296c903e0b21eb1927b59de"
-TY_URL() { printf '%s' "https://github.com/astral-sh/ty/releases/download/$TY_VERSION/ty-$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu).tar.gz"; }
-
-# Used when the repository declares no Python version; uv verifies the download it installs.
-# renovate: datasource=python-version depName=python
-PYTHON_VERSION="3.14.8"
+# renovate: datasource=github-releases depName=jdx/mise
+MISE_VERSION="2026.10.7"
+MISE_SHA256_AMD64="6eb1b890e90818417ca34c90dbbd47881917d5cd199f31b63b062ea9c6b18d85"
+MISE_SHA256_ARM64="c7108d85a32ba17e4747d31d4a42f39f0c134f16211e204e8ef0a49d4f518fe1"
+MISE_URL() { printf '%s' "https://github.com/jdx/mise/releases/download/v$MISE_VERSION/mise-v$MISE_VERSION-linux-$(pick x64 arm64)"; }
 
 # Download URLs use $arch (amd64 or arm64), set by install.sh or refresh-pins.sh.
 pick() { if [ "$arch" = amd64 ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }

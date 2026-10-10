@@ -55,7 +55,7 @@
     {
       description: 'uv: Feature pins (github-releases) and environment base images (docker) move together',
       groupName: 'uv',
-      matchPackageNames: ['astral-sh/uv', 'ghcr.io/astral-sh/uv'],
+      matchPackageNames: ['astral-sh/uv', 'github:astral-sh/uv', 'ghcr.io/astral-sh/uv'],
     },
     {
       description: 'Bun: Feature pin and the workspace packageManager move together',

@@ -9,14 +9,13 @@ prefix=/opt/nightshift/stack-python
 bin=/usr/local/bin
 cache=/var/cache/nightshift
 python="${PYTHONVERSION:-}"
-python="${python:-$PYTHON_VERSION}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install.sh must run as root" >&2
   exit 1
 fi
 
-if ! [[ "$python" =~ ^[0-9A-Za-z.,\<\>=!~*\ +-]+$ ]]; then
+if [ -n "$python" ] && ! [[ "$python" =~ ^[0-9A-Za-z.,\<\>=!~*\ +-]+$ ]]; then
   echo "invalid Python version request '$python'" >&2
   exit 1
 fi
@@ -62,21 +61,33 @@ ensure_packages() {
   rm -rf /var/lib/apt/lists/*
 }
 
-install_astral() {
-  local name="$1" var="$2" triple archive tool
-  shift 2
-  triple="$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)"
-  archive="$(fetch "$("${var}_URL")" "$(sha "$var")" "$name.tgz")"
-  tar -xzf "$archive" -C "$tmp"
-  for tool in "$name" "$@"; do
-    install -D -m 0755 "$tmp/$name-$triple/$tool" "$prefix/bin/$tool"
-    ln -sf "$prefix/bin/$tool" "$bin/$tool"
+install_mise_tools() {
+  local mise tool path
+  mise="$(fetch "$(MISE_URL)" "$(sha MISE)" mise)"
+  chmod 0755 "$mise"
+  export MISE_DATA_DIR="$prefix/mise" MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config"
+  export MISE_STATE_DIR="$tmp/mise-state" MISE_YES=1 MISE_LOCKED=1
+  "$mise" trust -q "$here/mise.toml"
+  (cd "$here" && "$mise" install --locked)
+  # Link the binaries themselves: workers run offline and must not resolve a repository's own mise or .tool-versions.
+  for tool in uv uvx ruff ty; do
+    path="$(cd "$here" && "$mise" which "$tool")"
+    ln -sf "$path" "$bin/$tool"
   done
+  mise_python="$(dirname "$(cd "$here" && "$mise" which python3)")"
 }
 
 install_python() {
-  export UV_PYTHON_INSTALL_DIR="$prefix/python" UV_PYTHON_BIN_DIR="$bin" UV_CACHE_DIR="$tmp/uv-cache"
-  "$bin/uv" python install --default --preview-features python-install-default "$python"
+  export UV_PYTHON_INSTALL_DIR="$prefix/python" UV_CACHE_DIR="$tmp/uv-cache"
+  mkdir -p "$UV_PYTHON_INSTALL_DIR"
+  if [ -z "$python" ] || PATH="$mise_python" UV_PYTHON_DOWNLOADS=never \
+    "$bin/uv" python find --no-config --python-preference only-system "$python" >/dev/null 2>&1; then
+    ln -sf "$mise_python/python3" "$bin/python3"
+    ln -sf "$mise_python/python3" "$bin/python"
+  else
+    # The repository asks for a Python the locked one does not satisfy; uv verifies the download it installs.
+    UV_PYTHON_BIN_DIR="$bin" "$bin/uv" python install --default --preview-features python-install-default "$python"
+  fi
   chmod -R a+rX "$prefix"
 }
 
@@ -87,8 +98,6 @@ prepare_cache() {
 }
 
 ensure_packages
-install_astral uv UV uvx
-install_astral ruff RUFF
-install_astral ty TY
+install_mise_tools
 install_python
 prepare_cache
