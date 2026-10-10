@@ -2,9 +2,9 @@
 # Renovate bumps versions; scripts/refresh-pins.sh recomputes the checksums from the *_URL functions.
 
 # renovate: datasource=custom.opencode-v2 depName=opencode
-OPENCODE_VERSION="2.0.22"
-OPENCODE_SHA256_AMD64="6414bc6a441ef28bc549984baf2f60fb95e8fe46713bd17293921400ddfe6d33"
-OPENCODE_SHA256_ARM64="3f4df7efe28a53830777666e160984cf8247938e68f105b8ae1f9b4778febc2d"
+OPENCODE_VERSION="2.0.26"
+OPENCODE_SHA256_AMD64="0e682946fea509299f1515dfb6261aa5cf8d1d2e5ccdc833470523acb7222106"
+OPENCODE_SHA256_ARM64="1508f9cc9a519b2aac93439d171a0be554ffe5a2cf433405010ec664663a7eae"
 OPENCODE_URL() { printf '%s' "https://opencode.ai/files/bin/$OPENCODE_VERSION/opencode-$(pick linux-x64-baseline linux-arm64).tar.gz"; }
 
 # renovate: datasource=github-releases depName=rtk-ai/rtk
