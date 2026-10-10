@@ -119,7 +119,12 @@ export function decide(view: IssueView, config: Config, ctx: DecideContext): Dec
   if (lifecycle === null) return { kind: 'ignore', reason: `status ${view.snapshot.status} is not mapped` }
   if (lifecycle === 'done' || lifecycle === 'canceled') return { kind: 'ignore', reason: lifecycle }
   if (stage === null) {
-    if (lifecycle === 'ready' && view.templateErrors.length === 0 && pipeline.includes('implementation'))
+    const child = view.snapshot.parent !== null
+    if (
+      (lifecycle === 'ready' || (child && lifecycle === 'backlog')) &&
+      view.templateErrors.length === 0 &&
+      pipeline.includes('implementation')
+    )
       return { kind: 'enter', stage: 'implementation' }
     const first = pipeline[0]
     return first ? { kind: 'enter', stage: first } : { kind: 'ignore', reason: 'empty pipeline' }
