@@ -141,6 +141,21 @@ describe('lock step', () => {
     )
   })
 
+  test('a mise.lock matched by a .gitignore is still committed', async () => {
+    const h = harness()
+    commitFeature(h.fx, {
+      'features/stack-x/mise.toml': '[tools]\nbun = "1.4.3"\n',
+      'features/stack-x/.gitignore': 'mise.lock\n',
+    })
+    await h.step()
+
+    expect(h.failed).toEqual([])
+    expect(h.locks).toEqual([{ feature: 'stack-x', changed: true }])
+    expect(git(h.fx.checkout, 'show', `${h.imported[0]}:features/stack-x/mise.lock`)).toBe(
+      lockFor('[tools]\nbun = "1.4.3"\n').trim(),
+    )
+  })
+
   test('a lock mise leaves unchanged adds no commit and keeps the head', async () => {
     const h = harness()
     const toml = '[tools]\nbun = "1.4.3"\n'

@@ -66,9 +66,9 @@ export function lockStep(d: { token: (repository: string) => Promise<string>; mi
           throw new LockFailedError(
             `mise lock in ${dir} exited ${r.exitCode}: ${hide(r.output.trim()).slice(-OUTPUT_TAIL)}`,
           )
-        const changed = git(tree, 'status', '--porcelain', '--', `${dir}/mise.lock`).trim() !== ''
+        git(tree, 'add', '--force', '--', `${dir}/mise.lock`)
+        const changed = git(tree, 'diff', '--cached', '--name-only', '--', `${dir}/mise.lock`).trim() !== ''
         if (changed) {
-          git(tree, 'add', '--', `${dir}/mise.lock`)
           git(
             tree,
             '-c',
