@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       environments: ${{ steps.diff.outputs.environments }}
+      features: ${{ steps.diff.outputs.features }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,11 +29,16 @@ jobs:
         run: |
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
             echo environments=true >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE" HEAD | grep -qE '^(eval/environments/|\.github/workflows/)'; then
-            echo environments=true >> "$GITHUB_OUTPUT"
+            changed=$(find features -mindepth 1 -maxdepth 1 -type d)
           else
-            echo environments=false >> "$GITHUB_OUTPUT"
+            if git diff --name-only "$BASE" HEAD | grep -qE '^(eval/environments/|\.github/workflows/)'; then
+              echo environments=true >> "$GITHUB_OUTPUT"
+            else
+              echo environments=false >> "$GITHUB_OUTPUT"
+            fi
+            changed=$(git diff --name-only "$BASE" HEAD | grep '^features/' || true)
           fi
+          echo "features=$(printf '%s\n' "$changed" | cut -d/ -f2 | sort -u | grep -vx test | jq -Rnc '[inputs | select(length > 0)]')" >> "$GITHUB_OUTPUT"
 
   typescript:
     strategy:
@@ -75,3 +81,33 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - run: docker buildx build --platform linux/amd64,linux/arm64 eval/environments/routivo
+
+  features:
+    needs: changes
+    if: needs.changes.outputs.features != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: ${{ fromJSON(needs.changes.outputs.features) }}
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: features/test/build.sh "ci-${{ matrix.feature }}" "${{ matrix.feature }}"
+      - if: hashFiles(format('features/{0}/test.sh', matrix.feature)) != ''
+        run: >-
+          docker run --rm --network none -v "$PWD/features/${{ matrix.feature }}/test.sh:/test.sh:ro"
+          "ci-${{ matrix.feature }}" bash /test.sh
+
+  features-ok:
+    needs: features
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - run: test "${{ needs.features.result }}" != failure && test "${{ needs.features.result }}" != cancelled
