@@ -6,7 +6,6 @@
 "aqua:gitleaks/gitleaks" = "8.30.1"
 "aqua:google/osv-scanner" = "2.6.0"
 "aqua:rhysd/actionlint" = "1.7.12"
-"aqua:bats-core/bats-core" = "1.14.0"
 python = "3.14.8"
 node = "24.21.0"
 
@@ -18,6 +17,15 @@ checksum_url = "https://raw.githubusercontent.com/anomalyco/homebrew-tap/HEAD/op
 checksum_expr = '"sha256:" + split(split(body, "url \"" + url + "\"")[1], "\"")[1]'
 platforms.linux-x64 = { url = "https://opencode.ai/files/bin/{{ version }}/opencode-linux-x64-baseline.tar.gz" }
 platforms.linux-arm64 = { url = "https://opencode.ai/files/bin/{{ version }}/opencode-linux-arm64.tar.gz" }
+
+# bats publishes only the tag archive and no checksum (aqua locks it without one); a version bump needs a new checksum here.
+[tools."http:bats"]
+# renovate: datasource=github-tags depName=bats-core/bats-core
+version = "1.14.0"
+url = "https://github.com/bats-core/bats-core/archive/refs/tags/v{{ version }}.tar.gz"
+checksum = "sha256:bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177"
+strip_components = 1
+bin_path = "bin"
 
 [tools."github:DeusData/codebase-memory-mcp"]
 version = "0.11.0"

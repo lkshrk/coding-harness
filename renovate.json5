@@ -30,6 +30,14 @@
       datasourceTemplate: 'npm',
       depNameTemplate: '@biomejs/biome',
     },
+    {
+      customType: 'regex',
+      description: 'mise http: tools carry a "# renovate:" comment; the mise manager skips that backend',
+      managerFilePatterns: ['/(^|/)features/.+/mise\\.toml$/'],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nversion = "(?<currentValue>[^"]+)"',
+      ],
+    },
   ],
   packageRules: [
     {
@@ -75,7 +83,7 @@
     },
     {
       description: 'Harness and agent-layer versions change agent behaviour: review by hand, re-run the evaluation',
-      matchDepNames: ['@opencode/cli', 'opencode', 'rtk-ai/rtk'],
+      matchDepNames: ['@opencode/cli', 'opencode', 'rtk-ai/rtk', 'aqua:rtk-ai/rtk'],
       automerge: false,
       labels: ['agent-behaviour'],
     },
