@@ -82,12 +82,17 @@ prepare_cache() {
   chmod 1777 "$cache" "$cache/corepack" "$cache/npm" "$cache/pnpm-store" "$cache/pnpm-cache"
 }
 
-install_oxlint() {
-  local archive
-  archive="$(fetch "$(OXLINT_URL)" "$(sha OXLINT)" oxlint.tgz)"
-  mkdir -p "$tmp/oxlint"
-  tar -xzf "$archive" -C "$tmp/oxlint"
-  install -m 0755 "$(find "$tmp/oxlint" -type f -name 'oxlint*' | head -n 1)" "$bin/oxlint"
+install_mise_tools() {
+  local mise path
+  mise="$(fetch "$(MISE_URL)" "$(sha MISE)" mise)"
+  chmod 0755 "$mise"
+  export MISE_DATA_DIR="$prefix/mise" MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config"
+  export MISE_STATE_DIR="$tmp/mise-state" MISE_YES=1 MISE_LOCKED=1
+  "$mise" trust -q "$here/mise.toml"
+  (cd "$here" && "$mise" install --locked)
+  # Link the binaries themselves: workers run offline and must not resolve a repository's own mise or .tool-versions.
+  path="$(cd "$here" && "$mise" which oxlint)"
+  ln -sf "$path" "$bin/oxlint"
 }
 
 install_npm_tools() {
@@ -122,6 +127,6 @@ prepare_package_managers() {
 ensure_packages
 prepare_cache
 node="$(find_node)"
-install_oxlint
+install_mise_tools
 install_npm_tools "$node"
 prepare_package_managers "$node"
