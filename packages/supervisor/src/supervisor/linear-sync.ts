@@ -110,13 +110,14 @@ export class LinearSync {
     const cfg = this.rt.config()
     const id = issue.identifier
     const view = viewIssue(issue, cfg, this.peers.viewOptions(id))
-    const lifecycle = view?.lifecycle ?? null
+    // The operator's target comes from the status alone, so its per-status action applies with no view.
+    const lifecycle = lifecycleOf(cfg, issue.team, issue.status)
     const change = await this.rt.deps.linear.lastChange(id)
     const human = change !== null && !change.app
     // A status that still maps to running with no view means the opt-in or coverage was withdrawn,
     // not a status mismatch. Otherwise the actor decides first: our own status change is re-asserted
     // even when the issue has no view.
-    const withdrawn = !view && lifecycleOf(cfg, issue.team, issue.status) === 'running'
+    const withdrawn = !view && lifecycle === 'running'
     const action = withdrawn
       ? 'stop'
       : !human
@@ -139,7 +140,12 @@ export class LinearSync {
     })
     if (action === 'stop') await this.peers.stopRun(run.id, 'issue changed in Linear')
     else if (action === 'reassert') await this.applyIntent(id, { kind: 'dispatched' })
-    else if (lifecycle !== null) await this.applyIntent(id, { kind: 'humanChanged', to: lifecycle })
+    else if (lifecycle !== null) {
+      await this.applyIntent(id, { kind: 'humanChanged', to: lifecycle })
+      // applyIntent needs a covered view; when even that is missing the operator change still ends the run.
+      if (!isTerminal(this.rt.requireRun(run.id).state))
+        await this.peers.stopRun(run.id, 'issue changed in Linear')
+    }
     return isTerminal(this.rt.requireRun(run.id).state)
   }
 

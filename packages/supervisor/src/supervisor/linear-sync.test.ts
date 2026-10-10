@@ -117,6 +117,20 @@ describe('mismatch on a running issue', () => {
     })
   }
 
+  test('an operator move to Blocked holds the run even when the issue no longer has a view', async () => {
+    const { h, run } = await running()
+    h.linear.patch('FOR-1', { status: 'Blocked', delegated: false })
+    const report = await h.sup.tick()
+    expect(report.stopped).toContain('FOR-1')
+    expect(h.sup.runs.get(run.id)?.state).toBe('stopped')
+    expect(h.executor.ops('stop')).toEqual([run.id])
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    expect(h.sup.awaiting('FOR-1')).toEqual({ kind: 'escalated', stage: 'implementation' })
+    expect(h.of('MISMATCH_RESOLVED').map((e) => e.data)).toMatchObject([
+      { linear: { status: 'Blocked' }, actor: 'You', app: false, action: 'hold' },
+    ])
+  })
+
   test('an operator hold leaves the issue awaiting you', async () => {
     const { h } = await running()
     h.linear.patch('FOR-1', { status: 'Blocked' })
