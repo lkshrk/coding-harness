@@ -29,3 +29,7 @@ export function branchOf(run: Pick<Run, 'issue' | 'attempt'>): string {
 export function runRef(run: string): string {
   return `refs/nightshift/${run}`
 }
+
+export function prRef(number: number): string {
+  return `refs/nightshift/pr/${number}`
+}

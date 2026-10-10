@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, relative } from 'node:path'
 import { type Config, expandHome, GatewayError, parseAgent } from '@nightshift/core'
+import { prRef } from '../policy/naming'
 import type { Notifier, OutboxDirs, RepoInspector } from '../ports'
 import type { SingleCall } from '../stages/gates'
 
@@ -11,26 +12,40 @@ export function gitRepos(
 ): RepoInspector {
   return {
     async baseSha(repository) {
-      const repo = config().repositories[repository]
-      if (!repo) throw new Error(`no repository '${repository}'`)
-      const cwd = expandHome(repo.path, homedir())
-      const env = { ...process.env, ...(await auth(repository)) }
-      const git = (...args: string[]) => {
-        const r = Bun.spawnSync(['git', ...args], {
-          cwd,
-          env,
-          stdout: 'pipe',
-          stderr: 'pipe',
-          stdin: 'ignore',
-        })
-        if (r.exitCode !== 0)
-          throw new Error(`git ${args.join(' ')} in ${cwd}: ${r.stderr.toString().trim()}`)
-        return r.stdout.toString().trim()
-      }
+      const { repo, git } = await hostGit(config, auth, repository)
       git('fetch', '--quiet', repo.remote, repo.base)
       return git('rev-parse', `${repo.remote}/${repo.base}`)
     },
+    async fetchPullRequest(repository, pr) {
+      const { repo, git } = await hostGit(config, auth, repository)
+      const ref = prRef(pr.number)
+      git('fetch', '--quiet', '--no-write-fetch-head', repo.remote, `+refs/heads/${pr.branch}:${ref}`)
+      return git('rev-parse', '--verify', `${ref}^{commit}`)
+    },
   }
+}
+
+async function hostGit(
+  config: () => Config,
+  auth: (repository: string) => Promise<Record<string, string>>,
+  repository: string,
+) {
+  const repo = config().repositories[repository]
+  if (!repo) throw new Error(`no repository '${repository}'`)
+  const cwd = expandHome(repo.path, homedir())
+  const env = { ...process.env, ...(await auth(repository)) }
+  const git = (...args: string[]) => {
+    const r = Bun.spawnSync(['git', ...args], {
+      cwd,
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+      stdin: 'ignore',
+    })
+    if (r.exitCode !== 0) throw new Error(`git ${args.join(' ')} in ${cwd}: ${r.stderr.toString().trim()}`)
+    return r.stdout.toString().trim()
+  }
+  return { repo, git }
 }
 
 export function outboxDirs(dir: string): OutboxDirs {

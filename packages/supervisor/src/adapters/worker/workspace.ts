@@ -101,7 +101,7 @@ export async function continueFrom(
     'sh',
     workdir,
     REPO_MOUNT,
-    runRef(from.run),
+    'run' in from ? runRef(from.run) : from.ref,
     branchOf(run),
   ])
   const head = res.stdoutTail.trim().split('\n').at(-1)

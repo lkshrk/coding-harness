@@ -19,7 +19,7 @@ export type CiState = {
   url: string
 }
 
-export type PullRequestState = { state: 'open' | 'merged' | 'closed'; mergeSha?: string }
+export type PullRequestState = { state: 'open' | 'merged' | 'closed'; mergeSha?: string; headSha?: string }
 
 export interface GitHost {
   accountFor(repository: string): string
@@ -39,6 +39,7 @@ export interface GitHost {
 
 export interface RepoInspector {
   baseSha(repository: string): Promise<string>
+  fetchPullRequest?(repository: string, pr: Pick<PullRequest, 'number' | 'branch'>): Promise<string>
 }
 
 export type PullRequestRecord = PullRequest & {

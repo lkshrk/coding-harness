@@ -118,7 +118,7 @@ export function answersOf(db: Db, issue: string): { question: string; answer: st
 }
 
 export function wipOf(db: Db, from: TaskStart['repairFrom']): ContextInput['wip'] {
-  if (!from) return undefined
+  if (!from || !('run' in from)) return undefined
   const stores = { now: () => new Date(), ulid: createUlid() }
   const wip = new EventLog(db, stores)
     .since(null, { run: from.run, types: ['WIP_COMMITTED'] })
