@@ -179,8 +179,6 @@ export class RunLifecycle {
 
   async stopForUser(target: string, reason: string | undefined, by: By): Promise<Run> {
     const run = this.requireActive(target)
-    // A cancelled gate job leaves the run in gating, holding its lease, so recovery re-runs the gates.
-    if (run.state === 'gating' && (await this.flow.cancelSteps(run.id))) return this.rt.requireRun(run.id)
     await this.stopRun(run.id, reason ?? 'stopped by you', by)
     const issue = this.rt.cache.get(run.issue) ?? (await this.rt.deps.linear.issue(run.issue))
     const stage = (issue && viewIssue(issue, this.rt.config())?.stage) ?? ''

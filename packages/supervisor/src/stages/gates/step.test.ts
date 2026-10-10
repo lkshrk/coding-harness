@@ -375,7 +375,7 @@ describe('gate step', () => {
     expect(restarted.runs.get(run.id)?.state).toBe('reviewing')
   })
 
-  test('ns stop during a gate cancels the gate job, destroys its sandbox and leaves the run gating for recovery', async () => {
+  test('ns stop during a gate cancels the gate job, destroys its sandbox, stops the run and holds the issue', async () => {
     const h = harness()
     const run = await h.finishedRun()
     h.gateSandbox.hang = new Promise(() => {})
@@ -384,21 +384,22 @@ describe('gate step', () => {
     expect(h.first.stepsRunning()).toEqual([`${run.id}:gating`])
 
     const stopped = await h.first.stopForUser('FOR-1', undefined, 'cli')
-    expect(stopped.state).toBe('gating')
+    expect(stopped.state).toBe('stopped')
     expect(h.first.stepsRunning()).toEqual([])
     expect(h.gateSandbox.destroyed).toEqual([`ctr-${run.id}-gate`])
-    expect(h.first.runs.get(run.id)?.state).toBe('gating')
     expect(h.gateEvents()).toEqual([])
-    expect(h.of('WORKER_FAILED')).toHaveLength(0)
-    expect(h.first.leases.get('FOR-1')?.run).toBe(run.id)
+    expect(h.of('WORKER_FAILED').map((e) => e.data.reason)).toEqual(['stopped'])
+    expect(h.first.leases.get('FOR-1')).toBeUndefined()
+    expect(h.first.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
 
     h.gateSandbox.hang = undefined
     await h.first.stop('signal')
     const restarted = h.make('inst-2')
     const report = await restarted.start()
     await restarted.idle()
-    expect(report.resumed).toEqual([run.id])
-    expect(h.gateEvents(restarted).map(([type]) => type)).toEqual(['GATE_PASSED', 'GATE_PASSED'])
-    expect(restarted.runs.get(run.id)?.state).toBe('reviewing')
+    expect(report.resumed).toEqual([])
+    expect(h.gateEvents(restarted)).toEqual([])
+    expect(restarted.stepsRunning()).toEqual([])
+    expect(restarted.runs.get(run.id)?.state).toBe('stopped')
   })
 })
