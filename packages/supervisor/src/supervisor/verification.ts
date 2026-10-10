@@ -183,8 +183,12 @@ export class Verification {
     const stage = view.stage
     if (stage === null) return
     const id = view.snapshot.identifier
-    this.rt.log.append({ type: 'STAGE_COMPLETED', issue: id, data: { stage } })
     const next = nextStage(this.rt.config(), view.pipeline, stage)
+    this.rt.log.append({
+      type: 'STAGE_COMPLETED',
+      issue: id,
+      data: { stage, ...(next ? {} : { last: true }) },
+    })
     if (next) await this.enterStage(view, next, stage)
     else {
       this.flow.setAwaiting(id, null)

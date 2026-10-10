@@ -11,33 +11,15 @@ const RECENT_FAILURES = 10
 
 function resolved(e: Event): boolean {
   if (e.type === 'MERGED') return true
+  // The supervisor marks the completion of an issue's last pipeline stage with `last: true`.
+  if (e.type === 'STAGE_COMPLETED') return (e.data as { last?: boolean }).last === true
   return e.type === 'COVERAGE_CHANGED' && (e.data as { covered?: boolean }).covered === false
 }
 
 function openFailures(db: Db, log: EventLog): Event[] {
   const lastResolution = new Map<string, string>()
-  // A STAGE_COMPLETED resolves its issue when it was the last stage, i.e. no
-  // STAGE_ENTERED moved on from that stage afterwards.
-  const pendingStage = new Map<string, { stage: unknown; id: string }>()
-  const commit = (issue: string) => {
-    const p = pendingStage.get(issue)
-    if (p && p.id > (lastResolution.get(issue) ?? '')) lastResolution.set(issue, p.id)
-    pendingStage.delete(issue)
-  }
-  for (const e of log.since(null, {
-    types: ['MERGED', 'COVERAGE_CHANGED', 'STAGE_COMPLETED', 'STAGE_ENTERED'],
-  })) {
-    if (!e.issue) continue
-    const data = e.data as { stage?: unknown; from?: unknown }
-    if (e.type === 'STAGE_COMPLETED') {
-      commit(e.issue)
-      pendingStage.set(e.issue, { stage: data.stage, id: e.id })
-    } else if (e.type === 'STAGE_ENTERED') {
-      if (pendingStage.get(e.issue)?.stage === data.from) pendingStage.delete(e.issue)
-      else commit(e.issue)
-    } else if (resolved(e)) lastResolution.set(e.issue, e.id)
-  }
-  for (const issue of [...pendingStage.keys()]) commit(issue)
+  for (const e of log.since(null, { types: ['MERGED', 'COVERAGE_CHANGED', 'STAGE_COMPLETED'] }))
+    if (e.issue && resolved(e)) lastResolution.set(e.issue, e.id)
   const lastSuccess = new Map(
     db
       .query<{ issue: string; ended: string }, []>(

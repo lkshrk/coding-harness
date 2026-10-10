@@ -47,7 +47,7 @@
     },
     {
       "if": { "properties": { "type": { "const": "STAGE_COMPLETED" } } },
-      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/stage" } } }
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/stageCompleted" } } }
     },
     {
       "if": { "properties": { "type": { "const": "DISPATCHED" } } },
@@ -261,6 +261,12 @@
         "additionalProperties": false,
         "required": ["stage"],
         "properties": { "stage": { "type": "string" }, "from": { "type": "string" } }
+      },
+      "stageCompleted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["stage"],
+        "properties": { "stage": { "type": "string" }, "last": { "type": "boolean" } }
       },
       "dispatched": {
         "type": "object",

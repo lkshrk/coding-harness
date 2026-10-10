@@ -69,8 +69,16 @@ describe('readStatus failures', () => {
     const { db, log, fail, later } = setup()
     fail('XXX-133')
     later()
-    log.append({ type: 'STAGE_COMPLETED', issue: 'XXX-133', data: { stage: 'integration' } })
+    log.append({ type: 'STAGE_COMPLETED', issue: 'XXX-133', data: { stage: 'integration', last: true } })
     expect(failures(db)).toEqual([])
+  })
+
+  test('a failure followed by completion of an intermediate stage not yet moved on is shown', () => {
+    const { db, log, fail, later } = setup()
+    fail('XXX-133')
+    later()
+    log.append({ type: 'STAGE_COMPLETED', issue: 'XXX-133', data: { stage: 'implementation' } })
+    expect(failures(db)).toEqual(['XXX-133'])
   })
 
   test('a failure followed by completion of an intermediate stage is shown', () => {
