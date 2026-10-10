@@ -1,10 +1,11 @@
 import type { ViewOptions } from '../policy/stages'
-import type { Awaiting, IssueUpdate } from '../ports'
+import type { Intent } from '../policy/transition'
+import type { Awaiting } from '../ports'
 import type { By } from '../ports/control'
 import { coveredIssues, heldIssues, setCovered, setHeld } from '../state/coverage'
 import type { SupervisorRuntime } from './runtime'
 
-export type HoldsPeers = { writeStatus: (identifier: string, change: IssueUpdate) => Promise<void> }
+export type HoldsPeers = { applyIntent: (identifier: string, intent: Intent) => Promise<void> }
 
 export class Holds {
   constructor(
@@ -54,8 +55,7 @@ export class Holds {
   }
 
   async holdForYou(issue: string, awaiting: Awaiting): Promise<void> {
-    this.setAwaiting(issue, awaiting)
-    await this.peers.writeStatus(issue, { status: 'blocked' })
+    await this.peers.applyIntent(issue, { kind: 'heldForUser', awaiting })
   }
 
   async holdStage(issue: string, stage: string, reason: string, comment: string): Promise<void> {

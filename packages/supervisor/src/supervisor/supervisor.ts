@@ -224,7 +224,7 @@ export class Supervisor {
     for (const { view, by } of plan.unblocked) {
       const id = view.snapshot.identifier
       if (by.length) this.log.append({ type: 'DEPENDENCY_UNBLOCKED', issue: id, data: { by } })
-      await this.m.linearSync.writeStatus(id, { status: 'ready' })
+      await this.m.linearSync.applyIntent(id, { kind: 'unblocked' })
       report.unblocked.push(id)
     }
     for (const view of plan.dispatch) {

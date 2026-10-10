@@ -30,7 +30,7 @@ export class PullRequestWatch {
       })
     }
     await this.rt.deps.linear.attachLink(record.issue, record.url, `PR #${record.number}: ${title}`)
-    await this.flow.writeStatus(record.issue, { status: 'review' })
+    await this.flow.applyIntent(record.issue, { kind: 'prOpened' })
     if (!logged) {
       await this.rt.notify(`PR #${record.number} ready for review`, record.issue, {
         kind: 'pr',
@@ -107,8 +107,7 @@ export class PullRequestWatch {
     const stage = issue && viewIssue(issue, this.rt.config(), this.flow.viewOptions(pr.issue))?.stage
     if (stage === INTEGRATION) await this.flow.completeStage(pr.issue)
     else this.rt.log.append({ type: 'STAGE_COMPLETED', issue: pr.issue, data: { stage: INTEGRATION } })
-    if (this.flow.awaiting(pr.issue)?.kind !== 'after')
-      await this.flow.writeStatus(pr.issue, { status: 'done' })
+    await this.flow.applyIntent(pr.issue, { kind: 'merged' })
     const dependents = [...this.rt.cache.values()].filter((i) =>
       i.blockedBy.some((b) => b.identifier === pr.issue),
     )
@@ -117,7 +116,7 @@ export class PullRequestWatch {
 
   async pullRequestClosed(pr: PullRequestRecord): Promise<void> {
     this.rt.pullRequests.remove(pr.issue)
-    await this.flow.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION })
+    await this.flow.applyIntent(pr.issue, { kind: 'prClosed' })
     await this.rt.postOnce(
       pr.issue,
       `pr-closed-${pr.number}`,

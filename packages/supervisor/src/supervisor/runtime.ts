@@ -1,11 +1,11 @@
 import type { Config } from '@nightshift/core'
 import type { AgentKind, IssueView, ViewOptions } from '../policy/stages'
+import type { Intent } from '../policy/transition'
 import type {
   Awaiting,
   Classifier,
   GitHost,
   IssueSnapshot,
-  IssueUpdate,
   LinearComment,
   LinearPort,
   Notification,
@@ -143,8 +143,7 @@ export type RunFlow = {
   uncover(issue: string): void
   observeIssue(issue: IssueSnapshot): void
   refresh(identifier: string): Promise<void>
-  writeStatus(identifier: string, change: IssueUpdate): Promise<void>
-  relabel(identifier: string, stage: string, from: string): Promise<void>
+  applyIntent(identifier: string, intent: Intent): Promise<void>
   takeLease(run: Run): void
   releaseLease(issue: string): void
   leaseEvent(type: 'LEASE_ACQUIRED', issue: string): void

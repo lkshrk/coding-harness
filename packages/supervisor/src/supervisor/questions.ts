@@ -1,5 +1,6 @@
 import { lifecycleOf } from '../policy/stages'
-import type { Awaiting, IssueUpdate } from '../ports'
+import type { Intent } from '../policy/transition'
+import type { Awaiting } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
 import type { Event } from '../state/events'
@@ -11,7 +12,7 @@ type QuestionRow = { comment: string; issue: string }
 export type QuestionsPeers = {
   requireActive: (target: string) => Run
   awaiting: (issue: string) => Awaiting | null
-  writeStatus: (identifier: string, change: IssueUpdate) => Promise<void>
+  applyIntent: (identifier: string, intent: Intent) => Promise<void>
   refresh: (identifier: string) => Promise<void>
 }
 
@@ -68,7 +69,7 @@ export class Questions {
         'INSERT OR IGNORE INTO questions (comment, issue, run, asked_to, asked_at) VALUES (?, ?, ?, ?, ?)',
       )
       .run(comment.id, run.issue, run.id, to, this.rt.now().toISOString())
-    await this.peers.writeStatus(run.issue, { status: 'blocked' })
+    await this.peers.applyIntent(run.issue, { kind: 'heldForUser' })
     await this.rt.notify(`question for the ${to}: ${question}`, run.issue, {
       kind: 'question',
       context: [
@@ -116,7 +117,7 @@ export class Questions {
       return
     const issue = this.rt.cache.get(identifier)
     if (!issue || lifecycleOf(this.rt.config(), issue.team, issue.status) !== 'blocked') return
-    await this.peers.writeStatus(identifier, { status: 'ready' })
+    await this.peers.applyIntent(identifier, { kind: 'released' })
     await this.peers.refresh(identifier)
   }
 }

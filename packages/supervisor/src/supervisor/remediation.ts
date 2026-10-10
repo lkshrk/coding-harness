@@ -67,7 +67,7 @@ export class Remediation {
 
     if (action === 'retry_same') {
       this.retry.schedule(run.issue, c.class, this.rt.now().getTime())
-      await this.flow.writeStatus(run.issue, { status: 'ready' })
+      await this.flow.applyIntent(run.issue, { kind: 'retryRequested' })
     } else if (action === 'pause_dispatch') {
       this.flow.pause(`failure ${c.class} on ${run.issue}`, 'supervisor')
       await this.rt.notify(`dispatch paused after a ${c.class} failure`, run.issue, {

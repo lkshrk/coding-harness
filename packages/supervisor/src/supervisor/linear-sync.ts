@@ -1,6 +1,7 @@
 import { LABEL_GROUPS, teamStatuses } from '@nightshift/core'
 import { lifecycleOf, type ViewOptions, viewIssue } from '../policy/stages'
-import type { IssueSnapshot, IssueUpdate } from '../ports'
+import { type Intent, transition } from '../policy/transition'
+import type { Awaiting, IssueSnapshot } from '../ports'
 import type { Waiting } from '../state/status'
 import { INGEST_AGENT, type SupervisorRuntime } from './runtime'
 
@@ -8,6 +9,7 @@ export type LinearSyncPeers = {
   coveredSet: () => Set<string>
   uncover: (issue: string) => void
   viewOptions: (issue: string) => ViewOptions
+  setAwaiting: (issue: string, value: Awaiting | null) => void
   stopRun: (runId: string, reason: string) => Promise<void>
 }
 
@@ -61,24 +63,34 @@ export class LinearSync {
     if (lifecycle === 'done' || lifecycle === 'canceled') this.peers.uncover(issue.identifier)
   }
 
-  async writeStatus(identifier: string, change: IssueUpdate): Promise<void> {
-    await this.rt.deps.linear.update(identifier, change)
-    const issue = this.rt.cache.get(identifier)
-    if (!issue || change.status === undefined) return
-    const status = teamStatuses(this.rt.config(), issue.team)[change.status]
-    this.ownWrites.set(identifier, { status, previous: issue.status, before: issue.updatedAt })
-    this.rt.cache.set(identifier, { ...issue, status })
-  }
-
-  async relabel(identifier: string, stage: string, from: string): Promise<void> {
-    this.rt.log.append({ type: 'STAGE_ENTERED', issue: identifier, data: { stage, from } })
-    await this.rt.deps.linear.update(identifier, { stage })
-    const issue = this.rt.cache.get(identifier)
-    if (issue) {
-      const prefix = `${LABEL_GROUPS.stage}:`
-      const labels = [...issue.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${stage}`]
-      this.rt.cache.set(identifier, { ...issue, labels })
+  // The only writer of an issue's status, stage label and hold.
+  async applyIntent(identifier: string, intent: Intent): Promise<void> {
+    if (intent.kind === 'stageEntered') {
+      const data = { stage: intent.stage, ...(intent.from ? { from: intent.from } : {}) }
+      this.rt.log.append({ type: 'STAGE_ENTERED', issue: identifier, data })
     }
+    if (!this.rt.cache.has(identifier)) await this.refresh(identifier)
+    const issue = this.rt.cache.get(identifier)
+    if (!issue) return
+    const cfg = this.rt.config()
+    const view = viewIssue(issue, cfg, { ...this.peers.viewOptions(identifier), covered: true })
+    if (!view) return
+    const next = transition(view, intent, { config: cfg })
+    if (next.awaiting !== undefined) this.peers.setAwaiting(identifier, next.awaiting)
+    if (next.status === undefined && next.stage === undefined) return
+    await this.rt.deps.linear.update(identifier, {
+      ...(next.status !== undefined ? { status: next.status } : {}),
+      ...(next.stage !== undefined ? { stage: next.stage } : {}),
+    })
+    const prefix = `${LABEL_GROUPS.stage}:`
+    const labels =
+      next.stage === undefined
+        ? issue.labels
+        : [...issue.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${next.stage}`]
+    const status = next.status === undefined ? issue.status : teamStatuses(cfg, issue.team)[next.status]
+    if (next.status !== undefined)
+      this.ownWrites.set(identifier, { status, previous: issue.status, before: issue.updatedAt })
+    this.rt.cache.set(identifier, { ...issue, status, labels })
   }
 
   async enforceLinear(): Promise<string[]> {
