@@ -3,7 +3,6 @@
   extends: ['config:recommended', 'helpers:pinGitHubActionDigests'],
   labels: ['dependencies'],
   automergeType: 'pr',
-  platformAutomerge: false,
   lockFileMaintenance: { enabled: true, automerge: true },
   customDatasources: {
     'opencode-v2': {
