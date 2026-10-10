@@ -1,7 +1,7 @@
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
 FROM ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 AS uv
 
-FROM debian:trixie@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c AS tools
+FROM debian:trixie@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 AS tools
 
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
@@ -25,6 +25,6 @@ RUN uv tool install --python "$PYTHON_VERSION" "obsidian-wiki==$OBSIDIAN_WIKI_VE
   && rm -rf /tmp/uv-cache \
   && chmod -R a+rX /opt/nightshift/tools
 
-FROM debian:trixie@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c
+FROM debian:trixie@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5
 COPY --from=tools /opt/nightshift/tools /opt/nightshift/tools
 ENV PATH=/opt/nightshift/tools/bin:$PATH
