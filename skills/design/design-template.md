@@ -5,7 +5,7 @@
 ```markdown
 # <ID>: <feature title>
 
-Requirements: <parent issue URL> (approved <date>)
+Requirements: <requirements comment URL on the parent issue> (approved <date>)
 
 ## Investigation
 

@@ -1,12 +1,12 @@
 ---
 name: discover
-description: "Turn a feature idea into approved requirements by asking the user one question at a time until nothing is unclear, then write them into the feature's parent issue. Use when a request is new or vague, or when a feature issue sits in the discovery stage. Not for designing the solution (`design`), splitting work (`decompose`) or bugs with a clear reproduction."
+description: "Turn a feature idea into approved requirements by asking the user one question at a time until nothing is unclear, then post them as a comment on the feature's parent issue. Use when a request is new or vague, or when a feature issue sits in the discovery stage. Not for designing the solution (`design`), splitting work (`decompose`) or bugs with a clear reproduction."
 license: MIT
 ---
 
 # Discover
 
-Find out what the user wants before anyone decides how to build it. The output is a `## Requirements` section the user approved, in the description of the feature's parent issue.
+Find out what the user wants before anyone decides how to build it. The output is a requirements comment the user approved, on the feature's parent issue. The description stays as it is: it must keep passing the issue template validator, which has no requirements section.
 
 ## Before asking
 
@@ -30,7 +30,7 @@ Find out what the user wants before anyone decides how to build it. The output i
 When the list is empty, draft the section and show it before writing anything:
 
 ```markdown
-## Requirements
+## Requirements (approved <date>)
 
 ### Goal
 One or two sentences: what is true when this is done.
@@ -51,12 +51,12 @@ Numbered, observable, checkable by someone who did not write them.
 Each question that changed the scope, with the answer and the date.
 ```
 
-- Ask: "Write these requirements into <ID>?" and wait for an explicit yes.
-- After approval, write them with `linear issue update <ID> --description-file /tmp/<ID>-requirements.md`, keeping any existing description text below the new section.
-- Changes requested after approval: show the changed lines, get approval again, and add a comment saying what changed and why.
+- Ask: "Post these requirements on <ID>?" and wait for an explicit yes.
+- After approval, post them as the user (`linear issue comment add <ID> --body-file /tmp/<ID>-requirements.md`). Never with a Nightshift app login: the supervisor treats app writes as its own.
+- Changes requested after approval: show the changed lines, get approval again, and post the full updated section as a new comment saying what changed and why; the newest requirements comment is the current one.
 
 ## Done
 
-- The parent issue starts with an approved `## Requirements` section.
+- The parent issue has an approved requirements comment.
 - No open point is left except those marked `^[assumed]`.
 - Tell the user the next step is `design`, and stop. Do not start designing in the same turn.

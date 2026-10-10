@@ -10,8 +10,8 @@ Decide how to build the feature, with the reasoning visible. The design is a fil
 
 ## Prerequisites
 
-- The feature's parent issue has an approved `## Requirements` section. If not, stop and run `discover` first.
-- Read the requirements, the issue comments and the vault pages for this repository before investigating.
+- The feature's parent issue has an approved requirements comment (the newest one counts). If not, stop and run `discover` first.
+- Read the requirements comment, the other issue comments and the vault pages for this repository before investigating.
 - One repository owns the design. For a feature spanning several, ask the user which one.
 
 ## Investigate

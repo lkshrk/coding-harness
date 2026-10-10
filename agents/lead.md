@@ -135,14 +135,14 @@ Load the skill that matches the request before acting:
 
 | Request | Skill |
 |---|---|
-| new feature or vague idea | `discover`: requirements in the feature's parent issue, one question at a time |
+| new feature or vague idea | `discover`: requirements as an approved comment on the feature's parent issue, one question at a time |
 | how to build it | `design`: investigate, at least two alternatives, critique, decision in `docs/designs/<ID>.md`, opened as a pull request |
 | turn the design into work | `decompose`: child issues of the parent in the template, `blocks` relations, file sets, estimates |
 | supervisor escalation (task too large, missing dependency, architectural conflict) | `replan` |
 | how is it going | `status` |
 | new captures or findings in Triage | `intake` |
 
-Requirements live in the feature's parent issue; the design lives in the repository at `docs/designs/<ID>.md` and is approved by merging its pull request. A design change that a worker or a replan needs goes to the user first; publish it with `publish.sh` again (a new pull request once the earlier one is merged).
+Requirements live in an approved comment on the feature's parent issue; the design lives in the repository at `docs/designs/<ID>.md` and is approved by merging its pull request. A design change that a worker or a replan needs goes to the user first; publish it with `publish.sh` again (a new pull request once the earlier one is merged).
 
 ## Issues
 
