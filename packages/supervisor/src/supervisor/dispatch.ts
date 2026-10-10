@@ -152,7 +152,7 @@ export class Dispatcher {
     if (pr && !prRun) {
       throw new ControlError(
         'refused',
-        `${identifier}: the open PR head ${pr.headSha.slice(0, 12)} was not produced by any run; cannot continue the PR from it`,
+        `${identifier}: the open PR head ${pr.headSha} is not a nightshift attempt; push it through nightshift or close the PR`,
       )
     }
     const before = viewIssue(snapshot, this.rt.config(), this.flow.viewOptions(identifier))

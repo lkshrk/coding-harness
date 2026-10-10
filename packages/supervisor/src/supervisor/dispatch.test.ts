@@ -234,7 +234,7 @@ describe('manual retry', () => {
   test.each([
     ['a plain retry', {}],
     ['--continue', { continue: true }],
-  ])('%s with an open PR whose head no run produced is refused, not started from elsewhere', async (_, o) => {
+  ])('%s with an open PR whose head is not a nightshift attempt is refused', async (_, o) => {
     const h = harness()
     const first = await dispatchOne(h)
     await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
@@ -259,7 +259,8 @@ describe('manual retry', () => {
 
     await expect(h.sup.retryRun('FOR-1', o, 'cli')).rejects.toMatchObject({
       code: 'refused',
-      message: expect.stringContaining('pushed-elsew'),
+      message:
+        'FOR-1: the open PR head pushed-elsewhere is not a nightshift attempt; push it through nightshift or close the PR',
     })
     expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
     expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
