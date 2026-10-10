@@ -112,11 +112,10 @@ export class GhGitHost implements GitHost {
           '-C',
           checkout,
           'push',
-          '--quiet',
           '--no-verify',
           ...(o.expected
-            ? [`--force-with-lease=${ref}:${o.expected}`, target, `${headSha}:${ref}`]
-            : [target, `+${headSha}:${ref}`]),
+            ? ['--porcelain', `--force-with-lease=${ref}:${o.expected}`, target, `${headSha}:${ref}`]
+            : ['--quiet', target, `+${headSha}:${ref}`]),
         ],
         { env },
       )
@@ -126,6 +125,13 @@ export class GhGitHost implements GitHost {
           throw new PushRejectedError(o.branch, o.expected, actual)
       }
       this.check(r, `git push ${o.branch}`)
+      // The branch can move to headSha between the check above and the push; git then reports
+      // it up to date ('=') without checking the lease, so confirm this push moved it.
+      if (o.expected && o.expected !== headSha) {
+        const upToDate = r.stdout.split('\n').some((l) => l.startsWith('=\t') && l.includes(`:${ref}\t`))
+        const actual = await remoteHead()
+        if (actual !== headSha || upToDate) throw new PushRejectedError(o.branch, o.expected, actual)
+      }
     })
     return { headSha }
   }
