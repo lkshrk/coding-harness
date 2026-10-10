@@ -216,6 +216,46 @@ describe('miseLock', () => {
     expect(readFileSync(join(dir, 'env'), 'utf8')).toContain('GITHUB_TOKEN=ghs_secret')
   })
 
+  test('spawns mise with MISE_SAFE=1 and only the allowed environment, never the supervisor env', async () => {
+    process.env.NS_SUPERVISOR_SECRET = 'leak'
+    try {
+      const lock = miseLock({
+        root: pinned(sum),
+        cache: join(root, 'cache'),
+        arch: 'x64',
+        fetch: async () => new Response(binary),
+      })
+      const dir = join(root, 'feature')
+      mkdirSync(dir)
+      expect(await lock(dir, { GITHUB_TOKEN: 'ghs_secret', OTHER: 'x' })).toMatchObject({ exitCode: 0 })
+      const env = Object.fromEntries(
+        readFileSync(join(dir, 'env'), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]),
+      )
+      for (const shell of ['PWD', 'SHLVL', '_', 'OLDPWD']) delete env[shell]
+      expect(Object.keys(env).sort()).toEqual([
+        'GITHUB_TOKEN',
+        'HOME',
+        'MISE_CACHE_DIR',
+        'MISE_CONFIG_DIR',
+        'MISE_DATA_DIR',
+        'MISE_SAFE',
+        'MISE_STATE_DIR',
+        'MISE_TRUSTED_CONFIG_PATHS',
+        'MISE_YES',
+        'PATH',
+      ])
+      expect(env.MISE_SAFE).toBe('1')
+      expect(env.GITHUB_TOKEN).toBe('ghs_secret')
+      expect(env.MISE_TRUSTED_CONFIG_PATHS).toBe(dir)
+      expect(env.HOME).not.toBe(process.env.HOME)
+    } finally {
+      delete process.env.NS_SUPERVISOR_SECRET
+    }
+  })
+
   test('a checksum mismatch rejects the download and caches nothing', async () => {
     const lock = miseLock({
       root: pinned('0'.repeat(64)),

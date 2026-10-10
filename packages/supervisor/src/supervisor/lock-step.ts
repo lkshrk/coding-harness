@@ -141,6 +141,7 @@ export function miseLock(o: {
   return async (dir, env) => {
     const mise = await binary()
     const state = mkdtempSync(join(tmpdir(), 'ns-mise-'))
+    mkdirSync(join(state, 'home'))
     try {
       const proc = Bun.spawn([mise, 'lock', '--platform', 'linux-x64,linux-arm64'], {
         cwd: dir,
@@ -148,15 +149,18 @@ export function miseLock(o: {
         stdout: 'pipe',
         stderr: 'pipe',
         timeout: LOCK_TIMEOUT_MS,
+        // mise.toml is worker-written: safe mode and nothing from the supervisor's own environment.
         env: {
-          ...process.env,
+          PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+          HOME: join(state, 'home'),
           MISE_DATA_DIR: join(state, 'data'),
           MISE_CACHE_DIR: join(state, 'cache'),
           MISE_CONFIG_DIR: join(state, 'config'),
           MISE_STATE_DIR: join(state, 'state'),
-          MISE_TRUSTED_CONFIG_PATHS: dir,
+          MISE_SAFE: '1',
           MISE_YES: '1',
-          ...env,
+          MISE_TRUSTED_CONFIG_PATHS: dir,
+          ...(env.GITHUB_TOKEN ? { GITHUB_TOKEN: env.GITHUB_TOKEN } : {}),
         },
       })
       const [stdout, stderr, exitCode] = await Promise.all([
