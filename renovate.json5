@@ -56,10 +56,7 @@
       description: 'Feature pins carry SHA256 sums and lock files that Renovate cannot compute; refresh them on the branch',
       matchFileNames: ['features/**'],
       postUpgradeTasks: {
-        commands: [
-          'command -v uv >/dev/null || install-tool uv',
-          'bash scripts/refresh-pins.sh {{{packageFileDir}}}',
-        ],
+        commands: ['bash scripts/refresh-pins.sh {{{packageFileDir}}}'],
         fileFilters: ['features/**'],
         executionMode: 'update',
       },

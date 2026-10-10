@@ -21,6 +21,9 @@ urls() {
   ' _ "$1" "$2"
 }
 
+# Renovate runs this without a shell and with containerbase, which installs missing tools on demand.
+if ! command -v uv >/dev/null && command -v install-tool >/dev/null; then install-tool uv; fi
+
 changed=0
 for feature in "$@"; do
   feature="${feature#features/}"
