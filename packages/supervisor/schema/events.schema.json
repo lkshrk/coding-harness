@@ -287,6 +287,11 @@
             "$ref": "#/$defs/ulid",
             "description": "earlier run whose commit this attempt continues from"
           },
+          "continues_ref": {
+            "type": "string",
+            "description": "host ref of a PR head pushed outside nightshift that this attempt continues from"
+          },
+          "continues_sha": { "type": "string", "description": "commit of continues_ref" },
           "by": { "$ref": "#/$defs/by" }
         }
       },

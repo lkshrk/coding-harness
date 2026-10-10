@@ -123,6 +123,57 @@ describe('integration stage (manual)', () => {
     expect(h.of('PR_CREATED')).toHaveLength(1)
   })
 
+  test('a retry after a fix pushed to the PR branch by hand continues from it and fast-forwards the PR', async () => {
+    let checkout = ''
+    let remote = ''
+    const h = integrationHarness(root, undefined, {
+      repos: {
+        baseSha: async () => git(checkout, 'rev-parse', 'main'),
+        fetchPullRequest: async (_, pr) => {
+          git(checkout, 'fetch', '-q', remote, `+refs/heads/${pr.branch}:refs/nightshift/pr/${pr.number}`)
+          return git(checkout, 'rev-parse', `refs/nightshift/pr/${pr.number}`)
+        },
+      },
+    })
+    checkout = h.fx.checkout
+    remote = h.remote
+    await h.integrated()
+    const hand = join(root, 'hand')
+    git(root, 'clone', '-q', '-b', 'ns/FOR-1', h.remote, hand)
+    git(hand, 'commit', '-q', '--allow-empty', '-m', 'review fix by hand')
+    git(hand, 'push', '-q', 'origin', 'ns/FOR-1')
+    const prHead = git(hand, 'rev-parse', 'HEAD')
+    const record = h.first.pullRequests.get('FOR-1')
+    if (record) h.first.pullRequests.put({ ...record, headSha: prHead })
+    const before = h.fx.hostState()
+
+    const retry = await h.first.retryRun('FOR-1', {}, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ ref: 'refs/nightshift/pr/1', headSha: prHead })
+    expect(git(h.fx.checkout, 'rev-parse', 'refs/nightshift/pr/1')).toBe(prHead)
+    expect(h.fx.hostState()).toBe(before)
+
+    git(h.fx.worker, 'fetch', '-q', h.fx.checkout, 'refs/nightshift/pr/1')
+    git(h.fx.worker, 'reset', '-q', '--hard', 'FETCH_HEAD')
+    git(h.fx.worker, 'commit', '-q', '--allow-empty', '-m', 'address review')
+    await h.first.workerStarted(retry.id, { sandbox: 'sb-2', session: 's-2' })
+    await h.first.workerFinished(retry.id, FINISH)
+    const head = importBundle(h.fx.checkout, h.fx.bundle('run2').bundle, h.fx.branch, retry.id)
+    await h.first.headImported(retry.id, head)
+    await h.first.gatesFinished(retry.id, [gate('test')])
+    await h.first.reviewFinished(retry.id, {
+      kind: 'verdict',
+      review: { verdict: 'pass', findings: [] },
+      model: 'glm',
+    })
+    await h.first.tick()
+    await until(() => h.first.pullRequests.get('FOR-1')?.headSha === head, 'PR head updated')
+
+    expect(git(h.remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(head)
+    expect(git(h.remote, 'rev-parse', `${head}^`)).toBe(prHead)
+    expect(h.gh.prs.map((p) => [p.number, p.state])).toEqual([[1, 'OPEN']])
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ number: 1, run: retry.id, headSha: head })
+  })
+
   test('a change touching a risk path opens a draft PR and says so', async () => {
     const h = integrationHarness(root, (c) => ({
       ...c,

@@ -161,6 +161,29 @@ describe('gitRepos', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  test('fetchPullRequest fetches the PR branch into refs/nightshift/pr/<number> without checking it out', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ns-repos-'))
+    try {
+      const checkout = originWithCheckout(root)
+      const origin = join(root, 'origin')
+      git(origin, 'checkout', '-q', '-b', 'ns/FOR-1')
+      git(origin, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'fix')
+      const head = git(origin, 'rev-parse', 'HEAD')
+      const before = [git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'symbolic-ref', 'HEAD')]
+      const base = testConfig()
+      const config = {
+        ...base,
+        repositories: { omni: { ...base.repositories.omni, path: checkout, remote: 'origin', base: 'main' } },
+      } as typeof base
+      const repos = gitRepos(() => config)
+      expect(await repos.fetchPullRequest?.('omni', { number: 7, branch: 'ns/FOR-1' })).toBe(head)
+      expect(git(checkout, 'rev-parse', 'refs/nightshift/pr/7')).toBe(head)
+      expect([git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'symbolic-ref', 'HEAD')]).toEqual(before)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('outboxDirs', () => {

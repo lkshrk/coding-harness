@@ -346,6 +346,20 @@ describe('WorkerExecutor.start', () => {
     expect(worker.starts).toHaveLength(1)
   })
 
+  test('a continuation from a fetched PR ref checks out the PR head', async () => {
+    sandbox.onExec = (cmd) =>
+      cmd[2]?.includes('refs/nightshift/previous') ? { stdoutTail: 'prhead\n' } : undefined
+    await executor().start({
+      run: { ...run, attempt: 2 },
+      issue: snapshot({ identifier: 'FOR-1' }),
+      files: [],
+      repairFrom: { ref: 'refs/nightshift/pr/7', headSha: 'prhead' },
+    })
+    const cont = sandbox.execs.find((e) => e.cmd[2]?.includes('refs/nightshift/previous'))?.cmd ?? []
+    expect(cont.slice(4)).toEqual(['/work/omni', '/mnt/repo.git', 'refs/nightshift/pr/7', 'ns/FOR-1-2'])
+    expect(worker.starts).toHaveLength(1)
+  })
+
   test('a repair start whose checkout does not land on the failed commit destroys the sandbox', async () => {
     sandbox.onExec = (cmd) =>
       cmd[2]?.includes('refs/nightshift/previous') ? { stdoutTail: 'other\n' } : undefined
