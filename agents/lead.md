@@ -29,6 +29,7 @@ permission:
     "jq *": allow
     "*/skills/code-graph/scripts/graph.sh *": allow
     "*/skills/search/scripts/search.sh *": allow
+    "*/skills/decompose/scripts/plan-check.sh *": allow
     "ctx7 library *": allow
     "ctx7 docs *": allow
     "linear issue view *": allow

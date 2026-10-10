@@ -29,3 +29,40 @@ test('bun run test strips git variables that would redirect fixture repositories
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('bun run test makes git ignore a global core.hooksPath', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ns-preload-hooks-'))
+  try {
+    const hooks = join(dir, 'hooks')
+    const repo = join(dir, 'repo')
+    Bun.spawnSync(['mkdir', '-p', hooks])
+    Bun.write(join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n')
+    Bun.spawnSync(['chmod', '+x', join(hooks, 'pre-commit')])
+    Bun.spawnSync(['git', 'init', '-q', repo])
+    const commit = Bun.spawnSync(
+      [
+        'git',
+        '-C',
+        repo,
+        '-c',
+        `core.hooksPath=${hooks}`,
+        '-c',
+        'user.name=t',
+        '-c',
+        'user.email=t@t',
+        'commit',
+        '-q',
+        '--allow-empty',
+        '-m',
+        'x',
+      ],
+      { stderr: 'pipe' },
+    )
+    expect(Bun.spawnSync(['git', 'config', '--get', 'core.hooksPath']).stdout.toString().trim()).toBe(
+      '/dev/null',
+    )
+    expect(commit.exitCode).toBe(1)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
