@@ -174,6 +174,8 @@ describe('GhGitHost pull requests', () => {
     expect(gh.gh('checks')).toHaveLength(0)
     expect(gh.ciReads()).toHaveLength(4)
     expect(await host.state(pr)).toEqual({ state: 'open' })
+    ;(gh.prs[0] as { headSha?: string }).headSha = 'pushed-by-hand'
+    expect(await host.state(pr)).toEqual({ state: 'open', headSha: 'pushed-by-hand' })
     ;(gh.prs[0] as { state: string }).state = 'MERGED'
     expect(await host.state(pr)).toEqual({ state: 'merged', mergeSha: 'm3rg3d' })
     expect(gh.gh('view')[0]?.env.GH_TOKEN).toBe(PERSONAL_TOKEN)

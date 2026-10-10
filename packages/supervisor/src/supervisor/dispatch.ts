@@ -1,17 +1,27 @@
 import { GatewayError, profileEntries } from '@nightshift/core'
+import { prRef } from '../policy/naming'
 import type { RetryQueue } from '../policy/retry'
 import { selectAgent } from '../policy/selection'
 import { INTEGRATION, type IssueView, viewIssue } from '../policy/stages'
 import type { ExecutorStart } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
+import type { PullRequestRecord } from '../ports/git-host'
 import { TaskTooLargeError } from '../stages/context'
 import type { LeaseStore } from '../state/leases'
 import { isTerminal, type Run } from '../state/runs'
 import { isIssueRef } from '../state/targets'
 import type { RunFlow, SupervisorRuntime } from './runtime'
 
-type DispatchOverride = { agent?: string; profile?: string; by?: By; continueFrom?: Run }
+type PrHead = { ref: string; headSha: string; baseSha: string }
+
+type DispatchOverride = {
+  agent?: string
+  profile?: string
+  by?: By
+  continueFrom?: Run
+  continueRef?: PrHead
+}
 
 const STAGE_FAILURE_LIMIT = 3
 
@@ -39,7 +49,8 @@ export class Dispatcher {
     const model = this.rt.deps.modelFor(agent, profile, this.rt.config())
     const from = o.continueFrom ?? (last?.failure === 'implementation_defect' ? last : undefined)
     const baseSha =
-      from?.headSha && from.baseSha ? from.baseSha : await this.rt.deps.repos.baseSha(repository)
+      o.continueRef?.baseSha ||
+      (from?.headSha && from.baseSha ? from.baseSha : await this.rt.deps.repos.baseSha(repository))
     const run = this.rt.runs.create({ issue: id, agent, profile, model, repository, baseSha, attempt })
     const dispatched = this.rt.log.append({
       type: 'DISPATCHED',
@@ -54,6 +65,7 @@ export class Dispatcher {
         base: this.rt.config().repositories[repository]?.base ?? 'main',
         ...(o.by ? { reason: 'manual retry', by: o.by } : last?.failure ? { reason: last.failure } : {}),
         ...(o.continueFrom ? { continues: o.continueFrom.id } : {}),
+        ...(o.continueRef ? { continues_ref: o.continueRef.ref, continues_sha: o.continueRef.headSha } : {}),
       },
     })
     if (!this.leaseStore.acquire(id, run.id)) {
@@ -105,7 +117,9 @@ export class Dispatcher {
 
   continuationOf(run: Run): ExecutorStart['repairFrom'] {
     const dispatched = this.rt.log.since(null, { run: run.id, types: ['DISPATCHED'] }).at(-1)
-    const continues = dispatched?.data.continues
+    const { continues, continues_ref, continues_sha } = dispatched?.data ?? {}
+    if (typeof continues_ref === 'string' && typeof continues_sha === 'string')
+      return { ref: continues_ref, headSha: continues_sha }
     const from =
       typeof continues === 'string'
         ? this.rt.runs.get(continues)
@@ -148,13 +162,9 @@ export class Dispatcher {
     this.flow.observeIssue(snapshot)
     const pr = this.rt.pullRequests.get(identifier)
     const runs = this.rt.runs.forIssue(identifier)
-    const prRun = pr ? runs.filter((r) => r.headSha === pr.headSha).at(-1) : undefined
-    if (pr && !prRun) {
-      throw new ControlError(
-        'refused',
-        `${identifier}: the open PR head ${pr.headSha} is not a nightshift attempt; continuing from a PR head pushed outside nightshift is XXX-293`,
-      )
-    }
+    const prHead = pr ? await this.prHead(pr) : undefined
+    const prRun = prHead ? runs.filter((r) => r.headSha === prHead).at(-1) : undefined
+    const continueRef = pr && prHead && !prRun ? await this.fetchPrHead(identifier, pr, prHead) : undefined
     const before = viewIssue(snapshot, this.rt.config(), this.flow.viewOptions(identifier))
     if (pr && before?.stage === INTEGRATION && before.lifecycle !== 'done' && before.lifecycle !== 'canceled')
       await this.flow.applyIntent(identifier, { kind: 'retryRequested' })
@@ -170,8 +180,10 @@ export class Dispatcher {
     if (o.profile && !profileEntries(this.rt.config().profiles).some(([name]) => name === o.profile)) {
       throw new ControlError('refused', `no profile '${o.profile}'`)
     }
-    const continueFrom = prRun ?? (o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined)
-    if (o.continue && !continueFrom) {
+    const continueFrom = continueRef
+      ? undefined
+      : (prRun ?? (o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined))
+    if (o.continue && !continueFrom && !continueRef) {
       throw new ControlError('refused', `${identifier}: no earlier attempt has a commit to continue from`)
     }
     const last = runs.at(-1)
@@ -186,11 +198,36 @@ export class Dispatcher {
       agent,
       ...(o.profile ? { profile: o.profile } : {}),
       ...(continueFrom ? { continueFrom } : {}),
+      ...(continueRef ? { continueRef } : {}),
       by,
     })
     if (!run) throw new ControlError('refused', `${identifier} could not be dispatched (lease held)`)
     await this.flow.refresh(identifier)
     return this.rt.requireRun(run.id)
+  }
+
+  async prHead(pr: PullRequestRecord): Promise<string> {
+    const state = await this.rt.deps.gitHost?.state(pr)
+    return state?.state === 'open' && state.headSha ? state.headSha : pr.headSha
+  }
+
+  async fetchPrHead(identifier: string, pr: PullRequestRecord, headSha: string): Promise<PrHead> {
+    const fetch = this.rt.deps.repos.fetchPullRequest
+    if (!fetch) {
+      throw new ControlError(
+        'refused',
+        `${identifier}: the open PR head ${headSha} is not a nightshift attempt and cannot be fetched`,
+      )
+    }
+    const ref = prRef(pr.number)
+    const fetched = await fetch.call(this.rt.deps.repos, pr.repository, pr)
+    if (fetched !== headSha) {
+      throw new ControlError(
+        'refused',
+        `${identifier}: fetched ${ref} at ${fetched}, but the open PR head is ${headSha}`,
+      )
+    }
+    return { ref, headSha, baseSha: this.rt.runs.get(pr.run)?.baseSha ?? '' }
   }
 
   runRole(view: IssueView, stage: string, agent: string | undefined): void {

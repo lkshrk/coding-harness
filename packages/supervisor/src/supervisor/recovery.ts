@@ -66,8 +66,12 @@ export class Recovery {
     const issue = await this.rt.deps.linear.issue(run.issue)
     if (issue) this.flow.observeIssue(issue)
     const view = issue && viewIssue(issue, this.rt.config(), this.flow.viewOptions(issue.identifier))
-    if (view?.lifecycle !== 'running') {
+    if (!issue) {
       await this.flow.stopRun(run.id, 'issue changed in Linear')
+      report.stopped.push(run.id)
+      return
+    }
+    if (view?.lifecycle !== 'running' && (await this.flow.resolveMismatch(run, issue))) {
       report.stopped.push(run.id)
       return
     }

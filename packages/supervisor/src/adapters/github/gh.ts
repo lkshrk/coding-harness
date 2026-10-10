@@ -241,14 +241,30 @@ export class GhGitHost implements GitHost {
   async state(pr: PullRequest): Promise<PullRequestState> {
     return this.o.tokens.withToken(pr.repository, async (token) => {
       const r = await this.run(
-        ['gh', 'pr', 'view', String(pr.number), '--repo', pr.repo, '--json', 'state,mergedAt,mergeCommit'],
+        [
+          'gh',
+          'pr',
+          'view',
+          String(pr.number),
+          '--repo',
+          pr.repo,
+          '--json',
+          'state,mergedAt,mergeCommit,headRefOid',
+        ],
         { env: gitAuthEnv(token) },
       )
       this.check(r, 'gh pr view')
-      const v = JSON.parse(r.stdout) as { state: string; mergeCommit?: { oid?: string } | null }
+      const v = JSON.parse(r.stdout) as {
+        state: string
+        mergeCommit?: { oid?: string } | null
+        headRefOid?: string
+      }
       if (v.state === 'MERGED')
         return { state: 'merged', ...(v.mergeCommit?.oid ? { mergeSha: v.mergeCommit.oid } : {}) }
-      return { state: v.state === 'CLOSED' ? 'closed' : 'open' }
+      return {
+        state: v.state === 'CLOSED' ? 'closed' : 'open',
+        ...(v.headRefOid ? { headSha: v.headRefOid } : {}),
+      }
     })
   }
 

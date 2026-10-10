@@ -29,7 +29,13 @@ import { IntegrationHandler } from './stage'
 
 export type Call = { cmd: string[]; env: Record<string, string>; stdin?: string }
 
-export type FakePr = { number: number; url: string; head: string; state: 'OPEN' | 'MERGED' | 'CLOSED' }
+export type FakePr = {
+  number: number
+  url: string
+  head: string
+  state: 'OPEN' | 'MERGED' | 'CLOSED'
+  headSha?: string
+}
 
 const ROLLUP: Record<string, { status: string; conclusion: string }> = {
   pass: { status: 'COMPLETED', conclusion: 'SUCCESS' },
@@ -92,7 +98,11 @@ export class FakeGh {
     if (verb === 'view') {
       const pr = this.prs.find((p) => String(p.number) === cmd[3])
       return ok(
-        JSON.stringify({ state: pr?.state, mergeCommit: pr?.state === 'MERGED' ? { oid: 'm3rg3d' } : null }),
+        JSON.stringify({
+          state: pr?.state,
+          mergeCommit: pr?.state === 'MERGED' ? { oid: 'm3rg3d' } : null,
+          ...(pr?.headSha ? { headRefOid: pr.headSha } : {}),
+        }),
       )
     }
     return { exitCode: 1, stdout: '', stderr: `unknown gh ${cmd.join(' ')}` }

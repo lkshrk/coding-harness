@@ -55,7 +55,7 @@ export type ExecutorStart = {
   files: string[]
   sourceFiles?: { path: string; content: string }[]
   knowledgeRepo?: string
-  repairFrom?: { run: string; headSha: string }
+  repairFrom?: { run: string; headSha: string } | { ref: string; headSha: string }
 }
 
 export interface RunExecutor {

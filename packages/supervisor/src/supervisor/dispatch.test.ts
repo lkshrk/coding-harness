@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import type { GitHost } from '../ports'
 import { snapshot } from '../testing/testing'
 import { dispatchOne, harness } from './testing'
 
@@ -231,11 +232,7 @@ describe('manual retry', () => {
     expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({ continues: first.id })
   })
 
-  test.each([
-    ['a plain retry', {}],
-    ['--continue', { continue: true }],
-  ])('%s with an open PR whose head is not a nightshift attempt is refused', async (_, o) => {
-    const h = harness()
+  async function externalPrHead(h: ReturnType<typeof harness>) {
     const first = await dispatchOne(h)
     await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
     await h.sup.headImported(first.id, 'head1')
@@ -256,11 +253,80 @@ describe('manual retry', () => {
       ci: 'passed',
     })
     h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+    return first
+  }
 
-    await expect(h.sup.retryRun('FOR-1', o, 'cli')).rejects.toMatchObject({
+  test.each([
+    ['a plain retry', {}],
+    ['--continue', { continue: true }],
+  ])('%s with an open PR whose head was pushed outside nightshift continues from it', async (_, o) => {
+    let bases = 0
+    const fetched: [string, number, string][] = []
+    const h = harness({
+      repos: {
+        baseSha: async () => `base${++bases}`,
+        fetchPullRequest: async (repository, pr) => {
+          fetched.push([repository, pr.number, pr.branch])
+          return 'pushed-elsewhere'
+        },
+      },
+    })
+    await externalPrHead(h)
+
+    const next = await h.sup.retryRun('FOR-1', o, 'cli')
+    expect(fetched).toEqual([['omni', 1, 'ns/FOR-1']])
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1' })
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+      ref: 'refs/nightshift/pr/1',
+      headSha: 'pushed-elsewhere',
+    })
+    expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({
+      continues_ref: 'refs/nightshift/pr/1',
+      continues_sha: 'pushed-elsewhere',
+      reason: 'manual retry',
+    })
+    expect(h.linear.get('FOR-1')).toMatchObject({
+      status: 'In Progress',
+      labels: ['ai-stage:implementation'],
+    })
+    expect(h.sup.pullRequests.get('FOR-1')?.number).toBe(1)
+  })
+
+  test('a fetched PR head that differs from the PR head is refused', async () => {
+    const h = harness({
+      repos: { baseSha: async () => 'base1', fetchPullRequest: async () => 'something-else' },
+    })
+    await externalPrHead(h)
+    await expect(h.sup.retryRun('FOR-1', {}, 'cli')).rejects.toMatchObject({
       code: 'refused',
       message:
-        'FOR-1: the open PR head pushed-elsewhere is not a nightshift attempt; continuing from a PR head pushed outside nightshift is XXX-293',
+        'FOR-1: fetched refs/nightshift/pr/1 at something-else, but the open PR head is pushed-elsewhere',
+    })
+    expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
+    expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
+  })
+
+  test('the PR head reported by GitHub wins over the stored one', async () => {
+    const h = harness({
+      repos: { baseSha: async () => 'base1', fetchPullRequest: async () => 'pushed-by-hand' },
+      gitHost: {
+        state: async () => ({ state: 'open', headSha: 'pushed-by-hand' }),
+      } as unknown as GitHost,
+    })
+    await externalPrHead(h)
+    await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+      ref: 'refs/nightshift/pr/1',
+      headSha: 'pushed-by-hand',
+    })
+  })
+
+  test('an open PR head not produced by nightshift is refused when the host cannot fetch it', async () => {
+    const h = harness()
+    await externalPrHead(h)
+    await expect(h.sup.retryRun('FOR-1', {}, 'cli')).rejects.toMatchObject({
+      code: 'refused',
+      message: 'FOR-1: the open PR head pushed-elsewhere is not a nightshift attempt and cannot be fetched',
     })
     expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
     expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
