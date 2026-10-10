@@ -65,7 +65,7 @@
     {
       description: 'Biome: Feature pin, workspace dependency and biome.json schema move together',
       groupName: 'biome',
-      matchPackageNames: ['@biomejs/biome'],
+      matchPackageNames: ['@biomejs/biome', 'biomejs/biome', 'aqua:biomejs/biome'],
     },
     {
       description: 'TypeScript language tooling: one version across the stack Features',

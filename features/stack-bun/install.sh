@@ -76,28 +76,19 @@ EOF
   chmod 0755 "$bin/$name"
 }
 
-install_bun() {
-  local dir archive
-  dir="bun-linux-$(pick x64-baseline aarch64)"
-  archive="$(fetch "$(BUN_URL)" "$(sha BUN)" bun.zip)"
-  unzip -q -o "$archive" "$dir/bun" -d "$tmp"
-  install -D -m 0755 "$tmp/$dir/bun" "$prefix/bin/bun"
-  ln -sf "$prefix/bin/bun" "$bin/bun"
-  ln -sf "$prefix/bin/bun" "$bin/bunx"
-}
-
-install_biome() {
-  local binary
-  binary="$(fetch "$(BIOME_URL)" "$(sha BIOME)" biome)"
-  install -m 0755 "$binary" "$bin/biome"
-}
-
-install_oxlint() {
-  local archive
-  archive="$(fetch "$(OXLINT_URL)" "$(sha OXLINT)" oxlint.tgz)"
-  mkdir -p "$tmp/oxlint"
-  tar -xzf "$archive" -C "$tmp/oxlint"
-  install -m 0755 "$(find "$tmp/oxlint" -type f -name 'oxlint*' | head -n 1)" "$bin/oxlint"
+install_mise_tools() {
+  local mise tool path
+  mise="$(fetch "$(MISE_URL)" "$(sha MISE)" mise)"
+  chmod 0755 "$mise"
+  export MISE_DATA_DIR="$prefix/mise" MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config"
+  export MISE_STATE_DIR="$tmp/mise-state" MISE_YES=1 MISE_LOCKED=1
+  "$mise" trust -q "$here/mise.toml"
+  (cd "$here" && "$mise" install --locked)
+  # Link the binaries themselves: workers run offline and must not resolve a repository's own mise or .tool-versions.
+  for tool in bun bunx biome oxlint; do
+    path="$(cd "$here" && "$mise" which "$tool")"
+    ln -sf "$path" "$bin/$tool"
+  done
 }
 
 install_npm_tools() {
@@ -118,8 +109,6 @@ prepare_cache() {
 }
 
 ensure_packages
-install_bun
-install_biome
-install_oxlint
+install_mise_tools
 install_npm_tools
 prepare_cache

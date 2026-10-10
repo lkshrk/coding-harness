@@ -1,0 +1,13 @@
+[tools]
+bun = "1.4.3"
+"aqua:biomejs/biome" = "2.5.15"
+
+[tools."github:oxc-project/oxc"]
+version = "1.87.0"
+version_prefix = "oxlint_v"
+rename_exe = "oxlint"
+platforms.linux-x64 = { asset_pattern = "oxlint-x86_64-unknown-linux-gnu.tar.gz" }
+platforms.linux-arm64 = { asset_pattern = "oxlint-aarch64-unknown-linux-gnu.tar.gz" }
+
+[settings]
+lockfile = true
