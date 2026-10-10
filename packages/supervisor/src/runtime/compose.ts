@@ -52,6 +52,7 @@ import { IntakeHandler, StageRouter } from '../stages/intake/handler'
 import { IntegrationHandler } from '../stages/integration'
 import { acquireLock, type Db, openState, statePath } from '../state/db'
 import type { Run } from '../state/runs'
+import { lockStep, miseLock } from '../supervisor/lock-step'
 import { Supervisor } from '../supervisor/supervisor'
 import { gatewaySingleCall, gitRepos, hostSkills, logNotifier, outboxDirs, skillFiles } from './host'
 import { agentResolver } from './loop'
@@ -234,6 +235,10 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       gates,
       artifacts,
       callbacks,
+      lock: lockStep({
+        token: (repository) => githubTokens.token(repository),
+        mise: miseLock({ root: o.root, cache }),
+      }),
       review: reviewStep({
         config: current,
         agents,
