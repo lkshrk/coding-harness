@@ -316,6 +316,8 @@ export class Supervisor {
     this.m.questions.answerQuestion(issue, text, by)
   escalationCount = (issue: string): number => this.m.remediation.escalationCount(issue)
   completeStage = (identifier: string): Promise<void> => this.m.verification.completeStage(identifier)
+  holdStage = (identifier: string, stage: string, reason: string, comment: string): Promise<void> =>
+    this.m.holds.holdStage(identifier, stage, reason, comment)
   gatesFinished = (runId: string, results: GateResult[]): Promise<void> =>
     this.m.verification.gatesFinished(runId, results)
   gateResults = (runId: string): GateEventData[] => this.m.verification.gateResults(runId)

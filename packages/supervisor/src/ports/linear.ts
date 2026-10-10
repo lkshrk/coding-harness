@@ -12,7 +12,7 @@ export type LifecycleState =
 
 export type MergeMode = 'manual' | 'auto' | 'feature-branch'
 
-export type Awaiting = { kind: 'before' | 'after' | 'escalated'; stage: string }
+export type Awaiting = { kind: 'before' | 'after' | 'escalated'; stage: string; reason?: string }
 
 export type BlockerRef = { identifier: string; team: string; status: string }
 

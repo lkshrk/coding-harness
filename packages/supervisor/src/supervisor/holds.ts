@@ -58,6 +58,17 @@ export class Holds {
     await this.peers.writeStatus(issue, { status: 'blocked' })
   }
 
+  async holdStage(issue: string, stage: string, reason: string, comment: string): Promise<void> {
+    const current = this.awaiting(issue)
+    if (current?.stage === stage && current.reason === reason) return
+    await this.rt.postOnce(issue, `${stage}:${reason}`, comment)
+    await this.holdForYou(issue, { kind: 'escalated', stage, reason })
+    await this.rt.notify(`${stage}: ${reason}`, issue, {
+      kind: 'blocked',
+      action: `Answer on ${issue}, then move it to Todo to run ${stage} again`,
+    })
+  }
+
   held(): string[] {
     return heldIssues(this.rt.deps.db)
   }

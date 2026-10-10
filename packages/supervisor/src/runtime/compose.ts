@@ -48,6 +48,7 @@ import {
 import { ingestConfig, ingestRuntime, ingestTaskMessage } from '../stages/context/ingest-runtime'
 import { vaultSync } from '../stages/context/vault'
 import { gateStep, reviewStep, SandboxGateRunner, type SingleCall } from '../stages/gates'
+import { IntakeHandler, StageRouter } from '../stages/intake/handler'
 import { IntegrationHandler } from '../stages/integration'
 import { acquireLock, type Db, openState, statePath } from '../state/db'
 import type { Run } from '../state/runs'
@@ -292,7 +293,18 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       call: singleCall,
       out,
     }),
-    stageHandler: new IntegrationHandler({ config: current, host: gitHost, callbacks, home, out }),
+    stageHandler: new StageRouter({
+      intake: new IntakeHandler({
+        config: current,
+        agents,
+        linear,
+        gateway: hostGateway,
+        call: singleCall,
+        callbacks,
+        out,
+      }),
+      integration: new IntegrationHandler({ config: current, host: gitHost, callbacks, home, out }),
+    }),
     gitHost,
     ...(syncVault ? { syncVault } : {}),
     ingest: ingestRuntime({

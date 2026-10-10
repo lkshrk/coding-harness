@@ -184,7 +184,14 @@ export class Dispatcher {
   runRole(view: IssueView, stage: string, agent: string | undefined): void {
     const handler = this.rt.deps.stageHandler
     const id = view.snapshot.identifier
-    if (!handler || this.roleInFlight.has(id)) return
+    if (this.roleInFlight.has(id)) return
+    if (!handler || (handler.handles && !handler.handles(stage))) {
+      this.roleInFlight.add(id)
+      this.noHandler(id, stage)
+        .catch((e) => console.error(`stage ${stage} on ${id}: ${(e as Error).message}`))
+        .finally(() => this.roleInFlight.delete(id))
+      return
+    }
     this.roleInFlight.add(id)
     const key = `${id}:${stage}`
     handler
@@ -192,6 +199,18 @@ export class Dispatcher {
       .then(() => this.roleFailures.delete(key))
       .catch((e) => this.roleFailed(id, stage, key, (e as Error).message))
       .finally(() => this.roleInFlight.delete(id))
+  }
+
+  async noHandler(id: string, stage: string): Promise<void> {
+    const reason = `no handler for stage ${stage}`
+    const held = this.flow.awaiting(id)
+    if (held?.stage === stage && held.reason === reason) return
+    console.error(`${id}: ${reason}`)
+    await this.flow.holdForYou(id, { kind: 'escalated', stage, reason })
+    await this.rt.notify(reason, id, {
+      kind: 'blocked',
+      action: `Move ${id} past ${stage} by hand, or fix the supervisor and move it to Todo`,
+    })
   }
 
   async roleFailed(id: string, stage: string, key: string, message: string): Promise<void> {
