@@ -28,7 +28,8 @@ const ctx: RenderContext = {
 }
 
 // The lead's planning skills are not written yet.
-const PENDING_SKILLS = ['discover', 'design', 'decompose', 'status', 'replan', 'intake']
+const PENDING_SKILLS = ['decompose', 'status', 'replan', 'intake']
+const LEAD_SKILLS = ['discover', 'design']
 const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,
@@ -154,17 +155,20 @@ describe('lead', () => {
 })
 
 describe('CLI skills', () => {
-  test.each(CLI_SKILLS)('%s has a when/when-not description and stays under 140 lines', (name) => {
-    const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8')
-    const split = splitFrontmatter(text)
-    expect(split).toBeDefined()
-    const fm = parse(split?.frontmatter ?? '')
-    expect(fm.name).toBe(name)
-    expect(fm.description).toMatch(/Use when/)
-    expect(fm.description).toMatch(/Not for|Do not use/)
-    expect(text.split('\n').length).toBeLessThan(140)
-    expect(text).not.toMatch(/lin_api_|ghp_|gho_|https?:\/\/(?!github\.com|linear\.app)[a-z0-9.-]+:\d+/i)
-  })
+  test.each([...CLI_SKILLS, ...LEAD_SKILLS])(
+    '%s has a when/when-not description and stays under 140 lines',
+    (name) => {
+      const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8')
+      const split = splitFrontmatter(text)
+      expect(split).toBeDefined()
+      const fm = parse(split?.frontmatter ?? '')
+      expect(fm.name).toBe(name)
+      expect(fm.description).toMatch(/Use when/)
+      expect(fm.description).toMatch(/Not for|Do not use/)
+      expect(text.split('\n').length).toBeLessThan(140)
+      expect(text).not.toMatch(/lin_api_|ghp_|gho_|https?:\/\/(?!github\.com|linear\.app)[a-z0-9.-]+:\d+/i)
+    },
+  )
 
   test('linear pins the CLI version', () => {
     const fm = parse(
