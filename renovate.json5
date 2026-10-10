@@ -53,15 +53,6 @@
       automerge: true,
     },
     {
-      description: 'Feature pins carry SHA256 sums and lock files that Renovate cannot compute; refresh them on the branch',
-      matchFileNames: ['features/**'],
-      postUpgradeTasks: {
-        commands: ['bash .renovate/post-upgrade.sh {{{packageFileDir}}}'],
-        fileFilters: ['features/**'],
-        executionMode: 'update',
-      },
-    },
-    {
       description: 'uv: Feature pins (github-releases) and environment base images (docker) move together',
       groupName: 'uv',
       matchPackageNames: ['astral-sh/uv', 'ghcr.io/astral-sh/uv'],
