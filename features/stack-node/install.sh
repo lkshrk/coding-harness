@@ -2,8 +2,6 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=tools.sh
-source "$here/tools.sh"
 
 prefix=/opt/nightshift/stack-node
 bin=/usr/local/bin
@@ -15,33 +13,14 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-case "$(uname -m)" in
-  x86_64 | amd64) arch=amd64 ;;
-  aarch64 | arm64) arch=arm64 ;;
-  *)
-    echo "unsupported architecture $(uname -m)" >&2
-    exit 1
-    ;;
-esac
-
-sha() {
-  local var="${1}_SHA256_${arch^^}"
-  printf '%s' "${!var}"
-}
-
+mise_install=/opt/nightshift/mise/bin/nightshift-mise-install
+if [ ! -x "$mise_install" ]; then
+  echo "$mise_install not found; the mise Feature must be installed first" >&2
+  exit 1
+fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-
-fetch() {
-  local url="$1" sum="$2" out="$tmp/$3"
-  curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$out" "$url"
-  if ! echo "$sum  $out" | sha256sum -c --quiet -; then
-    echo "checksum mismatch for $url" >&2
-    exit 1
-  fi
-  printf '%s' "$out"
-}
 
 ensure_packages() {
   local missing=()
@@ -82,14 +61,6 @@ prepare_cache() {
   chmod 1777 "$cache" "$cache/corepack" "$cache/npm" "$cache/pnpm-store" "$cache/pnpm-cache"
 }
 
-install_oxlint() {
-  local archive
-  archive="$(fetch "$(OXLINT_URL)" "$(sha OXLINT)" oxlint.tgz)"
-  mkdir -p "$tmp/oxlint"
-  tar -xzf "$archive" -C "$tmp/oxlint"
-  install -m 0755 "$(find "$tmp/oxlint" -type f -name 'oxlint*' | head -n 1)" "$bin/oxlint"
-}
-
 install_npm_tools() {
   local node npm modules
   node="$1"
@@ -122,6 +93,6 @@ prepare_package_managers() {
 ensure_packages
 prepare_cache
 node="$(find_node)"
-install_oxlint
+"$mise_install" "$here" oxlint
 install_npm_tools "$node"
 prepare_package_managers "$node"
