@@ -29,7 +29,8 @@ export async function stackFeatures(
   plan: Plan,
   devDir: string,
 ): Promise<Record<string, Record<string, unknown>>> {
-  const out: Record<string, Record<string, unknown>> = {}
+  cpSync(join(root, 'features', 'mise'), join(devDir, FEATURES_DIR, 'mise'), { recursive: true })
+  const out: Record<string, Record<string, unknown>> = { [`./${FEATURES_DIR}/mise`]: {} }
   for (const stack of plan.stacks) {
     const name = `stack-${stack.id}`
     cpSync(stack.featureDir, join(devDir, FEATURES_DIR, name), { recursive: true })
@@ -50,7 +51,8 @@ export async function stackFeatures(
   return out
 }
 
-// overrideFeatureInstallOrder installs listed Features first, so listing every other Feature puts the agent layer last.
+// overrideFeatureInstallOrder installs listed Features first, so listing every other Feature puts the agent layer last;
+// mise leads because stack Features call its nightshift-mise-install.
 export function orderAgentLayerLast(
   devDir: string,
   features: Record<string, Record<string, unknown>>,
@@ -65,6 +67,7 @@ export function orderAgentLayerLast(
   })
   const own = Object.keys((config.features as Record<string, unknown> | undefined) ?? {})
   const order = [
+    `./${FEATURES_DIR}/mise`,
     ...((config.overrideFeatureInstallOrder as string[] | undefined) ?? []),
     ...[...own, ...dependencies].map(unversioned),
     ...Object.keys(features).filter((ref) => !ref.endsWith('/agent-layer')),

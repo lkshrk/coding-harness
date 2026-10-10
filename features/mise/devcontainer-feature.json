@@ -1,0 +1,8 @@
+{
+  "id": "mise",
+  "version": "0.1.0",
+  "name": "nightshift mise",
+  "description": "The pinned mise binary and nightshift-mise-install, which installs a Feature's locked mise tools at build time; neither is on PATH.",
+  "options": {},
+  "installsAfter": ["ghcr.io/devcontainers/features/common-utils"]
+}

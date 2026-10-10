@@ -38,7 +38,12 @@ jobs:
             fi
             changed=$(git diff --name-only "$BASE" HEAD | grep '^features/' || true)
           fi
-          echo "features=$(printf '%s\n' "$changed" | cut -d/ -f2 | sort -u | grep -vx test | jq -Rnc '[inputs | select(length > 0)]')" >> "$GITHUB_OUTPUT"
+          changed=$(printf '%s\n' "$changed" | cut -d/ -f2 | sort -u | grep -vx test || true)
+          # Every Feature with a mise.toml installs through features/mise, so a mise change rebuilds them all.
+          if printf '%s\n' "$changed" | grep -qx mise; then
+            changed=$(printf '%s\n' "$changed" features/*/mise.toml | cut -d/ -f2 | sort -u)
+          fi
+          echo "features=$(printf '%s\n' "$changed" | jq -Rnc '[inputs | select(length > 0)]')" >> "$GITHUB_OUTPUT"
 
   typescript:
     strategy:
@@ -98,7 +103,15 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: features/test/build.sh "ci-${{ matrix.feature }}" "${{ matrix.feature }}"
+      - env:
+          FEATURE: ${{ matrix.feature }}
+        run: |
+          # A Feature with a mise.toml needs features/mise installed first, as the builder does.
+          if [ "$FEATURE" != mise ] && [ -f "features/$FEATURE/mise.toml" ]; then
+            features/test/build.sh "ci-$FEATURE" mise "$FEATURE"
+          else
+            features/test/build.sh "ci-$FEATURE" "$FEATURE"
+          fi
       - if: hashFiles(format('features/{0}/test.sh', matrix.feature)) != ''
         run: >-
           docker run --rm --network none -v "$PWD/features/${{ matrix.feature }}/test.sh:/test.sh:ro"
