@@ -260,7 +260,7 @@ describe('manual retry', () => {
     await expect(h.sup.retryRun('FOR-1', o, 'cli')).rejects.toMatchObject({
       code: 'refused',
       message:
-        'FOR-1: the open PR head pushed-elsewhere is not a nightshift attempt; push it through nightshift or close the PR',
+        'FOR-1: the open PR head pushed-elsewhere is not a nightshift attempt; continuing from a PR head pushed outside nightshift is XXX-293',
     })
     expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
     expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
