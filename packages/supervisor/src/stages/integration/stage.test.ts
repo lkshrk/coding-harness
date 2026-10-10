@@ -174,6 +174,43 @@ describe('integration stage (manual)', () => {
     expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ number: 1, run: retry.id, headSha: head })
   })
 
+  test('a push rejected because the PR branch moved during the attempt holds the issue and keeps the remote commit', async () => {
+    const h = integrationHarness(root)
+    const first = await h.integrated()
+    const retry = await h.first.retryRun('FOR-1', {}, 'cli')
+    const hand = join(root, 'hand')
+    git(root, 'clone', '-q', '-b', 'ns/FOR-1', h.remote, hand)
+    git(hand, 'commit', '-q', '--allow-empty', '-m', 'pushed while the attempt ran')
+    git(hand, 'push', '-q', 'origin', 'ns/FOR-1')
+    const foreign = git(hand, 'rev-parse', 'HEAD')
+
+    git(h.fx.worker, 'commit', '-q', '--allow-empty', '-m', 'address review')
+    await h.first.workerStarted(retry.id, { sandbox: 'sb-2', session: 's-2' })
+    await h.first.workerFinished(retry.id, FINISH)
+    const head = importBundle(h.fx.checkout, h.fx.bundle('run2').bundle, h.fx.branch, retry.id)
+    await h.first.headImported(retry.id, head)
+    await h.first.gatesFinished(retry.id, [gate('test')])
+    await h.first.reviewFinished(retry.id, {
+      kind: 'verdict',
+      review: { verdict: 'pass', findings: [] },
+      model: 'glm',
+    })
+    await h.first.tick()
+    await until(() => h.first.awaiting('FOR-1') !== null, 'issue held')
+
+    expect(git(h.remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(foreign)
+    expect(h.first.awaiting('FOR-1')).toMatchObject({ kind: 'escalated', stage: 'integration' })
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    const comment = (h.linear.threads.get('FOR-1') ?? []).map((c) => c.body).join('\n')
+    expect(comment).toContain('ns/FOR-1')
+    expect(comment).toContain(first.headSha ?? '?')
+    expect(comment).toContain(foreign)
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ run: first.id, headSha: first.headSha })
+    await h.first.tick()
+    await h.first.tick()
+    expect(h.gh.calls.filter((c) => c.cmd.includes('push'))).toHaveLength(2)
+  })
+
   test('a change touching a risk path opens a draft PR and says so', async () => {
     const h = integrationHarness(root, (c) => ({
       ...c,

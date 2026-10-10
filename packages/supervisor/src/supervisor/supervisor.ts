@@ -343,6 +343,7 @@ export class Supervisor {
   pullRequestOpened = (record: PullRequestRecord, title: string): Promise<void> =>
     this.m.prWatch.pullRequestOpened(record, title)
   forcedManual = (issue: string): string | null => this.m.prWatch.forcedManual(issue)
+  continuedFrom = (run: Run): string | undefined => this.m.dispatcher.continuationOf(run)?.headSha
   sandboxCreated = (runId: string, info: SandboxCreatedInfo): Promise<void> =>
     this.m.lifecycle.sandboxCreated(runId, info)
   workerProgress = (runId: string, progress: Progress): Promise<void> =>
