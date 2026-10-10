@@ -111,6 +111,7 @@ export type VaultSyncOptions = {
 }
 
 const SYNC_INTERVAL_MS = 5 * 60_000
+const SYNC_SCRIPT = 'scripts/sync.sh'
 
 export function vaultSync(o: VaultSyncOptions): () => Promise<void> {
   let last = Number.NEGATIVE_INFINITY
@@ -118,18 +119,25 @@ export function vaultSync(o: VaultSyncOptions): () => Promise<void> {
     const now = (o.now ?? Date.now)()
     if (!existsSync(join(o.dir, '.git')) || now - last < (o.intervalMs ?? SYNC_INTERVAL_MS)) return
     last = now
-    const git = (args: string[], env: Record<string, string> = {}) =>
-      Bun.spawnSync(['git', '-C', o.dir, ...args], {
+    const run = (cmd: string[], env: Record<string, string> = {}) =>
+      Bun.spawnSync(cmd, {
+        cwd: o.dir,
         env: { ...process.env, ...env },
         stdout: 'pipe',
         stderr: 'pipe',
         stdin: 'ignore',
       })
     try {
-      const owner = o.owner(git(['remote', 'get-url', 'origin']).stdout.toString().trim())
+      const owner = o.owner(run(['git', 'remote', 'get-url', 'origin']).stdout.toString().trim())
       const env = owner ? o.authEnv(await o.token(owner)) : {}
-      const pulled = git(['pull', '--ff-only', '--quiet'], env)
-      if (pulled.exitCode !== 0) o.out?.(`vault: pull failed: ${pulled.stderr.toString().trim().slice(-200)}`)
+      const script = join(o.dir, SYNC_SCRIPT)
+      const res = existsSync(script)
+        ? run([script, '--quiet'], env)
+        : run(['git', 'pull', '--ff-only', '--quiet'], env)
+      const detail = res.stderr.toString().trim().slice(-300)
+      if (res.exitCode === 1) o.out?.(`vault: not synced, local changes: ${detail}`)
+      else if (res.exitCode === 2) o.out?.(`vault: not synced, rebase conflict: ${detail}`)
+      else if (res.exitCode !== 0) o.out?.(`vault: pull failed: ${detail}`)
     } catch (e) {
       o.out?.(`vault: pull failed: ${(e as Error).message}`)
     }

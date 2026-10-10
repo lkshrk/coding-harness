@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { overlaps, selectVaultPages, vaultSync } from './vault'
@@ -136,5 +136,22 @@ describe('vaultSync', () => {
     await sync()
     expect(tokens).toEqual(['lkshrk', 'lkshrk'])
     expect(out).toEqual(['vault: pull failed: sts down', 'vault: pull failed: sts down'])
+  })
+
+  test("runs the vault's sync script with the token env and reports local changes by name", async () => {
+    mkdirSync(join(vault, '.git'))
+    mkdirSync(join(vault, 'scripts'))
+    const script = join(vault, 'scripts', 'sync.sh')
+    writeFileSync(script, '#!/bin/sh\necho "uncommitted changes: $AUTH" >&2\nexit 1\n')
+    chmodSync(script, 0o755)
+    const out: string[] = []
+    await vaultSync({
+      dir: vault,
+      token: async () => 'tok',
+      authEnv: (token) => ({ AUTH: token }),
+      owner: () => 'lkshrk',
+      out: (l) => out.push(l),
+    })()
+    expect(out).toEqual(['vault: not synced, local changes: uncommitted changes: tok'])
   })
 })
