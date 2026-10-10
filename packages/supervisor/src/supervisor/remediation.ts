@@ -9,6 +9,12 @@ const ENVIRONMENT_REASONS = ['sandbox_error', 'gateway_error', 'supervisor_resta
 const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed']
 
 const TASK_TOO_LARGE_CLASS: Classification = { class: 'task_too_large', action: 'split' }
+// Conflicts between a continued attempt and the moved base are resolved by the user, not retried.
+const baseConflictClass = (detail?: string): Classification => ({
+  class: 'unknown',
+  action: 'escalate_user',
+  ...(detail ? { evidence: detail } : {}),
+})
 
 export const fallbackClassifier: Classifier = {
   async classify(f) {
@@ -41,7 +47,9 @@ export class Remediation {
     const c =
       reason === 'task_too_large'
         ? TASK_TOO_LARGE_CLASS
-        : await classifier.classify({ run, reason, ...(detail ? { detail } : {}) })
+        : reason === 'base_conflict'
+          ? baseConflictClass(detail)
+          : await classifier.classify({ run, reason, ...(detail ? { detail } : {}) })
     this.rt.runs.update(run.id, { failure: c.class })
     const escalate =
       c.class !== 'environment' &&

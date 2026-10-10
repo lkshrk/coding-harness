@@ -67,6 +67,8 @@ Finish early instead of guessing:
 
 ## Output
 
+To change a Feature's tools, edit its `mise.toml` only and do not run `mise lock`; nightshift writes `mise.lock` after you finish.
+
 Commit your work on the current branch, then call `finish` exactly once, as your last action:
 
 - `status`: `DONE`, `DONE_WITH_CONCERNS`, `BLOCKED` or `NEEDS_CONTEXT`.

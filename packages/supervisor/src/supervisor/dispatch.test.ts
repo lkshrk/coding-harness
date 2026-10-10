@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { GitHost } from '../ports'
+import { BaseConflictError } from '../ports/worker'
 import { snapshot } from '../testing/testing'
 import { dispatchOne, harness } from './testing'
 
@@ -46,9 +47,40 @@ describe('manual retry', () => {
     const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
     const first = await failedWithCommit(h)
     const next = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
-    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1' })
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base2' })
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
     expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({ continues: first.id, reason: 'manual retry' })
+  })
+
+  test('a continued run records the current base, not the continued run base', async () => {
+    let base = 'base-old'
+    const h = harness({ repos: { baseSha: async () => base } })
+    const first = await failedWithCommit(h)
+    expect(h.sup.runs.get(first.id)?.baseSha).toBe('base-old')
+    base = 'base-new'
+    const next = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(next.baseSha).toBe('base-new')
+    expect(h.executor.starts.at(-1)?.run.baseSha).toBe('base-new')
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+  })
+
+  test('a continuation conflicting with the moved base ends as base_conflict and holds the issue', async () => {
+    let bases = 0
+    const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
+    await failedWithCommit(h)
+    h.executor.failStart = new BaseConflictError('base2', 'head1', ['src/a.ts', 'mise.toml'])
+    const next = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(h.sup.runs.get(next.id)).toMatchObject({ state: 'failed', baseSha: 'base2' })
+    const failed = h.of('WORKER_FAILED').at(-1)?.data
+    expect(failed).toMatchObject({ reason: 'base_conflict' })
+    expect(String(failed?.detail)).toContain('src/a.ts, mise.toml')
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    const comments = await h.linear.comments('FOR-1')
+    expect(
+      comments.some((c) => c.body.includes('base_conflict') && c.body.includes('src/a.ts, mise.toml')),
+    ).toBe(true)
+    expect(h.sup.runs.forIssue('FOR-1')).toHaveLength(2)
   })
 
   test('--continue skips later attempts without a commit and uses the latest one that has one', async () => {
@@ -58,7 +90,7 @@ describe('manual retry', () => {
     const second = await h.sup.retryRun('FOR-1', {}, 'cli')
     await h.sup.workerFailed(second.id, 'crash', 'segfault')
     const third = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
-    expect(third).toMatchObject({ attempt: 3, baseSha: 'base1' })
+    expect(third).toMatchObject({ attempt: 3, baseSha: 'base3' })
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
   })
 
@@ -117,7 +149,7 @@ describe('manual retry', () => {
     })
     h.linear.patch('FOR-1', { status: 'Todo', labels: ['ai-stage:implementation'] })
     const next = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
-    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1' })
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base2' })
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: run.id, headSha: 'head1' })
   })
 
@@ -177,7 +209,7 @@ describe('manual retry', () => {
     h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
 
     const next = await h.sup.retryRun('FOR-1', {}, 'cli')
-    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1', agent: 'implementer' })
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base2', agent: 'implementer' })
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
     expect(h.linear.get('FOR-1')).toMatchObject({
       status: 'In Progress',
@@ -227,7 +259,7 @@ describe('manual retry', () => {
     expect(h.sup.runs.get(second.id)?.headSha).toBe('head2')
 
     const third = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
-    expect(third).toMatchObject({ attempt: 3, baseSha: 'base1' })
+    expect(third).toMatchObject({ attempt: 3, baseSha: 'base3' })
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
     expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({ continues: first.id })
   })
@@ -275,7 +307,7 @@ describe('manual retry', () => {
 
     const next = await h.sup.retryRun('FOR-1', o, 'cli')
     expect(fetched).toEqual([['omni', 1, 'ns/FOR-1']])
-    expect(next).toMatchObject({ attempt: 2, baseSha: 'base1' })
+    expect(next).toMatchObject({ attempt: 2, baseSha: 'base2' })
     expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
       ref: 'refs/nightshift/pr/1',
       headSha: 'pushed-elsewhere',

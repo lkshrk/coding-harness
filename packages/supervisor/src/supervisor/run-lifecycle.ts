@@ -123,6 +123,7 @@ export class RunLifecycle {
     }
     await this.preserveHead(runId, String(finish.status))
     await this.end(runId, 'failed', event)
+    await this.releaseSandbox(runId)
     this.flow.releaseLease(run.issue)
     if (finish.status === 'NEEDS_CONTEXT') {
       await this.flow.askQuestion(run, event, finish.blocker ?? {})
@@ -149,6 +150,7 @@ export class RunLifecycle {
     await this.preserveHead(runId, reason)
     await this.end(runId, 'failed', event)
     this.stalls.delete(runId)
+    await this.releaseSandbox(runId)
     this.flow.releaseLease(run.issue)
     await this.flow.remediate(this.rt.requireRun(runId), reason, detail)
   }
@@ -157,6 +159,12 @@ export class RunLifecycle {
     const run = this.rt.runs.update(runId, { headSha })
     await this.destroySandbox(run)
     this.rt.runs.update(runId, { sandbox: null })
+  }
+
+  async lockRegenerated(runId: string, lock: { feature: string; changed: boolean }): Promise<void> {
+    if (this.late(runId, 'lock')) return
+    const run = this.rt.requireRun(runId)
+    this.rt.log.append({ type: 'LOCK_REGENERATED', issue: run.issue, run: run.id, data: lock })
   }
 
   async stopRun(runId: string, reason: string, opts: StopOptions = {}): Promise<void> {
@@ -217,6 +225,18 @@ export class RunLifecycle {
     const handle = this.handle(run)
     await this.rt.deps.sandbox.destroy(handle)
     this.sandboxDestroyed(run.id, handle)
+  }
+
+  // An ended run's head is already preserved; a failed destroy leaves the outcome as is.
+  async releaseSandbox(runId: string): Promise<void> {
+    const run = this.rt.requireRun(runId)
+    if (run.sandbox === null) return
+    try {
+      await this.destroySandbox(run)
+      this.rt.runs.update(runId, { sandbox: null })
+    } catch (e) {
+      console.error(`${run.issue}: destroying the sandbox of run ${run.id} failed: ${(e as Error).message}`)
+    }
   }
 
   sandboxDestroyed(runId: string, handle: SandboxHandle): void {

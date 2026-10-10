@@ -87,6 +87,10 @@
       }
     },
     {
+      "if": { "properties": { "type": { "const": "LOCK_REGENERATED" } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/lock" } } }
+    },
+    {
       "if": { "properties": { "type": { "enum": ["GATE_PASSED", "GATE_FAILED"] } } },
       "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/gate" } } }
     },
@@ -212,6 +216,7 @@
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
         "WIP_COMMITTED",
+        "LOCK_REGENERATED",
         "GATE_PASSED",
         "GATE_FAILED",
         "REVIEW_RECEIVED",
@@ -348,7 +353,9 @@
               "stopped",
               "supervisor_restart",
               "no_finish",
-              "task_too_large"
+              "task_too_large",
+              "base_conflict",
+              "lock_failed"
             ]
           },
           "detail": { "type": "string" },
@@ -362,6 +369,18 @@
         "properties": {
           "sha": { "type": "string", "description": "commit holding the worker's uncommitted changes" },
           "lines": { "type": "integer", "minimum": 0, "description": "added plus deleted lines" }
+        }
+      },
+      "lock": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["feature", "changed"],
+        "properties": {
+          "feature": {
+            "type": "string",
+            "description": "directory under features/ whose mise.lock was regenerated"
+          },
+          "changed": { "type": "boolean", "description": "true when the lock changed and was committed" }
         }
       },
       "gate": {

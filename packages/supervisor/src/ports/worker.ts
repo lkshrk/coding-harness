@@ -58,6 +58,22 @@ export type ExecutorStart = {
   repairFrom?: { run: string; headSha: string } | { ref: string; headSha: string }
 }
 
+// A continued attempt's head cannot be merged with the current base without conflicts.
+export class BaseConflictError extends Error {
+  override name = 'BaseConflictError'
+  readonly reason = 'base_conflict'
+
+  constructor(
+    readonly baseSha: string,
+    readonly headSha: string,
+    readonly files: string[],
+  ) {
+    super(
+      `merging base ${baseSha.slice(0, 12)} into ${headSha.slice(0, 12)} conflicts in: ${files.join(', ') || '(unknown files)'}`,
+    )
+  }
+}
+
 export interface RunExecutor {
   start(s: ExecutorStart): Promise<void>
   reattach(run: Run): Promise<void>

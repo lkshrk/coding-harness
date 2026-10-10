@@ -360,6 +360,8 @@ export class Supervisor {
     this.m.lifecycle.workerFailed(runId, reason, detail)
   headImported = (runId: string, headSha: string): Promise<void> =>
     this.m.lifecycle.headImported(runId, headSha)
+  lockRegenerated = (runId: string, lock: { feature: string; changed: boolean }): Promise<void> =>
+    this.m.lifecycle.lockRegenerated(runId, lock)
   stopRun = (runId: string, reason: string, opts?: StopOptions): Promise<void> =>
     this.m.lifecycle.stopRun(runId, reason, opts)
   stopForUser = (target: string, reason: string | undefined, by: By): Promise<Run> =>
