@@ -3,6 +3,7 @@ import { type Config, expandHome } from '@nightshift/core'
 import { BRANCH_PREFIX, runRef } from '../../policy/naming'
 import { INTEGRATION, lifecycleOf, viewIssue } from '../../policy/stages'
 import type { GitHost, StageHandler, StageWork } from '../../ports'
+import { PushRejectedError } from '../../ports/git-host'
 import type { EventLog } from '../../state/events'
 import { isTerminal, type Run, type RunStore } from '../../state/runs'
 import type { GateEventData } from '../gates/report'
@@ -15,8 +16,10 @@ export interface IntegrationCallbacks {
   readonly log: Pick<EventLog, 'since'>
   readonly pullRequests: Pick<PullRequestStore, 'get'>
   forcedManual(issue: string): string | null
+  continuedFrom(run: Run): string | undefined
   gateResults(runId: string): GateEventData[]
   pullRequestOpened(record: PullRequestRecord, title: string): Promise<void>
+  holdStage(identifier: string, stage: string, reason: string, comment: string): Promise<void>
 }
 
 export type IntegrationDeps = {
@@ -96,7 +99,25 @@ export class IntegrationHandler implements StageHandler {
     if (requested !== 'manual')
       this.d.out?.(`${id}: merge mode ${requested} is not supported yet; using manual`)
     const branch = prBranch(id)
-    const { headSha } = await this.d.host.push({ repository: run.repository, source: runRef(run.id), branch })
+    const expected = existing ? (cb.continuedFrom(run) ?? existing.headSha) : undefined
+    let headSha: string
+    try {
+      ;({ headSha } = await this.d.host.push({
+        repository: run.repository,
+        source: runRef(run.id),
+        branch,
+        ...(expected ? { expected } : {}),
+      }))
+    } catch (e) {
+      if (!(e instanceof PushRejectedError)) throw e
+      await cb.holdStage(
+        id,
+        INTEGRATION,
+        'push_rejected',
+        `Nightshift did not push to \`${e.branch}\`: the attempt continued from \`${e.expected}\`, but the branch is now at \`${e.actual || '(deleted)'}\`. The remote commit is kept. Bring the change into the branch by hand, or retry ${id} to continue from the new head.`,
+      )
+      return
+    }
     const body = this.body(work, run, cb, risk, config)
     const pr = await this.d.host.openPullRequest({
       repository: run.repository,

@@ -21,9 +21,24 @@ export type CiState = {
 
 export type PullRequestState = { state: 'open' | 'merged' | 'closed'; mergeSha?: string; headSha?: string }
 
+export class PushRejectedError extends Error {
+  constructor(
+    readonly branch: string,
+    readonly expected: string,
+    readonly actual: string,
+  ) {
+    super(`push to ${branch} rejected: expected it at ${expected}, but it is at ${actual || '(deleted)'}`)
+  }
+}
+
 export interface GitHost {
   accountFor(repository: string): string
-  push(o: { repository: string; source: string; branch: string }): Promise<{ headSha: string }>
+  push(o: {
+    repository: string
+    source: string
+    branch: string
+    expected?: string
+  }): Promise<{ headSha: string }>
   openPullRequest(o: {
     repository: string
     branch: string

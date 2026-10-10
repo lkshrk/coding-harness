@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PullRequest } from '../../ports'
+import { PushRejectedError } from '../../ports/git-host'
 import { git, gitFixture } from '../../stages/gates/testing'
 import {
   AGENT_TOKEN,
@@ -59,6 +60,101 @@ describe('GhGitHost.push', () => {
     expect(git(remote, 'for-each-ref', '--format=%(refname) %(objectname)')).toBe(
       `refs/heads/ns/FOR-1 ${second}`,
     )
+  })
+
+  test('a push with expected leases the branch at that commit', async () => {
+    const { fx, gh, remote, host, headSha } = setup()
+    await host.push({ repository: 'omni', source: runRef('RUN1'), branch: 'ns/FOR-1' })
+    git(fx.worker, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'two')
+    const second = importBundle(fx.checkout, fx.bundle('two').bundle, fx.branch, 'RUN2')
+    await host.push({ repository: 'omni', source: runRef('RUN2'), branch: 'ns/FOR-1', expected: headSha })
+    expect(git(remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(second)
+    expect(pushes(gh)[1]?.cmd.slice(-3)).toEqual([
+      `--force-with-lease=refs/heads/ns/FOR-1:${headSha}`,
+      remote,
+      `${second}:refs/heads/ns/FOR-1`,
+    ])
+  })
+
+  test('a leased push fails and keeps the remote commit when the branch moved', async () => {
+    const { fx, remote, host, headSha } = setup()
+    await host.push({ repository: 'omni', source: runRef('RUN1'), branch: 'ns/FOR-1' })
+    git(fx.worker, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'two')
+    const moved = importBundle(fx.checkout, fx.bundle('two').bundle, fx.branch, 'RUN2')
+    await host.push({ repository: 'omni', source: runRef('RUN2'), branch: 'ns/FOR-1' })
+    git(
+      fx.worker,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-q',
+      '--amend',
+      '--allow-empty',
+      '-m',
+      'three',
+    )
+    importBundle(fx.checkout, fx.bundle('three').bundle, fx.branch, 'RUN3')
+    const failed = host.push({
+      repository: 'omni',
+      source: runRef('RUN3'),
+      branch: 'ns/FOR-1',
+      expected: headSha,
+    })
+    await expect(failed).rejects.toBeInstanceOf(PushRejectedError)
+    await expect(failed).rejects.toMatchObject({ branch: 'ns/FOR-1', expected: headSha })
+    expect(git(remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(moved)
+  })
+
+  test('a leased push fails when the branch moved to the very commit being pushed', async () => {
+    const { fx, remote, host, headSha } = setup()
+    await host.push({ repository: 'omni', source: runRef('RUN1'), branch: 'ns/FOR-1' })
+    git(fx.worker, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'two')
+    const moved = importBundle(fx.checkout, fx.bundle('two').bundle, fx.branch, 'RUN2')
+    await host.push({ repository: 'omni', source: runRef('RUN2'), branch: 'ns/FOR-1' })
+    const failed = host.push({
+      repository: 'omni',
+      source: runRef('RUN2'),
+      branch: 'ns/FOR-1',
+      expected: headSha,
+    })
+    await expect(failed).rejects.toBeInstanceOf(PushRejectedError)
+    await expect(failed).rejects.toMatchObject({ branch: 'ns/FOR-1', expected: headSha, actual: moved })
+    expect(git(remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(moved)
+  })
+
+  test('a leased push fails when the branch moves to the pushed commit between the lease check and the push', async () => {
+    const { fx, gh, remote, host, headSha } = setup()
+    await host.push({ repository: 'omni', source: runRef('RUN1'), branch: 'ns/FOR-1' })
+    git(fx.worker, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'two')
+    const second = importBundle(fx.checkout, fx.bundle('two').bundle, fx.branch, 'RUN2')
+    const run = gh.run
+    let advanced = false
+    const racing = fakeHost(
+      () => hostConfig(fx.checkout),
+      Object.assign(Object.create(gh), {
+        run: async (...a: Parameters<typeof run>) => {
+          const r = await run(...a)
+          if (!advanced && a[0].includes('ls-remote')) {
+            advanced = true
+            git(fx.checkout, 'push', '-q', remote, `${second}:refs/heads/ns/FOR-1`)
+          }
+          return r
+        },
+      }),
+      remote,
+    )
+    const failed = racing.push({
+      repository: 'omni',
+      source: runRef('RUN2'),
+      branch: 'ns/FOR-1',
+      expected: headSha,
+    })
+    await expect(failed).rejects.toBeInstanceOf(PushRejectedError)
+    await expect(failed).rejects.toMatchObject({ branch: 'ns/FOR-1', expected: headSha, actual: second })
+    expect(git(remote, 'rev-parse', 'refs/heads/ns/FOR-1')).toBe(second)
+    expect(gh.calls.filter((c) => c.cmd.includes('ls-remote'))).toHaveLength(2)
   })
 
   test('never pushes outside ns/ or to the base branch', async () => {

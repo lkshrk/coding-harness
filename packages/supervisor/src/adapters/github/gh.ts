@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { type Config, expandHome, githubAccount } from '@nightshift/core'
 import { BRANCH_PREFIX } from '../../policy/naming'
 import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState } from '../../ports'
+import { PushRejectedError } from '../../ports/git-host'
 import { ACTIONS_URL, bucketOf, type GhRollupItem, logExcerpt, MAX_CI_LOG, MAX_JOB_LOG } from './ci-log'
 import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from './github-tokens'
 
@@ -74,7 +75,12 @@ export class GhGitHost implements GitHost {
     return githubAccount(this.o.config(), repository).name
   }
 
-  async push(o: { repository: string; source: string; branch: string }): Promise<{ headSha: string }> {
+  async push(o: {
+    repository: string
+    source: string
+    branch: string
+    expected?: string
+  }): Promise<{ headSha: string }> {
     const repo = this.repo(o.repository)
     if (!o.branch.startsWith(BRANCH_PREFIX) || o.branch === repo.base)
       throw new Error(
@@ -87,21 +93,45 @@ export class GhGitHost implements GitHost {
     if (rev.exitCode !== 0) throw new Error(`git rev-parse ${o.source}: ${rev.stderr.trim()}`)
     const headSha = rev.stdout.trim()
     const target = this.pushUrl(o.repository, await this.slug(o.repository))
+    const ref = `refs/heads/${o.branch}`
     await this.o.tokens.withToken(o.repository, async (token) => {
+      const env = gitAuthEnv(token)
+      const remoteHead = async (): Promise<string> => {
+        const ls = await this.run(['git', '-C', checkout, 'ls-remote', target, ref], { env })
+        this.check(ls, `git ls-remote ${o.branch}`)
+        return ls.stdout.trim().split(/\s+/)[0] ?? ''
+      }
+      // git skips the lease when the remote already holds the pushed commit, so compare first.
+      if (o.expected) {
+        const actual = await remoteHead()
+        if (actual !== o.expected) throw new PushRejectedError(o.branch, o.expected, actual)
+      }
       const r = await this.run(
         [
           'git',
           '-C',
           checkout,
           'push',
-          '--quiet',
           '--no-verify',
-          target,
-          `+${headSha}:refs/heads/${o.branch}`,
+          ...(o.expected
+            ? ['--porcelain', `--force-with-lease=${ref}:${o.expected}`, target, `${headSha}:${ref}`]
+            : ['--quiet', target, `+${headSha}:${ref}`]),
         ],
-        { env: gitAuthEnv(token) },
+        { env },
       )
+      if (r.exitCode !== 0 && o.expected) {
+        const actual = await remoteHead().catch(() => undefined)
+        if (actual !== undefined && actual !== o.expected)
+          throw new PushRejectedError(o.branch, o.expected, actual)
+      }
       this.check(r, `git push ${o.branch}`)
+      // The branch can move to headSha between the check above and the push; git then reports
+      // it up to date ('=') without checking the lease, so confirm this push moved it.
+      if (o.expected && o.expected !== headSha) {
+        const upToDate = r.stdout.split('\n').some((l) => l.startsWith('=\t') && l.includes(`:${ref}\t`))
+        const actual = await remoteHead()
+        if (actual !== headSha || upToDate) throw new PushRejectedError(o.branch, o.expected, actual)
+      }
     })
     return { headSha }
   }
