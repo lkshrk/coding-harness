@@ -7,7 +7,7 @@
     "pythonVersion": {
       "type": "string",
       "default": "",
-      "description": "Python request from the repository's .python-version or requires-python; empty uses the version pinned in tools.sh."
+      "description": "Python request from the repository's .python-version or requires-python; empty uses the version locked in mise.lock."
     }
   },
   "containerEnv": {
