@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { RetryQueue } from '../policy/retry'
+import type { Intent } from '../policy/transition'
+import { PullRequestStore } from '../stages/integration/records'
+import { EventLog } from '../state/events'
+import { RunStore } from '../state/runs'
+import { createUlid } from '../state/ulid'
 import { snapshot } from '../testing/testing'
-
+import { Remediation } from './remediation'
+import { type RunFlow, type SupervisorDeps, SupervisorRuntime } from './runtime'
 import { dispatchOne, files, harness } from './testing'
 
 describe('failures and retries', () => {
@@ -185,5 +192,44 @@ describe('failures and retries', () => {
     expect(h.sup.escalationCount('FOR-1')).toBe(4)
     expect(h.linear.get('FOR-1').status).toBe('Blocked')
     expect(h.sup.awaiting('FOR-1')?.kind).toBe('escalated')
+  })
+
+  test('retry_same only makes the issue ready again: no stage reset, no run stop', async () => {
+    const h = harness()
+    const ulid = createUlid(() => Date.now())
+    const now = () => new Date('2026-10-04T10:00:00.000Z')
+    const rt = new SupervisorRuntime(
+      { config: h.config, db: h.db, linear: h.linear } as unknown as SupervisorDeps,
+      () => h.config,
+      new EventLog(h.db, { now, ulid }),
+      new RunStore(h.db, { now, ulid }),
+      new PullRequestStore(h.db),
+      new Map(),
+      now,
+    )
+    const intents: Intent[] = []
+    const flow = {
+      backToImplementation: async () => {},
+      applyIntent: async (_: string, intent: Intent) => {
+        intents.push(intent)
+      },
+      paused: () => false,
+    } as unknown as RunFlow
+    h.linear.put(snapshot({ identifier: 'FOR-1' }))
+    const run = rt.runs.create({
+      issue: 'FOR-1',
+      agent: 'implementer',
+      profile: 'p',
+      model: 'm',
+      repository: 'r',
+      baseSha: 'base1',
+      attempt: 1,
+    })
+    await new Remediation(rt, new RetryQueue({ baseMs: 1000, maxMs: 8000 }), flow).remediate(
+      run,
+      'gate_failed',
+      'test exited 1',
+    )
+    expect(intents).toEqual([{ kind: 'retryScheduled' }])
   })
 })

@@ -37,6 +37,7 @@ const INTENTS: Intent[] = [
   { kind: 'heldForUser', awaiting: { kind: 'escalated', stage: 'implementation' } },
   { kind: 'released' },
   { kind: 'retryRequested' },
+  { kind: 'retryScheduled' },
   { kind: 'stageEntered', stage: 'verification', from: 'implementation' },
   { kind: 'unblocked' },
   { kind: 'lost' },
@@ -62,6 +63,7 @@ const expected: Record<Exclude<Intent['kind'], 'humanChanged'>, Partial<Record<L
   retryRequested: Object.fromEntries(
     LIVE.map((s) => [s, { status: 'ready', awaiting: null, runAction: s === 'running' ? 'stop' : 'none' }]),
   ),
+  retryScheduled: Object.fromEntries(LIVE.map((s) => [s, { status: 'ready' }])),
   stageEntered: Object.fromEntries(LIVE.map((s) => [s, { stage: 'verification', awaiting: null }])),
   unblocked: { backlog: { status: 'ready' } },
   lost: { running: { status: 'ready' } },

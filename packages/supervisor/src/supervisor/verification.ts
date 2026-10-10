@@ -155,7 +155,11 @@ export class Verification {
     const view = issue && viewIssue(issue, this.rt.config(), this.flow.viewOptions(identifier))
     if (view?.stage !== IMPLEMENTATION) return
     if (nextStage(this.rt.config(), view.pipeline, IMPLEMENTATION) !== VERIFICATION) return
-    await this.flow.relabel(identifier, VERIFICATION, IMPLEMENTATION)
+    await this.flow.applyIntent(identifier, {
+      kind: 'stageEntered',
+      stage: VERIFICATION,
+      from: IMPLEMENTATION,
+    })
   }
 
   async backToImplementation(identifier: string): Promise<void> {
@@ -163,15 +167,13 @@ export class Verification {
     const issue = this.rt.cache.get(identifier)
     const stage = issue && viewIssue(issue, this.rt.config(), this.flow.viewOptions(identifier))?.stage
     if (stage !== VERIFICATION && stage !== INTEGRATION) return
-    await this.flow.relabel(identifier, IMPLEMENTATION, stage)
+    await this.flow.applyIntent(identifier, { kind: 'stageEntered', stage: IMPLEMENTATION, from: stage })
   }
 
   async enterStage(view: IssueView, stage: string, from?: string): Promise<void> {
     const id = view.snapshot.identifier
-    this.rt.log.append({ type: 'STAGE_ENTERED', issue: id, data: { stage, ...(from ? { from } : {}) } })
     const hold = this.rt.config().stages[stage]?.human_checkpoint === 'before'
-    this.flow.setAwaiting(id, hold ? { kind: 'before', stage } : null)
-    await this.flow.writeStatus(id, { stage, ...(hold ? { status: 'blocked' as const } : {}) })
+    await this.flow.applyIntent(id, { kind: 'stageEntered', stage, ...(from ? { from } : {}) })
     if (hold)
       await this.rt.notify(`${stage} needs your approval before it starts`, id, {
         kind: 'blocked',

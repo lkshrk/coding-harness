@@ -10,6 +10,7 @@ export type Intent =
   | { kind: 'heldForUser'; awaiting?: Awaiting }
   | { kind: 'released' }
   | { kind: 'retryRequested' }
+  | { kind: 'retryScheduled' }
   | { kind: 'stageEntered'; stage: string; from?: string }
   | { kind: 'unblocked' }
   | { kind: 'lost' }
@@ -128,6 +129,8 @@ export const RULES: Table = {
       log: back ? `retry from ${current.stage}; back to ${IMPLEMENTATION}, pull request kept` : 'retry',
     }
   }),
+  // Supervisor retry of the same stage after a classified failure: only back to ready.
+  retryScheduled: cells(() => ({ status: 'ready', log: 'retry of the same stage scheduled' })),
   stageEntered: cells((_, intent, ctx) => {
     const hold = ctx.config.stages[intent.stage]?.human_checkpoint === 'before'
     return {

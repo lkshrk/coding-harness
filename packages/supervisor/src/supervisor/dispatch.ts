@@ -62,7 +62,7 @@ export class Dispatcher {
     }
     this.flow.leaseEvent('LEASE_ACQUIRED', id)
     this.retry.take(id)
-    await this.flow.writeStatus(id, { status: 'running' })
+    await this.flow.applyIntent(id, { kind: 'dispatched' })
     await this.launch(run, view)
     return run
   }

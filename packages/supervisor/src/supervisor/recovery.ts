@@ -51,7 +51,7 @@ export class Recovery {
         `lost-${issue.updatedAt}`,
         'nightshift lost the runtime state of this run; it is dispatched again.',
       )
-      await this.flow.writeStatus(issue.identifier, { status: 'ready' })
+      await this.flow.applyIntent(issue.identifier, { kind: 'lost' })
       report.lost.push(issue.identifier)
     }
     return report
