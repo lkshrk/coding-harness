@@ -154,6 +154,27 @@ describe('lead', () => {
   })
 })
 
+describe('design publish script', () => {
+  const script = join(ROOT, 'skills/design/scripts/publish.sh')
+
+  test('the lead may run it only with approval, and nothing else writes the repository', () => {
+    const bash = rendered(agents.get('lead') as AgentDef).frontmatter.permission.bash
+    expect(bash['*/skills/design/scripts/publish.sh *']).toBe('ask')
+    const writes = Object.entries(bash).filter(
+      ([p, action]) => /^git (commit|push|checkout|switch|worktree|add|reset)/.test(p) && action !== 'deny',
+    )
+    expect(writes).toEqual([])
+  })
+
+  test('refuses an argument that is not an issue ID', () => {
+    const res = Bun.spawnSync(['bash', script, ROOT, '../escape', join(ROOT, 'package.json')], {
+      stderr: 'pipe',
+    })
+    expect(res.exitCode).toBe(2)
+    expect(res.stderr.toString()).toContain('is not an issue ID')
+  })
+})
+
 describe('CLI skills', () => {
   test.each([...CLI_SKILLS, ...LEAD_SKILLS])(
     '%s has a when/when-not description and stays under 140 lines',

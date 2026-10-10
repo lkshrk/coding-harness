@@ -1,17 +1,18 @@
 ---
 name: design
-description: "Design how to build an approved feature: investigate the code, write at least two alternatives, critique them and synthesise a decision into the feature's parent issue, then stop for the user's approval. Use when a feature issue has approved requirements and sits in the design stage. Not for gathering requirements (`discover`), creating issues (`decompose`) or small changes that need no alternatives."
+description: "Design how to build an approved feature: investigate the code, write at least two alternatives, critique them and record a decision as docs/designs/<ID>.md in the repository, opened as a pull request the user approves by merging. Use when a feature issue has approved requirements and sits in the design stage. Not for gathering requirements (`discover`), creating issues (`decompose`) or small changes that need no alternatives."
 license: MIT
 ---
 
 # Design
 
-Decide how to build the feature, with the reasoning visible. The output extends the parent issue's description below `## Requirements`, using the headings in `design-template.md`. Only the user approves a design.
+Decide how to build the feature, with the reasoning visible. The design is a file in the feature's repository, `docs/designs/<ID>.md`, using the headings in `design-template.md`. It reaches the repository only as a pull request, and merging that pull request is the user's approval.
 
 ## Prerequisites
 
-- The parent issue has an approved `## Requirements` section. If not, stop and run `discover` first.
+- The feature's parent issue has an approved `## Requirements` section. If not, stop and run `discover` first.
 - Read the requirements, the issue comments and the vault pages for this repository before investigating.
+- One repository owns the design. For a feature spanning several, ask the user which one.
 
 ## Investigate
 
@@ -39,15 +40,17 @@ Decide how to build the feature, with the reasoning visible. The output extends 
 - List the interfaces between the parts: names, shapes and owners. `decompose` splits along them.
 - List the risks that remain and how a worker or a check will catch them.
 
-## Writing and approval
+## Publishing and approval
 
-- Draft the full design (template headings) in `/tmp/<ID>-design.md` and show it to the user.
-- Ask: "Write this design into <ID>?" and wait for an explicit yes.
-- Write with `linear issue update <ID> --description-file …`, keeping `## Requirements` above it unchanged.
-- The supervisor holds the issue for the user at the design checkpoint; do not move its status.
-- Changes after approval: show the changed lines, get approval, and add a comment naming what changed and why. A decision change also goes to the vault as a decision page.
+- Draft the full design in `/tmp/<ID>-design.md` and show it to the user.
+- After an explicit yes, publish it; never edit the repository any other way:
+  `<skills>/design/scripts/publish.sh ~/Dev/<repo> <ID> /tmp/<ID>-design.md`
+  It commits only `docs/designs/<ID>.md` on branch `design/<ID>` from a private worktree (the user's checkout is not touched) and prints the pull request URL.
+- Comment on the parent issue with the pull request link (`linear issue comment add <ID> --body-file …`). The supervisor holds the issue at the design checkpoint; do not move its status.
+- Review feedback: revise the draft and run `publish.sh` again; it adds a commit to the same pull request.
+- The design is approved when the pull request is merged. A decision that should outlive the feature also goes to the vault as a decision page.
 
 ## Done
 
-- The parent issue holds requirements and an approved design under the template headings.
+- `docs/designs/<ID>.md` is merged, and the parent issue links to it.
 - Tell the user the next step is `decompose`, and stop.

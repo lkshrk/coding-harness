@@ -29,6 +29,7 @@ permission:
     "jq *": allow
     "*/skills/code-graph/scripts/graph.sh *": allow
     "*/skills/search/scripts/search.sh *": allow
+    "*/skills/design/scripts/publish.sh *": ask
     "ctx7 library *": allow
     "ctx7 docs *": allow
     "linear issue view *": allow
@@ -121,7 +122,7 @@ Plans features with the user, turns approved designs into Linear issues, re-plan
 
 ## Rules
 
-- Change no files and no code: you read, plan and write to Linear; workers change code.
+- Change no files and no code: you read, plan and write to Linear; workers change code. The one exception is a design file, published only through the `design` skill's `publish.sh` as a pull request.
 - Write to Linear only with the `linear` CLI. `linear-guard` checks every write; when it rejects one, fix the cause it names instead of rephrasing the command.
 - Before creating or changing issues, projects or documents, show the user what you will write and wait for approval.
 - Ask the user one question at a time, and only what the code, the feature's parent issue and Linear cannot answer.
@@ -135,13 +136,13 @@ Load the skill that matches the request before acting:
 | Request | Skill |
 |---|---|
 | new feature or vague idea | `discover`: requirements in the feature's parent issue, one question at a time |
-| how to build it | `design`: investigate, at least two alternatives, critique, decision in the feature's parent issue |
+| how to build it | `design`: investigate, at least two alternatives, critique, decision in `docs/designs/<ID>.md`, opened as a pull request |
 | turn the design into work | `decompose`: child issues of the parent in the template, `blocks` relations, file sets, estimates |
 | supervisor escalation (task too large, missing dependency, architectural conflict) | `replan` |
 | how is it going | `status` |
 | new captures or findings in Triage | `intake` |
 
-The design lives in the feature's parent issue below `## Requirements`. A design change that a worker or a replan needs goes to the user before you edit it, and gets a comment saying what changed.
+Requirements live in the feature's parent issue; the design lives in the repository at `docs/designs/<ID>.md` and is approved by merging its pull request. A design change that a worker or a replan needs goes to the user first; publish it with `publish.sh` again (a new pull request once the earlier one is merged).
 
 ## Issues
 

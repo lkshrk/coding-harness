@@ -1,8 +1,12 @@
-# Design section template
+# Design file template
 
-Append below `## Requirements` in the feature's parent issue. Keep the headings exactly; `decompose` links child issues to them with `#<heading>` anchors.
+`docs/designs/<ID>.md` in the feature's repository. Keep the headings exactly; `decompose` links child issues to them with `#<heading>` anchors.
 
 ```markdown
+# <ID>: <feature title>
+
+Requirements: <parent issue URL> (approved <date>)
+
 ## Investigation
 
 What exists today and what the feature touches.
@@ -39,12 +43,14 @@ Remaining risks and how they are caught: <risk> → <test, gate or review check>
 | `name` | signature, event or file format | part that defines it | parts that consume it |
 ```
 
-Child issues created by `decompose` reference the design with:
+Child issues created by `decompose` reference the merged design with:
 
 ```markdown
 ## Design excerpt
 
-[<parent ID> § Decision](<parent issue URL>#decision)
+[<ID> § Decision](https://github.com/<owner>/<repo>/blob/main/docs/designs/<ID>.md#decision)
 
 <the paragraphs and interface rows this issue needs, copied verbatim>
 ```
+
+Workers also have the whole file in their checkout.
