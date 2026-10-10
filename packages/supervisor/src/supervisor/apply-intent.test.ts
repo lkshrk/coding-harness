@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { API } from 'typescript/unstable/async'
 import type { Intent } from '../policy/transition'
 import type { Awaiting, IssueUpdate } from '../ports'
 import { PullRequestStore } from '../stages/integration/records'
@@ -22,79 +23,120 @@ function sources(dir: string): string[] {
   })
 }
 
-const transpiler = new Bun.Transpiler({ loader: 'ts' })
+const repo = join(root, '..', '..', '..')
+const LINEAR_SYNC = join(root, 'supervisor', 'linear-sync.ts')
+const ADAPTER = join(root, 'adapters', 'linear', 'linear-adapter.ts')
 
-// Any reference to `linear.update`, however it is spaced, optional-chained or bracketed.
-const UPDATE_REF =
-  /\blinear\s*(?:\?\.\s*|\.\s*)(?:update\b|\[\s*["'`]update["'`]\s*\])|\blinear\s*\[\s*["'`]update["'`]\s*\]/g
+type Writer = { file: string; pos: number; via: 'LinearPort' | 'LinearWriter' }
 
-// Counts references to linear.update inside and outside the body of applyIntent. The source is
-// transpiled first, so comments, types and formatting cannot hide or fake a call.
-function linearWriters(source: string): { inside: number; outside: number } {
-  const code = transpiler.transformSync(source)
-  const head = /^([ \t]*)async applyIntent\(.*\{$/m.exec(code)
-  let start = -1
-  let end = -1
-  if (head) {
-    start = head.index
-    const close = new RegExp(`^${head[1]}\\}$`, 'm').exec(code.slice(start + head[0].length))
-    end = close ? start + head[0].length + close.index : code.length
+// Resolves every identifier and string token of the supervisor sources with the TypeScript checker
+// and reports each one whose symbol or type is LinearPort.update, or core's LinearWriter.update
+// that the port wraps. Receivers are matched by type, so aliases, destructuring, Pick<> parameters,
+// bracket access and `.call` are all caught whatever the variable is named. `overrides` replaces
+// file contents, so a test can inject a bypass into a real module.
+async function linearWriters(overrides: Record<string, string> = {}): Promise<{
+  inside: Writer[]
+  outside: Writer[]
+}> {
+  const api = new API({ cwd: repo, fs: { readFile: (file) => overrides[file] } })
+  try {
+    const snap = await api.updateSnapshot({ openProjects: [join(repo, 'packages/supervisor/tsconfig.json')] })
+    const project = snap.getProjects()[0]
+    if (!project) throw new Error('supervisor project not loaded')
+    const { checker, program } = project
+    const text = async (file: string) => {
+      const source = await program.getSourceFile(file)
+      if (!source) throw new Error(`${file} is not in the supervisor program`)
+      return source.text
+    }
+    const member = async (file: string, pattern: RegExp) => {
+      const pos = (await text(file)).search(pattern)
+      const symbol = pos >= 0 ? await checker.getSymbolAtPosition(file, pos) : undefined
+      if (!symbol) throw new Error(`no symbol for ${pattern} in ${file}`)
+      const type = await checker.getTypeOfSymbol(symbol)
+      return { file, pos, symbol: symbol.id, type: type?.id, node: symbol.valueDeclaration }
+    }
+    const targets = {
+      LinearPort: await member(join(root, 'ports', 'linear.ts'), /\bupdate(?=\(identifier)/),
+      LinearWriter: await member(
+        join(repo, 'packages/core/src/linear/writes.ts'),
+        /\bupdate(?=\(identifier)/,
+      ),
+    }
+    const apply = await member(LINEAR_SYNC, /\bapplyIntent(?=\(identifier)/)
+    const body = await apply.node?.resolve()
+    if (!body) throw new Error('applyIntent has no declaration')
+    const inside: Writer[] = []
+    const outside: Writer[] = []
+    for (const file of sources(root)) {
+      const positions = [...(await text(file)).matchAll(/[A-Za-z_$][\w$]*/g)].map((m) => m.index ?? 0)
+      if (!positions.length) continue
+      const symbols = await checker.getSymbolAtPosition(file, positions)
+      const types = await checker.getTypeAtPosition(file, positions)
+      positions.forEach((pos, i) => {
+        for (const via of ['LinearPort', 'LinearWriter'] as const) {
+          const t = targets[via]
+          if (file === t.file && pos === t.pos) continue
+          const hit = symbols[i]?.id === t.symbol || (t.type !== undefined && types[i]?.id === t.type)
+          if (!hit) continue
+          const writer = { file: relative(root, file), pos, via }
+          if (via === 'LinearPort' && file === LINEAR_SYNC && pos > body.pos && pos < body.end)
+            inside.push(writer)
+          // The Linear adapter implements the port on top of LinearWriter.
+          else if (!(via === 'LinearWriter' && file === ADAPTER)) outside.push(writer)
+        }
+      })
+    }
+    return { inside, outside }
+  } finally {
+    await api.close()
   }
-  let inside = 0
-  let outside = 0
-  for (const ref of code.matchAll(UPDATE_REF)) {
-    const at = ref.index ?? 0
-    if (start >= 0 && at > start && at < end) inside += 1
-    else outside += 1
-  }
-  return { inside, outside }
 }
 
+const HOLDS = join(root, 'supervisor', 'holds.ts')
+const inject = (code: string) => ({ [HOLDS]: `${readFileSync(HOLDS, 'utf8')}\n${code}\n` })
+
 describe('applyIntent is the only Linear writer', () => {
-  test('no module calls linear.update, writeStatus or relabel outside applyIntent', () => {
+  test('no module calls linear.update, writeStatus or relabel outside applyIntent', async () => {
     const offenders: string[] = []
-    let inside = 0
     for (const file of sources(root)) {
-      const name = relative(root, file)
-      const source = readFileSync(file, 'utf8')
-      if (/\b(writeStatus|relabel)\b/.test(source)) offenders.push(`${name}: writeStatus/relabel`)
-      const found = linearWriters(source)
-      inside += found.inside
-      if (found.outside) offenders.push(`${name}: linear.update outside applyIntent (${found.outside})`)
+      if (/\b(writeStatus|relabel)\b/.test(readFileSync(file, 'utf8')))
+        offenders.push(`${relative(root, file)}: writeStatus/relabel`)
     }
+    const found = await linearWriters()
+    for (const w of found.outside) offenders.push(`${w.file}@${w.pos}: ${w.via}.update outside applyIntent`)
     expect(offenders, offenders.join('\n')).toEqual([])
-    expect(inside).toBe(1)
-  })
+    expect(found.inside.length).toBe(1)
+  }, 60_000)
 
-  test('the boundary detects every call form of linear.update', () => {
-    const forms = [
-      'linear.update(id, change)',
-      'linear.update (id, change)',
-      'linear.update\t(id, change)',
-      'linear\n  .update(id, change)',
-      'linear.update\n  (id, change)',
-      'linear . update (id, change)',
-      'linear?.update(id, change)',
-      'linear?.update?.(id, change)',
-      'linear.update /* x */ (id, change)',
-      "linear['update'](id, change)",
-      'linear["update"] (id, change)',
-      'linear?.["update"](id, change)',
-      'linear.update<IssueUpdate>(id, change)',
-      'linear.update.call(linear, id, change)',
+  test('the boundary catches the port however it is reached, not by receiver name', async () => {
+    const bypasses = [
+      'export async function zz(rt: SupervisorRuntime) { const port = rt.deps.linear; await port.update("x", {}) }',
+      'export async function zz(rt: SupervisorRuntime) { const { update } = rt.deps.linear; await update("x", {}) }',
+      'export async function zz(rt: SupervisorRuntime) { const { update: write } = rt.deps.linear; await write("x", {}) }',
+      'export async function zz(rt: SupervisorRuntime) { const write = rt.deps.linear.update; await write("x", {}) }',
+      'export async function zz(rt: SupervisorRuntime) { const d = rt.deps; await d.linear["update"]("x", {}) }',
+      'export async function zz(rt: SupervisorRuntime) { const l = rt.deps.linear; await l.update.call(l, "x", {}) }',
+      'export async function zz(p: Pick<SupervisorRuntime["deps"]["linear"], "update">) { await p.update("x", {}) }',
+      'export async function zz(rt: SupervisorRuntime) { const x = rt.deps.linear; await x . update ("x", {}) }',
     ]
-    for (const form of forms) {
-      const outsideOnly = `class A {\n  async other(): Promise<void> {\n    await this.rt.deps.${form}\n  }\n}\n`
-      expect(linearWriters(outsideOnly), form).toEqual({ inside: 0, outside: 1 })
-      const insideOnly = `class A {\n  async applyIntent(id: string): Promise<void> {\n    if (id) {\n      await this.rt.deps.${form}\n    }\n  }\n\n  other() {}\n}\n`
-      expect(linearWriters(insideOnly), form).toEqual({ inside: 1, outside: 0 })
+    for (const code of bypasses) {
+      const found = await linearWriters(inject(code))
+      expect(
+        found.outside.map((w) => `${w.file}:${w.via}`),
+        code,
+      ).toContain('supervisor/holds.ts:LinearPort')
     }
-  })
+  }, 120_000)
 
-  test('comments mentioning linear.update are not calls', () => {
-    const source = `// linear.update(id)\nconst s = 1\n/* linear.update (x) */\n`
-    expect(linearWriters(source)).toEqual({ inside: 0, outside: 0 })
-  })
+  test('other update methods and mentions in comments are not Linear writes', async () => {
+    const code = [
+      '// rt.deps.linear.update("x", {})',
+      'export function zz(rt: SupervisorRuntime) { const runs = rt.runs; return runs.update("r", {}) }',
+    ].join('\n')
+    const found = await linearWriters(inject(code))
+    expect(found.outside).toEqual([])
+  }, 60_000)
 })
 
 describe('applyIntent', () => {
