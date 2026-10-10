@@ -181,6 +181,78 @@ describe('worker lifecycle', () => {
     expect(h.sup.leases.get('FOR-1')).toBeUndefined()
   })
 
+  test('a BLOCKED finish destroys the sandbox after preserving the head', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.executor.heads.set(run.id, 'head1')
+    let aliveAtCapture = false
+    const capture = h.executor.captureHead.bind(h.executor)
+    h.executor.captureHead = async (r) => {
+      aliveAtCapture = h.sandbox.sandboxes.has(`sb-${r.id}`)
+      return capture(r)
+    }
+    await h.sup.workerFinished(run.id, {
+      status: 'BLOCKED',
+      summary: 'blocked',
+      evidence: [],
+      blocker: { needs: 'decision', reason: 'open choice' },
+    })
+    expect(aliveAtCapture).toBe(true)
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'failed', headSha: 'head1', sandbox: null })
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.of('SANDBOX_DESTROYED').map((e) => [e.run, e.data])).toEqual([
+      [run.id, { driver: 'docker', id: `sb-${run.id}` }],
+    ])
+  })
+
+  test('a NEEDS_CONTEXT finish destroys the sandbox after preserving the head', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.executor.heads.set(run.id, 'head1')
+    await h.sup.workerFinished(run.id, {
+      status: 'NEEDS_CONTEXT',
+      summary: 'missing',
+      evidence: [],
+      blocker: { needs: 'context', reason: 'which API?', question: 'Which API version?' },
+    })
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'failed', headSha: 'head1', sandbox: null })
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.of('SANDBOX_DESTROYED').map((e) => e.run)).toEqual([run.id])
+    expect(h.of('QUESTION_ASKED').length).toBe(1)
+  })
+
+  test('a stall failure destroys the sandbox after preserving the head', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.executor.heads.set(run.id, 'head1')
+    await h.sup.workerStalled(run.id, 'idle')
+    await h.sup.workerStalled(run.id, 'idle')
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'failed', headSha: 'head1', sandbox: null })
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.of('SANDBOX_DESTROYED').map((e) => e.run)).toEqual([run.id])
+  })
+
+  test('a crashed run is failed even when destroying its sandbox fails', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.executor.heads.set(run.id, 'head1')
+    h.sandbox.destroy = async () => {
+      throw new Error('docker gone')
+    }
+    await h.sup.workerFailed(run.id, 'crash', 'exit 137')
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'failed', headSha: 'head1' })
+    expect(h.of('SANDBOX_DESTROYED')).toEqual([])
+    expect(h.sup.leases.get('FOR-1')?.run).not.toBe(run.id)
+  })
+
   test('an executor that cannot start the run fails it as a sandbox error', async () => {
     const h = harness()
     h.executor.failStart = 'docker not running'
