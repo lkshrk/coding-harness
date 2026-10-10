@@ -11,7 +11,7 @@
     "format": "biome check --write .",
     "gen": "bun packages/core/src/gen.ts",
     "typecheck": "tsc -b",
-    "test": "env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR -u GIT_NAMESPACE -u GIT_PREFIX bun test",
+    "test": "env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR -u GIT_NAMESPACE -u GIT_PREFIX GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null bun test",
     "check": "bun run lint && bun run typecheck && bun run test",
     "sync:host": "scripts/sync-host.sh"
   },

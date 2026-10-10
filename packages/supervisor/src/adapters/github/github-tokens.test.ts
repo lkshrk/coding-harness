@@ -332,7 +332,7 @@ describe('gitAuthEnv', () => {
       const base = `http://127.0.0.1:${git.port}/`
       const pushed = await run(
         ['git', 'push', `${base}acme/tools.git`, 'HEAD:refs/heads/main'],
-        gitAuthEnv('ghs_abc', base),
+        gitAuthEnv('ghs_abc', base, env),
       )
       expect(pushed).not.toBe(0)
       const expected = `basic ${Buffer.from('x-access-token:ghs_abc').toString('base64')}`
@@ -345,11 +345,22 @@ describe('gitAuthEnv', () => {
     }
   })
 
+  const header = `AUTHORIZATION: basic ${Buffer.from('x-access-token:ghs_abc').toString('base64')}`
+
   test('scopes the header to github.com and sets GH_TOKEN for gh', () => {
-    expect(gitAuthEnv('ghs_abc')).toEqual({
+    expect(gitAuthEnv('ghs_abc', undefined, {})).toEqual({
       GIT_CONFIG_COUNT: '1',
       GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
-      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from('x-access-token:ghs_abc').toString('base64')}`,
+      GIT_CONFIG_VALUE_0: header,
+      GH_TOKEN: 'ghs_abc',
+    })
+  })
+
+  test('appends after GIT_CONFIG entries already in the environment instead of replacing them', () => {
+    expect(gitAuthEnv('ghs_abc', undefined, { GIT_CONFIG_COUNT: '1' })).toEqual({
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_1: 'http.https://github.com/.extraheader',
+      GIT_CONFIG_VALUE_1: header,
       GH_TOKEN: 'ghs_abc',
     })
   })

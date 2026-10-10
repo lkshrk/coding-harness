@@ -45,7 +45,8 @@ describe('GhGitHost.push', () => {
     const [push] = pushes(gh)
     expect(push?.cmd.slice(-2)).toEqual([remote, `+${headSha}:refs/heads/ns/FOR-1`])
     expect(push?.env.GH_TOKEN).toBe(AGENT_TOKEN)
-    expect(push?.env.GIT_CONFIG_KEY_0).toBe('http.https://github.com/.extraheader')
+    const slot = Number(push?.env.GIT_CONFIG_COUNT) - 1
+    expect(push?.env[`GIT_CONFIG_KEY_${slot}`]).toBe('http.https://github.com/.extraheader')
   })
 
   test('a retried attempt force-updates only ns/<identifier>', async () => {

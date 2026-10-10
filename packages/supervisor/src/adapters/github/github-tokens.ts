@@ -218,12 +218,18 @@ async function gitRemoteUrl(path: string, remote: string): Promise<string> {
   return stdout.trim()
 }
 
-export function gitAuthEnv(token: string, base = 'https://github.com/'): Record<string, string> {
+export function gitAuthEnv(
+  token: string,
+  base = 'https://github.com/',
+  env: Record<string, string | undefined> = process.env,
+): Record<string, string> {
   const basic = Buffer.from(`x-access-token:${token}`).toString('base64')
+  // Callers merge this over the process environment, so keep its GIT_CONFIG_* entries and append ours.
+  const slot = Number(env.GIT_CONFIG_COUNT) || 0
   return {
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: `http.${base}.extraheader`,
-    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+    GIT_CONFIG_COUNT: String(slot + 1),
+    [`GIT_CONFIG_KEY_${slot}`]: `http.${base}.extraheader`,
+    [`GIT_CONFIG_VALUE_${slot}`]: `AUTHORIZATION: basic ${basic}`,
     GH_TOKEN: token,
   }
 }
