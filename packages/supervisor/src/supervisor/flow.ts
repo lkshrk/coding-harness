@@ -32,6 +32,7 @@ export type FlowHost = {
   paused(): boolean
   pause(reason: string, by?: By): void
   schedule(run: Run): void
+  cancelSteps(runId: string): Promise<void>
   gatewayReachable(reachable: boolean, reason: string): void
   resolveRun(target: string): Run | undefined
   modules(): Modules
@@ -43,6 +44,7 @@ export function runFlow(h: FlowHost): RunFlow {
     paused: h.paused,
     pause: (reason, by) => h.pause(reason, by),
     schedule: (run) => h.schedule(run),
+    cancelSteps: (runId) => h.cancelSteps(runId),
     gatewayReachable: (reachable, reason) => h.gatewayReachable(reachable, reason),
     viewOptions: (issue) => h.modules().holds.viewOptions(issue),
     awaiting: (issue) => h.modules().holds.awaiting(issue),

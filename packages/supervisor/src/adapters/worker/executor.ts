@@ -64,7 +64,7 @@ export type WorkerExecutorDeps = {
   image(run: Run): Promise<WorkerImage>
   taskMessage: TaskMessage
   gatewayKey(run: Run): Promise<string>
-  runStep(run: Run): Promise<void>
+  runStep(run: Run, signal?: AbortSignal): Promise<void>
   thresholds?: Partial<WatchThresholds>
   graceMs?: Ms
   tickMs?: Ms
@@ -235,8 +235,8 @@ export class WorkerExecutor implements RunExecutor {
     )
   }
 
-  runStep(run: Run): Promise<void> {
-    return this.d.runStep(run)
+  runStep(run: Run, signal?: AbortSignal): Promise<void> {
+    return this.d.runStep(run, signal)
   }
 
   async nudge(run: Run, message: string): Promise<void> {

@@ -24,8 +24,8 @@ export type GateStepDeps = {
   home?: string
 }
 
-export function gateStep(d: GateStepDeps): (run: Run) => Promise<void> {
-  return async (run) => {
+export function gateStep(d: GateStepDeps): (run: Run, signal?: AbortSignal) => Promise<void> {
+  return async (run, signal) => {
     if (run.state === 'reviewing') {
       if (d.review) await d.review(run)
       else d.out?.(`${run.issue}: review is not wired yet; run ${run.id} waits in reviewing`)
@@ -71,12 +71,14 @@ export function gateStep(d: GateStepDeps): (run: Run) => Promise<void> {
         '',
         headSha,
         checks,
-        { run: run.id },
+        { run: run.id, ...(signal ? { signal } : {}) },
       )
     } catch (e) {
+      if (signal?.aborted) return
       await cb.workerFailed(run.id, 'sandbox_error', `gate: ${(e as Error).message}`)
       return
     }
+    if (signal?.aborted) return
     await cb.gatesFinished(run.id, results)
   }
 }

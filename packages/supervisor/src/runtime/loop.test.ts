@@ -32,7 +32,7 @@ function fakeSupervisor() {
         calls.push(`reload:${r.ok}`)
       },
       idle: async () => {},
-      stop: (reason?: string) => {
+      stop: async (reason?: string) => {
         calls.push(`stop:${reason}`)
       },
     },

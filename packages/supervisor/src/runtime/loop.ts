@@ -49,7 +49,7 @@ export async function runSupervisor(
     unwatch()
     await ticking
     await Promise.race([sup.idle(), new Promise((r) => setTimeout(r, opts.stepGraceMs ?? STEP_GRACE_MS))])
-    sup.stop(reason)
+    await sup.stop(reason)
   }
 }
 

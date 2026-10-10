@@ -154,6 +154,7 @@ export class RunLifecycle {
   }
 
   async stopRun(runId: string, reason: string, by?: By): Promise<void> {
+    await this.flow.cancelSteps(runId)
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
     await this.rt.deps.executor.stop(run, reason)

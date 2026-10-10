@@ -31,8 +31,9 @@ export class SandboxGateRunner implements GateRunner {
     bundle: string,
     headSha: string,
     checks: Check[],
-    opts: { run?: string } = {},
+    opts: { run?: string; signal?: AbortSignal } = {},
   ): Promise<GateResult[]> {
+    opts.signal?.throwIfAborted()
     const name = gateName(opts.run, headSha)
     const runDir = join(this.o.artifacts, opts.run ?? name)
     for (const stale of await this.o.sandbox.list({ gate: name })) await this.o.sandbox.destroy(stale)
@@ -51,19 +52,34 @@ export class SandboxGateRunner implements GateRunner {
       workdir: '/work',
       labels: { nightshift: '1', run: opts.run ?? name, gate: name },
     })
+    let destroyed: Promise<void> | undefined
+    const destroy = () => {
+      destroyed ??= this.o.sandbox.destroy(handle)
+      return destroyed
+    }
+    const cancelled = new Promise<never>((_, reject) => {
+      const abort = () => {
+        reject(new Error(`gate ${name} cancelled`))
+        destroy().catch(() => undefined)
+      }
+      if (opts.signal?.aborted) abort()
+      opts.signal?.addEventListener('abort', abort, { once: true })
+    })
+    cancelled.catch(() => undefined)
+    const step = <T>(p: Promise<T>) => (opts.signal ? Promise.race([p, cancelled]) : p)
     try {
       const workdir = `/work/${repo.name}`
-      await this.checkout(handle, workdir, headSha, bundle ? GATE_BUNDLE_MOUNT : '')
+      await step(this.checkout(handle, workdir, headSha, bundle ? GATE_BUNDLE_MOUNT : ''))
       mkdirSync(runDir, { recursive: true })
       const results: GateResult[] = []
       for (const check of checks) {
-        const result = await this.exec(handle, workdir, outbox, runDir, check)
+        const result = await step(this.exec(handle, workdir, outbox, runDir, check))
         results.push(result)
         if (!result.passed) break
       }
       return results
     } finally {
-      await this.o.sandbox.destroy(handle)
+      await destroy()
     }
   }
 

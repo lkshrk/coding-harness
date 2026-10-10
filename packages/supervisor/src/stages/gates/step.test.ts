@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
 import { runRef } from '../../adapters/git/host'
-import { FakeSandboxDriver } from '../../adapters/worker/testing'
+import { type ExecCall, FakeSandboxDriver } from '../../adapters/worker/testing'
 import type { ExecResult, ExecutorStart, GateRunner, RunExecutor, SandboxHandle } from '../../ports'
 import { openState } from '../../state/db'
 import type { EventType } from '../../state/event-schema'
@@ -31,8 +31,13 @@ const FINISH = {
 
 class ExportingSandbox extends FakeSandboxDriver {
   readonly exports: [SandboxHandle, string, string, string | undefined][] = []
+  hang: Promise<void> | undefined
   constructor(private readonly fx: GitFixture) {
     super()
+  }
+  override async exec(h: SandboxHandle, cmd: string[], opts: ExecCall['opts'] = {}): Promise<ExecResult> {
+    if (this.hang && cmd[2]?.startsWith('sh -c "$2"')) await this.hang
+    return super.exec(h, cmd, opts)
   }
   override async exportCommits(h: SandboxHandle, repoPath: string, ref: string, message?: string) {
     this.exports.push([h, repoPath, ref, message])
@@ -46,12 +51,12 @@ class ExportingSandbox extends FakeSandboxDriver {
 
 class StepExecutor implements RunExecutor {
   readonly steps: [string, string][] = []
-  constructor(public step: (run: Run) => Promise<void>) {}
+  constructor(public step: (run: Run, signal?: AbortSignal) => Promise<void>) {}
   async start(_s: ExecutorStart): Promise<void> {}
   async reattach(): Promise<void> {}
-  async runStep(run: Run): Promise<void> {
+  async runStep(run: Run, signal?: AbortSignal): Promise<void> {
     this.steps.push([run.id, run.state])
-    await this.step(run)
+    await this.step(run, signal)
   }
   async nudge(): Promise<void> {}
   async stop(): Promise<void> {}
@@ -344,5 +349,57 @@ describe('gate step', () => {
     expect(String(h.of('WORKER_FAILED')[0]?.data.detail)).toContain('gate checkout')
     expect(h.first.runs.get(run.id)?.state).toBe('failed')
     expect(h.gateEvents()).toEqual([])
+  })
+
+  test('stopping the supervisor mid-gate destroys the gate sandbox and leaves the run gating for recovery', async () => {
+    const h = harness()
+    const run = await h.finishedRun()
+    h.gateSandbox.hang = new Promise(() => {})
+    await h.first.workerFinished(run.id, FINISH)
+    for (let i = 0; i < 100 && gateRuns(h.gateSandbox).length === 0; i++) await Bun.sleep(5)
+    expect(h.first.stepsRunning()).toEqual([`${run.id}:gating`])
+
+    await h.first.stop('signal')
+    expect(h.first.stepsRunning()).toEqual([])
+    expect(h.gateSandbox.destroyed).toEqual([`ctr-${run.id}-gate`])
+    expect(h.first.runs.get(run.id)?.state).toBe('gating')
+    expect(h.gateEvents()).toEqual([])
+    expect(h.of('WORKER_FAILED')).toHaveLength(0)
+
+    h.gateSandbox.hang = undefined
+    const restarted = h.make('inst-2')
+    const report = await restarted.start()
+    await restarted.idle()
+    expect(report.resumed).toEqual([run.id])
+    expect(h.gateEvents(restarted).map(([type]) => type)).toEqual(['GATE_PASSED', 'GATE_PASSED'])
+    expect(restarted.runs.get(run.id)?.state).toBe('reviewing')
+  })
+
+  test('ns stop during a gate cancels the gate job, destroys its sandbox, stops the run and holds the issue', async () => {
+    const h = harness()
+    const run = await h.finishedRun()
+    h.gateSandbox.hang = new Promise(() => {})
+    await h.first.workerFinished(run.id, FINISH)
+    for (let i = 0; i < 100 && gateRuns(h.gateSandbox).length === 0; i++) await Bun.sleep(5)
+    expect(h.first.stepsRunning()).toEqual([`${run.id}:gating`])
+
+    const stopped = await h.first.stopForUser('FOR-1', undefined, 'cli')
+    expect(stopped.state).toBe('stopped')
+    expect(h.first.stepsRunning()).toEqual([])
+    expect(h.gateSandbox.destroyed).toEqual([`ctr-${run.id}-gate`])
+    expect(h.gateEvents()).toEqual([])
+    expect(h.of('WORKER_FAILED').map((e) => e.data.reason)).toEqual(['stopped'])
+    expect(h.first.leases.get('FOR-1')).toBeUndefined()
+    expect(h.first.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+
+    h.gateSandbox.hang = undefined
+    await h.first.stop('signal')
+    const restarted = h.make('inst-2')
+    const report = await restarted.start()
+    await restarted.idle()
+    expect(report.resumed).toEqual([])
+    expect(h.gateEvents(restarted)).toEqual([])
+    expect(restarted.stepsRunning()).toEqual([])
+    expect(restarted.runs.get(run.id)?.state).toBe('stopped')
   })
 })
