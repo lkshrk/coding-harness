@@ -57,7 +57,7 @@ export class Supervisor {
   private readonly now: () => Date
   private readonly retry: RetryQueue
   private readonly cache = new Map<string, IssueSnapshot>()
-  private readonly steps = new Map<string, Promise<void>>()
+  private readonly steps = new Map<string, { job: Promise<void>; cancel: AbortController }>()
   private paused = false
   private stopped = false
   private readonly rt: SupervisorRuntime
@@ -92,6 +92,7 @@ export class Supervisor {
       paused: () => this.paused,
       pause: (reason, by) => this.pause(reason, by),
       schedule: (run) => this.schedule(run),
+      cancelSteps: (runId) => this.cancelSteps(runId),
       gatewayReachable: (reachable, reason) => this.gatewayReachable(reachable, reason),
       resolveRun: (target) => this.resolveRun(target),
       modules: () => this.m,
@@ -132,15 +133,28 @@ export class Supervisor {
     return report
   }
 
-  stop(reason = 'stopped'): void {
+  async stop(reason = 'stopped'): Promise<void> {
     if (this.stopped) return
     this.stopped = true
+    const cancelled = this.cancel(() => true, reason)
     this.d.executor.detach?.()
     this.log.append({ type: 'SUPERVISOR_STOPPED', data: { reason } })
+    await cancelled
   }
 
   async idle(): Promise<void> {
-    while (this.steps.size > 0) await Promise.allSettled([...this.steps.values()])
+    while (this.steps.size > 0) await Promise.allSettled([...this.steps.values()].map((s) => s.job))
+  }
+
+  private cancelSteps(runId: string): Promise<void> {
+    return this.cancel((key) => key.startsWith(`${runId}:`), 'run stopped')
+  }
+
+  // Only gate jobs are awaited: they destroy their sandbox on abort, other steps finish on their own.
+  private async cancel(match: (key: string) => boolean, reason: string): Promise<void> {
+    const steps = [...this.steps].filter(([key]) => match(key))
+    for (const [, step] of steps) step.cancel.abort(reason)
+    await Promise.allSettled(steps.filter(([key]) => key.endsWith(':gating')).map(([, s]) => s.job))
   }
 
   stepsRunning(): string[] {
@@ -150,14 +164,17 @@ export class Supervisor {
   private schedule(run: Run): void {
     const key = `${run.id}:${run.state}`
     if (this.steps.has(key)) return
+    const cancel = new AbortController()
     const job = this.d.executor
-      .runStep(run)
+      .runStep(run, cancel.signal)
       .catch((e: unknown) =>
-        this.m.lifecycle.workerFailed(run.id, 'crash', `${run.state}: ${(e as Error).message}`),
+        cancel.signal.aborted
+          ? undefined
+          : this.m.lifecycle.workerFailed(run.id, 'crash', `${run.state}: ${(e as Error).message}`),
       )
       .catch(() => undefined)
       .finally(() => this.steps.delete(key))
-    this.steps.set(key, job)
+    this.steps.set(key, { job, cancel })
   }
 
   async tick(): Promise<TickReport> {

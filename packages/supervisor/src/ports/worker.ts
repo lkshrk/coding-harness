@@ -61,7 +61,7 @@ export type ExecutorStart = {
 export interface RunExecutor {
   start(s: ExecutorStart): Promise<void>
   reattach(run: Run): Promise<void>
-  runStep(run: Run): Promise<void>
+  runStep(run: Run, signal?: AbortSignal): Promise<void>
   nudge(run: Run, message: string): Promise<void>
   stop(run: Run, reason: string): Promise<void>
   detach?(): void
