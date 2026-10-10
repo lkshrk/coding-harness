@@ -4,12 +4,14 @@ import { type Config, expandHome } from '@nightshift/core'
 import { importBundle, writeReviewArtifacts } from '../../adapters/git/host'
 import { branchOf, parseDuration, workdirOf } from '../../policy/naming'
 import type { GateResult, GateRunner, SandboxDriver } from '../../ports'
+import { LockFailedError, type LockOutcome, type LockStep } from '../../ports/lock'
 import type { Run } from '../../state/runs'
 
 export interface GateCallbacks {
   headImported(runId: string, headSha: string): Promise<void>
   gatesFinished(runId: string, results: GateResult[]): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
+  lockRegenerated(runId: string, lock: LockOutcome['locks'][number]): Promise<void>
 }
 
 export type GateStepDeps = {
@@ -20,6 +22,7 @@ export type GateStepDeps = {
   artifacts: string
   callbacks: () => GateCallbacks
   review?: (run: Run) => Promise<void>
+  lock?: LockStep
   out?: (line: string) => void
   home?: string
 }
@@ -56,6 +59,18 @@ export function gateStep(d: GateStepDeps): (run: Run, signal?: AbortSignal) => P
         if (run.baseSha && headSha === run.baseSha) {
           await cb.workerFailed(run.id, 'no_finish', 'worker finished without changes')
           return
+        }
+        if (d.lock) {
+          let locked: LockOutcome
+          try {
+            locked = await d.lock(checkout, run, headSha)
+          } catch (e) {
+            if (!(e instanceof LockFailedError)) throw e
+            await cb.workerFailed(run.id, 'lock_failed', e.message)
+            return
+          }
+          for (const lock of locked.locks) await cb.lockRegenerated(run.id, lock)
+          headSha = locked.headSha
         }
         writeReviewArtifacts(checkout, run.baseSha || headSha, headSha, join(d.artifacts, run.id))
         await cb.headImported(run.id, headSha)

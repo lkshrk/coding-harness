@@ -161,6 +161,12 @@ export class RunLifecycle {
     this.rt.runs.update(runId, { sandbox: null })
   }
 
+  async lockRegenerated(runId: string, lock: { feature: string; changed: boolean }): Promise<void> {
+    if (this.late(runId, 'lock')) return
+    const run = this.rt.requireRun(runId)
+    this.rt.log.append({ type: 'LOCK_REGENERATED', issue: run.issue, run: run.id, data: lock })
+  }
+
   async stopRun(runId: string, reason: string, opts: StopOptions = {}): Promise<void> {
     const { by, keepWork = true } = opts
     await this.flow.cancelSteps(runId)
