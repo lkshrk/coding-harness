@@ -86,7 +86,7 @@ describe('stage engine', () => {
     expect(h.of('STAGE_COMPLETED').length).toBe(1)
     h.linear.patch('FOR-1', { status: 'Todo' })
     await h.sup.tick()
-    expect(h.of('STAGE_COMPLETED').at(-1)?.data).toEqual({ stage: 'acceptance' })
+    expect(h.of('STAGE_COMPLETED').at(-1)?.data).toEqual({ stage: 'acceptance', last: true })
   })
 
   test('entering a stage with a checkpoint before holds it; ready releases it', async () => {
