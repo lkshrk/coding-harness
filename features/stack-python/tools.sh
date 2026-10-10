@@ -9,8 +9,8 @@ UV_URL() { printf '%s' "https://github.com/astral-sh/uv/releases/download/$UV_VE
 
 # renovate: datasource=github-releases depName=astral-sh/ruff
 RUFF_VERSION="0.17.0"
-RUFF_SHA256_AMD64="9567ff1201e2fb3da31ff04c35587d768c66d6cb42dfa84de474e2bfe360b608"
-RUFF_SHA256_ARM64="dc0d74de837ef0a7bcc62ce98c48a622b075d057161f13b958be2934becd55a6"
+RUFF_SHA256_AMD64="c94fc1dc71f054d06d9f1149442dcb471516aa2b7d4b7e8124e05d082d4c91d3"
+RUFF_SHA256_ARM64="294e181ba6ccb0c2ffd778580e3c42b19f038bdbcb844f39fd9a6a26e8148804"
 RUFF_URL() { printf '%s' "https://github.com/astral-sh/ruff/releases/download/$RUFF_VERSION/ruff-$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu).tar.gz"; }
 
 # renovate: datasource=github-releases depName=astral-sh/ty
