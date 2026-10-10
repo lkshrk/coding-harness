@@ -1,0 +1,7 @@
+[tools."github:LuaLS/lua-language-server"]
+version = "3.19.1"
+platforms.linux-x64 = { asset_pattern = "lua-language-server-*-linux-x64.tar.gz" }
+platforms.linux-arm64 = { asset_pattern = "lua-language-server-*-linux-arm64.tar.gz" }
+
+[settings]
+lockfile = true
