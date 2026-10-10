@@ -72,6 +72,19 @@ describe('mismatch on a running issue', () => {
     expect(reads()).toBe(1)
   })
 
+  test('an app-made mismatch keeps the run even when the issue no longer has a view', async () => {
+    const { h, run } = await running()
+    h.linear.patch('FOR-1', { status: 'Todo', delegated: false })
+    h.linear.changes.set('FOR-1', { actor: 'nightshift', app: true, at: '2026-10-04T10:00:00.000Z' })
+    const report = await h.sup.tick()
+    expect(report.stopped).not.toContain('FOR-1')
+    expect(h.sup.runs.get(run.id)?.state).toBe('running')
+    expect(h.executor.ops('stop')).toEqual([])
+    expect(h.of('MISMATCH_RESOLVED').map((e) => e.data)).toMatchObject([
+      { actor: 'nightshift', app: true, action: 'reassert' },
+    ])
+  })
+
   // Requeued issues go through the normal queue in the same tick: Todo is dispatched again,
   // an unblocked Backlog issue moves to Todo.
   const cases: [string, string, string][] = [

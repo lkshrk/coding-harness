@@ -113,7 +113,11 @@ export class LinearSync {
     const lifecycle = view?.lifecycle ?? null
     const change = await this.rt.deps.linear.lastChange(id)
     const human = change !== null && !change.app
-    const action = !view
+    // A status that still maps to running with no view means the opt-in or coverage was withdrawn,
+    // not a status mismatch. Otherwise the actor decides first: our own status change is re-asserted
+    // even when the issue has no view.
+    const withdrawn = !view && lifecycleOf(cfg, issue.team, issue.status) === 'running'
+    const action = withdrawn
       ? 'stop'
       : !human
         ? 'reassert'
