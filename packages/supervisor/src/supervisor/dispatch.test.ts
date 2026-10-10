@@ -190,6 +190,47 @@ describe('manual retry', () => {
     expect(h.sup.pullRequests.get('FOR-1')).toEqual(pr)
   })
 
+  test('--continue with an open PR resumes from the PR head, not a later unpushed attempt', async () => {
+    let bases = 0
+    const h = harness({ repos: { baseSha: async () => `base${++bases}` } })
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(first.id, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(first.id, 'head1')
+    await h.sup.stopRun(first.id, 'done elsewhere')
+    h.sup.pullRequests.put({
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: first.id,
+      headSha: 'head1',
+      mode: 'manual',
+      draft: false,
+      ci: 'passed',
+    })
+    h.linear.patch('FOR-1', { status: 'In Review', labels: ['ai-stage:integration'] })
+
+    const second = await h.sup.retryRun('FOR-1', {}, 'cli')
+    await h.sup.workerStarted(second.id, { sandbox: 'sb2', session: 's2' })
+    await h.sup.headImported(second.id, 'head2')
+    await h.sup.workerFailed(second.id, 'crash', 'segfault')
+    expect(h.sup.runs.get(second.id)?.headSha).toBe('head2')
+
+    const third = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(third).toMatchObject({ attempt: 3, baseSha: 'base1' })
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+    expect(h.of('DISPATCHED').at(-1)?.data).toMatchObject({ continues: first.id })
+  })
+
   test('a plain retry after a failure with a commit starts fresh from the current base', async () => {
     let bases = 0
     const h = harness({ repos: { baseSha: async () => `base${++bases}` } })

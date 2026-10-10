@@ -164,7 +164,7 @@ export class Dispatcher {
     }
     const runs = this.rt.runs.forIssue(identifier)
     const prRun = pr ? runs.filter((r) => r.headSha === pr.headSha).at(-1) : undefined
-    const continueFrom = o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : prRun
+    const continueFrom = prRun ?? (o.continue ? runs.filter((r) => r.headSha !== null).at(-1) : undefined)
     if (o.continue && !continueFrom) {
       throw new ControlError('refused', `${identifier}: no earlier attempt has a commit to continue from`)
     }
