@@ -65,6 +65,18 @@ describe('viewIssue', () => {
     expect(feature.templateErrors).toContain("## Design excerpt: 'none' is not allowed")
   })
 
+  test('a child pipeline ends at integration; an issue without a parent keeps acceptance', () => {
+    const feature = config.pipelines.feature as string[]
+    const child = view({ identifier: 'FOR-7', parent: 'FOR-1' })
+    expect(child.pipeline).toEqual(feature.slice(0, feature.indexOf('integration') + 1))
+    expect(nextStage(config, child.pipeline, 'integration')).toBeNull()
+    const parentless = view({ identifier: 'FOR-8', parent: null })
+    expect(parentless.pipeline).toEqual(feature)
+    expect(nextStage(config, parentless.pipeline, 'integration')).toBe('acceptance')
+    const bug = view({ identifier: 'FOR-9', project: null, labels: ['bug'], parent: 'FOR-1' })
+    expect(bug.pipeline).toEqual(config.pipelines.bug as string[])
+  })
+
   test('ignores unmanaged issues and issues with an exclude label', () => {
     expect(viewIssue(snapshot({ identifier: 'FOR-4', project: null, labels: [] }), config)).toBeNull()
     expect(viewIssue(snapshot({ identifier: 'FOR-5', labels: ['business'] }), config)).toBeNull()

@@ -80,8 +80,11 @@ export function viewIssue(issue: IssueSnapshot, config: Config, opts: ViewOption
   const project = matchProject(issue, config)
   if (!project) return null
   const issueType = labelValue(issue.labels, 'type')?.toLowerCase() ?? null
-  const pipeline =
+  const full =
     (issueType ? config.pipelines[issueType] : undefined) ?? config.pipelines[project.pipeline] ?? []
+  // Acceptance belongs to the parent (milestone/project); a child ends after integration.
+  const end = full.indexOf(INTEGRATION)
+  const pipeline = issue.parent !== null && end >= 0 ? full.slice(0, end + 1) : full
   const repoLabel = labelValue(issue.labels, LABEL_GROUPS.repo)
   const repository =
     project.repositories.length === 1
