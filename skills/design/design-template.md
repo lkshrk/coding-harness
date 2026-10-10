@@ -1,13 +1,14 @@
-# Design file template
+# Design comment template
 
-`docs/designs/<ID>.md` in the feature's repository. Keep the headings exactly; `decompose` links child issues to them with `#<heading>` anchors.
+A comment on the feature's parent issue. Keep the headings exactly; child issues and the vault page point to them by name.
 
 ```markdown
-# <ID>: <feature title>
+## Design (<draft for review | approved>, <date>)
 
-Requirements: <requirements comment URL on the parent issue> (approved <date>)
+Requirements: the approved requirements comment on this issue (<date>).
+<For a revision: one line saying what changed since the previous design comment.>
 
-## Investigation
+### Investigation
 
 What exists today and what the feature touches.
 
@@ -15,20 +16,20 @@ What exists today and what the feature touches.
 - Constraints from the code: patterns, boundaries, pinned behaviour.
 - Recorded decisions and pitfalls that apply (vault page links).
 
-## Alternatives
+### Alternatives
 
-### A: <short name>
+#### A: <short name>
 How it works. What it changes (files, interfaces). Cost and risk. What it makes easier or harder later.
 
-### B: <short name>
+#### B: <short name>
 Same shape as A.
 
-## Critique
+### Critique
 
 - **A:** weaknesses against the requirements and constraints.
 - **B:** weaknesses against the requirements and constraints.
 
-## Decision
+### Decision
 
 Chosen: <A, B or a synthesis>, because <reasons tied to the critique>.
 
@@ -36,21 +37,21 @@ Rejected: <alternative>, because <reason>.
 
 Remaining risks and how they are caught: <risk> → <test, gate or review check>.
 
-## Interfaces
+Implementation order: numbered steps `decompose` turns into issues.
+
+### Interfaces
 
 | Interface | Shape | Owner (part) | Used by |
 | --- | --- | --- | --- |
 | `name` | signature, event or file format | part that defines it | parts that consume it |
 ```
 
-Child issues created by `decompose` reference the merged design with:
+Child issues created by `decompose` reference the approved design with:
 
 ```markdown
 ## Design excerpt
 
-[<ID> § Decision](https://github.com/<owner>/<repo>/blob/main/docs/designs/<ID>.md#decision)
+[<ID> design § Decision](<URL of the approved design comment>)
 
 <the paragraphs and interface rows this issue needs, copied verbatim>
 ```
-
-Workers also have the whole file in their checkout.
