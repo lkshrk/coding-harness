@@ -1,8 +1,8 @@
 {
   "id": "stack-node",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "name": "nightshift node stack",
-  "description": "typescript-language-server with TypeScript, vscode-eslint-language-server, ESLint, Prettier and oxlint on Node 24 LTS with corepack, installed at build time for offline workers.",
+  "description": "TypeScript with its native language server, vscode-eslint-language-server, ESLint, Prettier and oxlint on Node 24 LTS with corepack, installed at build time for offline workers.",
   "options": {
     "packageManagers": {
       "type": "string",

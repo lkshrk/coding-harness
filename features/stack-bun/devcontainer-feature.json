@@ -1,8 +1,8 @@
 {
   "id": "stack-bun",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "nightshift bun stack",
-  "description": "Bun, typescript-language-server with TypeScript, Biome and oxlint, installed at build time for offline workers.",
+  "description": "Bun, TypeScript with its native language server, Biome and oxlint, installed at build time for offline workers.",
   "options": {},
   "containerEnv": {
     "BUN_INSTALL_CACHE_DIR": "/var/cache/nightshift/bun"

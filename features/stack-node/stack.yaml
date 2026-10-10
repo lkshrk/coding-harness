@@ -12,7 +12,7 @@ version_files:
   - .tool-versions
 lsp:
   typescript:
-    command: [typescript-language-server, --stdio]
+    command: [tsc, --lsp, --stdio]
     extensions: [.ts, .tsx, .mts, .cts, .js, .jsx, .mjs, .cjs]
   eslint:
     command: [vscode-eslint-language-server, --stdio]

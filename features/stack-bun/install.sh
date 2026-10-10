@@ -63,8 +63,7 @@ install_npm_tools() {
   cp "$here/npm/package.json" "$here/npm/package-lock.json" "$prefix/npm/"
   npm_config_cache="$tmp/npm-cache" "$npm" ci --prefix "$prefix/npm" --omit=dev --ignore-scripts \
     --no-audit --no-fund --loglevel=error
-  wrapper typescript-language-server \
-    "$(readlink -f "$prefix/npm/node_modules/.bin/typescript-language-server")" "$node"
+  wrapper tsc "$(readlink -f "$prefix/npm/node_modules/.bin/tsc")" "$node"
 }
 
 prepare_cache() {

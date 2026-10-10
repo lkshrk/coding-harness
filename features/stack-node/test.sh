@@ -55,12 +55,12 @@ EOF
 
 node --version
 corepack --version
-typescript-language-server --version
+tsc --version
 eslint --version
 prettier --version
 oxlint --version
 
-lsp_initialize typescript-language-server --stdio
+lsp_initialize tsc --lsp --stdio
 lsp_initialize vscode-eslint-language-server --stdio
 
 for dir in "${COREPACK_HOME:-/var/cache/nightshift/corepack}"/v1/*/*/; do
