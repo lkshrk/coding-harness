@@ -294,6 +294,33 @@ describe('pull request watching', () => {
     }
   })
 
+  test('a thread posted during the repair starts its own round after the close-out', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      h.gh.threads = [fakeThread('T1', 11, 'Trim the name before saving.')]
+      await h.first.tick()
+      await h.first.tick()
+      h.gh.threads.push(fakeThread('T2', 30, 'Also reject empty names.'))
+      await repaired(h, {
+        threads: [{ id: 'T1', outcome: 'addressed', reason: 'Names are trimmed in save().' }],
+      })
+      expect(h.gh.threads[0]?.isResolved).toBe(true)
+      const runs = h.first.runs.forIssue('FOR-1').length
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(runs + 1)
+      expect(h.of('FAILURE_CLASSIFIED').at(-1)?.data).toMatchObject({
+        evidence: '1 unresolved review thread on https://github.com/lkshrk/omni/pull/1',
+      })
+      const latest = h.first.runs.forIssue('FOR-1').at(-1) as Run
+      const attempts = attemptsOf(h.db, 'FOR-1', latest.id)
+      expect(attempts.at(-1)?.reviewThreads?.map((t) => t.id)).toEqual(['T2'])
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('a thread with an existing discussion is replied to at its root comment', async () => {
     const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
     try {

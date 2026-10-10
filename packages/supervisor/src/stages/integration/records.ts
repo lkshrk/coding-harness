@@ -37,9 +37,14 @@ export class CiFailureStore {
 
 const THREADS_KEY = 'review_threads'
 
-export type ReviewRound = { seen: number; pending?: { run: string; threads: ReviewThread[] } }
+export type ReviewRound = {
+  seen: number
+  own?: number[]
+  pending?: { run: string; threads: ReviewThread[] }
+}
 
-// Per issue: the newest review comment id already handled, and the round awaiting its close-out.
+// Per issue: the newest review comment id already handed to a worker, the ids of nightshift's own
+// replies, and the round awaiting its close-out.
 export class ReviewRoundStore {
   constructor(private readonly db: Db) {}
 

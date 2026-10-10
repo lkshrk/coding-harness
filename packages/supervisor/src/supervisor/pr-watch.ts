@@ -5,7 +5,9 @@ import type { RunFlow, SupervisorRuntime } from './runtime'
 
 type ThreadOutcome = { id: string; outcome: 'addressed' | 'disputed'; reason: string }
 
-const newestComment = (t: ReviewThread): number => Math.max(0, ...t.comments.map((c) => c.id))
+// nightshift's own replies are not review input: they never make a thread fresh.
+const newestComment = (t: ReviewThread, own: readonly number[] = []): number =>
+  Math.max(0, ...t.comments.filter((c) => !own.includes(c.id)).map((c) => c.id))
 
 export class PullRequestWatch {
   constructor(
@@ -111,12 +113,14 @@ export class PullRequestWatch {
     // A CI repair is already under way; its push resets ci to pending and the threads follow.
     if (this.rt.pullRequests.get(pr.issue)?.ci === 'failed') return
     const open = (await host.reviewThreads(pr)).filter((t) => !t.resolved && !t.outdated)
-    const fresh = open.filter((t) => newestComment(t) > round.seen)
+    const own = round.own ?? []
+    const fresh = open.filter((t) => newestComment(t, own) > round.seen)
     if (!fresh.length) return
     const run = this.rt.runs.get(pr.run)
     if (!run) return
     store.put(pr.issue, {
-      seen: Math.max(round.seen, ...open.map(newestComment)),
+      seen: Math.max(round.seen, ...open.map((t) => newestComment(t, own))),
+      ...(own.length ? { own } : {}),
       pending: { run: run.id, threads: fresh },
     })
     await this.flow.remediate(
@@ -143,7 +147,9 @@ export class PullRequestWatch {
     const pushed = repair.headSha === record.headSha && record.headSha !== from?.headSha
     const finish = (repair.finish ?? {}) as { report?: { threads?: ThreadOutcome[] } }
     const outcomes = new Map((finish.report?.threads ?? []).map((t) => [t.id, t]))
-    let seen = round.seen
+    // The watermark stays where the round started: a comment posted during the repair was never
+    // shown to the worker and must start its own round.
+    const own = [...(round.own ?? [])]
     const open: string[] = []
     for (const thread of round.pending.threads) {
       const outcome = outcomes.get(thread.id)
@@ -160,11 +166,11 @@ export class PullRequestWatch {
       }
       const body = fixed ? `Fixed in ${record.headSha}. ${outcome.reason}` : `Not changed: ${outcome.reason}`
       const reply = await host.replyToThread(record, root.id, body)
-      seen = Math.max(seen, reply.id)
+      own.push(reply.id)
       if (fixed) await host.resolveThread(record, thread.id)
       else open.push(`${thread.path}: ${outcome.reason}`)
     }
-    store.put(record.issue, { seen })
+    store.put(record.issue, { seen: round.seen, ...(own.length ? { own } : {}) })
     if (!open.length) return
     await this.rt.postOnce(
       record.issue,
