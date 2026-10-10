@@ -114,6 +114,27 @@ describe('decide', () => {
     expect(decide(invalid, config, ctx)).toEqual({ kind: 'enter', stage: 'intake' })
   })
 
+  test('an unstaged child in Backlog with a valid description enters implementation', () => {
+    const child = view({ identifier: 'FOR-3', status: 'Backlog', labels: [], parent: 'FOR-1' })
+    expect(decide(child, config, ctx)).toEqual({ kind: 'enter', stage: 'implementation' })
+  })
+
+  test('an unstaged issue without a parent in Backlog enters the first stage', () => {
+    const orphan = view({ identifier: 'FOR-4', status: 'Backlog', labels: [], parent: null })
+    expect(decide(orphan, config, ctx)).toEqual({ kind: 'enter', stage: 'intake' })
+  })
+
+  test('a child with template errors enters the first stage', () => {
+    const child = view({
+      identifier: 'FOR-5',
+      status: 'Backlog',
+      labels: [],
+      parent: 'FOR-1',
+      description: '## Goal\n\nx\n',
+    })
+    expect(decide(child, config, ctx)).toEqual({ kind: 'enter', stage: 'intake' })
+  })
+
   test('a stage the pipeline omits is skipped to the next pipeline stage', () => {
     const v = view({ identifier: 'FOR-1', project: null, labels: ['bug', 'ai-stage:design'] })
     expect(decide(v, config, ctx)).toEqual({ kind: 'enter', stage: 'implementation', from: 'design' })

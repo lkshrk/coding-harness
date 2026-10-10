@@ -21,6 +21,7 @@ export function snapshot(over: Partial<IssueSnapshot> & { identifier: string }):
     updatedAt: new Date(Date.UTC(2026, 0, 1, 0, seq)).toISOString(),
     description: issueBody(),
     blockedBy: [],
+    parent: null,
     ...over,
   }
 }

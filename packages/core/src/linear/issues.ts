@@ -50,6 +50,7 @@ export type LinearIssue = {
   updatedAt: string
   description: string
   blockedBy: LinearBlocker[]
+  parent: string | null
 }
 
 export type LinearIssueComment = {
@@ -254,6 +255,7 @@ export class LinearIssueReader {
               team: r.issue.team.key,
               status: r.issue.state.name,
             })),
+          parent: i.parent?.identifier ?? null,
         }
       }),
     )

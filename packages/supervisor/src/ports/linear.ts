@@ -35,6 +35,7 @@ export type IssueSnapshot = {
   updatedAt: string
   description: string
   blockedBy: BlockerRef[]
+  parent: string | null
 }
 
 export type LinearComment = {

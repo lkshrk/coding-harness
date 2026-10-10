@@ -154,6 +154,7 @@ describe('LinearIssueReader.issues', () => {
         updatedAt: '2026-01-02T00:00:00.000Z',
         description: '## Goal',
         blockedBy: [{ identifier: 'CIV-3', team: 'CIV', status: 'Done' }],
+        parent: null,
       },
     ])
     expect(calls[0]?.variables.filter).toEqual({ and: [optIn] })
@@ -338,6 +339,20 @@ describe('LinearIssueReader.issue', () => {
     const { reader, calls } = fakeLinear({ nsIssue: () => ({ issue: rawIssue('FOR-1') }) })
     expect((await reader.issue('FOR-1'))?.identifier).toBe('FOR-1')
     expect(calls[0]?.variables).toEqual({ id: 'FOR-1' })
+  })
+
+  test('maps the parent identifier, and null without a parent', async () => {
+    const { reader, calls } = fakeLinear({
+      nsIssues: () => ({
+        issues: conn([rawIssue('FOR-2', { parent: { identifier: 'FOR-1' } }), rawIssue('FOR-3')]),
+      }),
+    })
+    const issues = await reader.issues({ actOn })
+    expect(issues.map((i) => [i.identifier, i.parent])).toEqual([
+      ['FOR-2', 'FOR-1'],
+      ['FOR-3', null],
+    ])
+    expect(calls[0]?.query).toContain('parent { identifier }')
   })
 
   test('an unknown issue is null', async () => {

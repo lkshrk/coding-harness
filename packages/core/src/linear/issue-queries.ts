@@ -25,6 +25,7 @@ export type RawIssue = {
   project: { id: string } | null
   delegate?: { isMe: boolean } | null
   assignee?: { isMe: boolean } | null
+  parent?: { identifier: string } | null
   labels: Page<RawLabel>
   inverseRelations: Page<RawRelation>
 }
@@ -75,7 +76,7 @@ export const COMMENT_FIELDS =
 const RELATION_FIELDS = `nodes { type issue { identifier team { key } state { name } } } ${PAGE_INFO}`
 
 const ISSUE_FIELDS = `id identifier title description priority estimate createdAt updatedAt completedAt canceledAt
-  team { key } state { name type } project { id } delegate { isMe } assignee { isMe }
+  team { key } state { name type } project { id } delegate { isMe } assignee { isMe } parent { identifier }
   labels(first: ${NESTED_PAGE}) { ${LABEL_FIELDS} }
   inverseRelations(first: ${NESTED_PAGE}) { ${RELATION_FIELDS} }`
 
