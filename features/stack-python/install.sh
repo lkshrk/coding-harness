@@ -35,9 +35,6 @@ sha() {
   printf '%s' "${!var}"
 }
 
-pick() {
-  if [ "$arch" = amd64 ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
-}
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -66,10 +63,10 @@ ensure_packages() {
 }
 
 install_astral() {
-  local name="$1" version="$2" var="$3" triple archive tool
-  shift 3
+  local name="$1" var="$2" triple archive tool
+  shift 2
   triple="$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)"
-  archive="$(fetch "https://github.com/astral-sh/$name/releases/download/$version/$name-$triple.tar.gz" "$(sha "$var")" "$name.tgz")"
+  archive="$(fetch "$("${var}_URL")" "$(sha "$var")" "$name.tgz")"
   tar -xzf "$archive" -C "$tmp"
   for tool in "$name" "$@"; do
     install -D -m 0755 "$tmp/$name-$triple/$tool" "$prefix/bin/$tool"
@@ -90,8 +87,8 @@ prepare_cache() {
 }
 
 ensure_packages
-install_astral uv "$UV_VERSION" UV uvx
-install_astral ruff "$RUFF_VERSION" RUFF
-install_astral ty "$TY_VERSION" TY
+install_astral uv UV uvx
+install_astral ruff RUFF
+install_astral ty TY
 install_python
 prepare_cache

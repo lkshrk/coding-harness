@@ -29,9 +29,6 @@ sha() {
   printf '%s' "${!var}"
 }
 
-pick() {
-  if [ "$arch" = amd64 ]; then printf '%s' "$1"; else printf '%s' "$2"; fi
-}
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -86,9 +83,8 @@ prepare_cache() {
 }
 
 install_oxlint() {
-  local triple archive
-  triple="$(pick x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)"
-  archive="$(fetch "https://github.com/oxc-project/oxc/releases/download/oxlint_v$OXLINT_VERSION/oxlint-$triple.tar.gz" "$(sha OXLINT)" oxlint.tgz)"
+  local archive
+  archive="$(fetch "$(OXLINT_URL)" "$(sha OXLINT)" oxlint.tgz)"
   mkdir -p "$tmp/oxlint"
   tar -xzf "$archive" -C "$tmp/oxlint"
   install -m 0755 "$(find "$tmp/oxlint" -type f -name 'oxlint*' | head -n 1)" "$bin/oxlint"
