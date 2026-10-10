@@ -1,6 +1,34 @@
 import { describe, expect, test } from 'bun:test'
 
+import { snapshot } from '../testing/testing'
 import { dispatchOne, harness } from './testing'
+
+describe('role stages without a handler', () => {
+  test('a role stage with no handler is logged and held once, not left waiting silently', async () => {
+    const h = harness()
+    const logged: string[] = []
+    const error = console.error
+    console.error = (line: string) => logged.push(line)
+    try {
+      h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Backlog', labels: ['ai-stage:intake'] }))
+      await h.sup.start()
+      for (let i = 0; i < 3; i++) {
+        await h.sup.tick()
+        await Bun.sleep(0)
+      }
+    } finally {
+      console.error = error
+    }
+    expect(h.sup.awaiting('FOR-1')).toEqual({
+      kind: 'escalated',
+      stage: 'intake',
+      reason: 'no handler for stage intake',
+    })
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    expect(logged.filter((l) => l.includes('no handler for stage intake')).length).toBe(1)
+    expect(h.notifier.sent.map((n) => [n.issue, n.title])).toEqual([['FOR-1', 'no handler for stage intake']])
+  })
+})
 
 describe('manual retry', () => {
   async function failedWithCommit(h: ReturnType<typeof harness>) {
