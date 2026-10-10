@@ -321,6 +321,39 @@ describe('pull request watching', () => {
     }
   })
 
+  test('a thread that gets a new reviewer comment during the repair stays open for its own round', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      h.gh.threads = [fakeThread('T1', 11, 'Trim the name before saving.')]
+      await h.first.tick()
+      await h.first.tick()
+      h.gh.threads[0]?.comments.push({
+        databaseId: 30,
+        author: { login: 'agent-npa' },
+        body: 'Also reject empty names.',
+      })
+      const head = await repaired(h, {
+        threads: [{ id: 'T1', outcome: 'addressed', reason: 'Names are trimmed in save().' }],
+      })
+      const [thread] = h.gh.threads
+      expect(thread?.isResolved).toBe(false)
+      expect(thread?.comments.at(-1)?.body).toBe(`Fixed in ${head}. Names are trimmed in save().`)
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+      const runs = h.first.runs.forIssue('FOR-1').length
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(runs + 1)
+      const latest = h.first.runs.forIssue('FOR-1').at(-1) as Run
+      const attempts = attemptsOf(h.db, 'FOR-1', latest.id)
+      expect(attempts.at(-1)?.reviewThreads?.map((t) => t.comments.map((c) => c.id))).toEqual([
+        [11, 30, expect.any(Number)],
+      ])
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('a thread with an existing discussion is replied to at its root comment', async () => {
     const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
     try {

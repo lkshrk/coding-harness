@@ -150,6 +150,9 @@ export class PullRequestWatch {
     // The watermark stays where the round started: a comment posted during the repair was never
     // shown to the worker and must start its own round.
     const own = [...(round.own ?? [])]
+    // A reviewer can add to a thread while the repair runs; that comment was never shown to the
+    // worker, so such a thread is replied to but left open for its own round.
+    const live = new Map((await host.reviewThreads(record)).map((t) => [t.id, t]))
     const open: string[] = []
     for (const thread of round.pending.threads) {
       const outcome = outcomes.get(thread.id)
@@ -167,8 +170,10 @@ export class PullRequestWatch {
       const body = fixed ? `Fixed in ${record.headSha}. ${outcome.reason}` : `Not changed: ${outcome.reason}`
       const reply = await host.replyToThread(record, root.id, body)
       own.push(reply.id)
-      if (fixed) await host.resolveThread(record, thread.id)
-      else open.push(`${thread.path}: ${outcome.reason}`)
+      const current = live.get(thread.id)
+      const moved = current !== undefined && newestComment(current, own) > newestComment(thread, own)
+      if (fixed && !moved) await host.resolveThread(record, thread.id)
+      else if (!fixed) open.push(`${thread.path}: ${outcome.reason}`)
     }
     store.put(record.issue, { seen: round.seen, ...(own.length ? { own } : {}) })
     if (!open.length) return
