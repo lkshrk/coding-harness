@@ -144,6 +144,7 @@ export type RunFlow = {
   observeIssue(issue: IssueSnapshot): void
   refresh(identifier: string): Promise<void>
   applyIntent(identifier: string, intent: Intent): Promise<void>
+  resolveMismatch(run: Run, issue: IssueSnapshot): Promise<boolean>
   takeLease(run: Run): void
   releaseLease(issue: string): void
   leaseEvent(type: 'LEASE_ACQUIRED', issue: string): void

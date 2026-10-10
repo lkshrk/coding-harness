@@ -48,9 +48,9 @@ function cells<I extends Intent>(
 // Operator status change on a running issue: Backlog or Todo re-queue keeping a WIP commit,
 // Blocked hold (WIP kept, escalated to you), Done finish (WIP kept, terminal), Canceled drop
 // (WIP discarded, terminal). Triage and Review take the run off the queue without keeping WIP.
-type HumanOutcome = 'requeue' | 'hold' | 'finish' | 'drop' | 'continue' | 'stop'
+export type HumanOutcome = 'requeue' | 'hold' | 'finish' | 'drop' | 'continue' | 'stop'
 
-const humanOutcome: Record<LifecycleState, HumanOutcome> = {
+export const humanOutcome: Record<LifecycleState, HumanOutcome> = {
   triage: 'stop',
   backlog: 'requeue',
   ready: 'requeue',
