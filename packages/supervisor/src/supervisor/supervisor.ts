@@ -146,15 +146,18 @@ export class Supervisor {
     while (this.steps.size > 0) await Promise.allSettled([...this.steps.values()].map((s) => s.job))
   }
 
-  private cancelSteps(runId: string): Promise<void> {
+  private cancelSteps(runId: string): Promise<boolean> {
     return this.cancel((key) => key.startsWith(`${runId}:`), 'run stopped')
   }
 
   // Only gate jobs are awaited: they destroy their sandbox on abort, other steps finish on their own.
-  private async cancel(match: (key: string) => boolean, reason: string): Promise<void> {
+  // Resolves true when a gate job was cancelled.
+  private async cancel(match: (key: string) => boolean, reason: string): Promise<boolean> {
     const steps = [...this.steps].filter(([key]) => match(key))
     for (const [, step] of steps) step.cancel.abort(reason)
-    await Promise.allSettled(steps.filter(([key]) => key.endsWith(':gating')).map(([, s]) => s.job))
+    const gates = steps.filter(([key]) => key.endsWith(':gating'))
+    await Promise.allSettled(gates.map(([, s]) => s.job))
+    return gates.length > 0
   }
 
   stepsRunning(): string[] {

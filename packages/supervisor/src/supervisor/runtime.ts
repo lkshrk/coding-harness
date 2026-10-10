@@ -133,7 +133,7 @@ export type RunFlow = {
   paused(): boolean
   pause(reason: string, by?: By): void
   schedule(run: Run): void
-  cancelSteps(runId: string): Promise<void>
+  cancelSteps(runId: string): Promise<boolean>
   gatewayReachable(reachable: boolean, reason: string): void
   viewOptions(issue: string): ViewOptions
   awaiting(issue: string): Awaiting | null

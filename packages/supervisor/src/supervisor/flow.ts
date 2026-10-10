@@ -32,7 +32,7 @@ export type FlowHost = {
   paused(): boolean
   pause(reason: string, by?: By): void
   schedule(run: Run): void
-  cancelSteps(runId: string): Promise<void>
+  cancelSteps(runId: string): Promise<boolean>
   gatewayReachable(reachable: boolean, reason: string): void
   resolveRun(target: string): Run | undefined
   modules(): Modules
