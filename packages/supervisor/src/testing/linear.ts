@@ -50,6 +50,15 @@ export class FakeLinear implements LinearPort {
     const cur = this.store.get(identifier)
     if (!cur) throw new Error(`no issue ${identifier}`)
     this.store.set(identifier, { ...cur, ...over, updatedAt: this.stamp() })
+    // A patch from a test is an operator edit; update() records its own app change after this.
+    if (over.status !== undefined || over.labels !== undefined)
+      this.changes.set(identifier, {
+        actor: 'You',
+        app: false,
+        at: this.now().toISOString(),
+        ...(over.status === undefined ? {} : { status: over.status }),
+        ...(over.labels === undefined ? {} : { labels: over.labels }),
+      })
   }
 
   get(identifier: string): IssueSnapshot {

@@ -1,7 +1,8 @@
 import { LABEL_GROUPS, teamStatuses } from '@nightshift/core'
-import { lifecycleOf, type ViewOptions, viewIssue } from '../policy/stages'
-import { type Intent, transition } from '../policy/transition'
+import { labelValue, lifecycleOf, type ViewOptions, viewIssue } from '../policy/stages'
+import { humanOutcome, type Intent, transition } from '../policy/transition'
 import type { Awaiting, IssueSnapshot } from '../ports'
+import { isTerminal, type Run } from '../state/runs'
 import type { Waiting } from '../state/status'
 import { INGEST_AGENT, type SupervisorRuntime } from './runtime'
 
@@ -14,7 +15,6 @@ export type LinearSyncPeers = {
 }
 
 export class LinearSync {
-  private readonly ownWrites = new Map<string, { status: string; previous: string; before: string }>()
   private cursor: string | undefined
 
   constructor(
@@ -51,13 +51,6 @@ export class LinearSync {
   }
 
   observeIssue(issue: IssueSnapshot): void {
-    const own = this.ownWrites.get(issue.identifier)
-    // A read that still carries the pre-write updatedAt is Linear lagging our own write, not a change.
-    if (own && issue.updatedAt === own.before && issue.status === own.previous) {
-      this.rt.cache.set(issue.identifier, { ...issue, status: own.status })
-      return
-    }
-    this.ownWrites.delete(issue.identifier)
     this.rt.cache.set(issue.identifier, issue)
     const lifecycle = lifecycleOf(this.rt.config(), issue.team, issue.status)
     if (lifecycle === 'done' || lifecycle === 'canceled') this.peers.uncover(issue.identifier)
@@ -75,21 +68,27 @@ export class LinearSync {
     const cfg = this.rt.config()
     const view = viewIssue(issue, cfg, { ...this.peers.viewOptions(identifier), covered: true })
     if (!view) return
-    const next = transition(view, intent, { config: cfg })
+    // An operator change is judged against the running state the supervisor holds, not the new status.
+    const human = intent.kind === 'humanChanged'
+    const transitioned = transition(human ? { ...view, lifecycle: 'running' } : view, intent, { config: cfg })
+    const next =
+      human && transitioned.status === view.lifecycle ? { ...transitioned, status: undefined } : transitioned
     if (next.awaiting !== undefined) this.peers.setAwaiting(identifier, next.awaiting)
+    if (next.status !== undefined || next.stage !== undefined)
+      await this.rt.deps.linear.update(identifier, {
+        ...(next.status !== undefined ? { status: next.status } : {}),
+        ...(next.stage !== undefined ? { stage: next.stage } : {}),
+      })
+    if (next.runAction === 'stop' || next.runAction === 'stopKeepWip')
+      for (const run of this.rt.runs.active())
+        if (run.issue === identifier && run.agent !== INGEST_AGENT) await this.peers.stopRun(run.id, next.log)
     if (next.status === undefined && next.stage === undefined) return
-    await this.rt.deps.linear.update(identifier, {
-      ...(next.status !== undefined ? { status: next.status } : {}),
-      ...(next.stage !== undefined ? { stage: next.stage } : {}),
-    })
     const prefix = `${LABEL_GROUPS.stage}:`
     const labels =
       next.stage === undefined
         ? issue.labels
         : [...issue.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${next.stage}`]
     const status = next.status === undefined ? issue.status : teamStatuses(cfg, issue.team)[next.status]
-    if (next.status !== undefined)
-      this.ownWrites.set(identifier, { status, previous: issue.status, before: issue.updatedAt })
     this.rt.cache.set(identifier, { ...issue, status, labels })
   }
 
@@ -100,10 +99,44 @@ export class LinearSync {
       if (!issue || run.agent === INGEST_AGENT) continue
       const view = viewIssue(issue, this.rt.config(), this.peers.viewOptions(issue.identifier))
       if (view?.lifecycle === 'running') continue
-      await this.peers.stopRun(run.id, 'issue changed in Linear')
-      stopped.push(run.issue)
+      if (await this.resolveMismatch(run, issue)) stopped.push(run.issue)
     }
     return stopped
+  }
+
+  // A live run whose issue is no longer running in Linear: an operator change wins, our own is
+  // re-asserted. Returns whether the run was stopped.
+  async resolveMismatch(run: Run, issue: IssueSnapshot): Promise<boolean> {
+    const cfg = this.rt.config()
+    const id = issue.identifier
+    const view = viewIssue(issue, cfg, this.peers.viewOptions(id))
+    const lifecycle = view?.lifecycle ?? null
+    const change = await this.rt.deps.linear.lastChange(id)
+    const human = change !== null && !change.app
+    const action = !view
+      ? 'stop'
+      : !human
+        ? 'reassert'
+        : lifecycle === null
+          ? 'stop'
+          : humanOutcome[lifecycle]
+    const stage = labelValue(issue.labels, LABEL_GROUPS.stage)
+    this.rt.log.append({
+      type: 'MISMATCH_RESOLVED',
+      issue: id,
+      run: run.id,
+      data: {
+        linear: { status: issue.status, stage },
+        expected: { status: teamStatuses(cfg, issue.team).running, stage },
+        actor: change?.actor ?? 'unknown',
+        app: change?.app ?? false,
+        action,
+      },
+    })
+    if (action === 'stop') await this.peers.stopRun(run.id, 'issue changed in Linear')
+    else if (action === 'reassert') await this.applyIntent(id, { kind: 'dispatched' })
+    else if (lifecycle !== null) await this.applyIntent(id, { kind: 'humanChanged', to: lifecycle })
+    return isTerminal(this.rt.requireRun(run.id).state)
   }
 
   snapshotIssues(waiting: Waiting[]): void {

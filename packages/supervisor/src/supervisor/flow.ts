@@ -55,6 +55,7 @@ export function runFlow(h: FlowHost): RunFlow {
     observeIssue: (issue) => h.modules().linearSync.observeIssue(issue),
     refresh: (id) => h.modules().linearSync.refresh(id),
     applyIntent: (id, intent) => h.modules().linearSync.applyIntent(id, intent),
+    resolveMismatch: (run, issue) => h.modules().linearSync.resolveMismatch(run, issue),
     takeLease: (run) => h.modules().leasing.takeLease(run),
     releaseLease: (issue) => h.modules().leasing.releaseLease(issue),
     leaseEvent: (type, issue) => h.modules().leasing.leaseEvent(type, issue),

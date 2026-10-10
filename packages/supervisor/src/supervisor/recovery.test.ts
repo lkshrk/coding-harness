@@ -67,6 +67,24 @@ describe('recovery', () => {
     expect(restarted.leases.get('FOR-1')).toBeUndefined()
   })
 
+  test('a mismatch the supervisor made itself keeps the run across a restart', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    h.worker.sessions.add('s-1')
+    h.linear.patch('FOR-1', { status: 'Todo' })
+    h.linear.changes.set('FOR-1', { actor: 'nightshift', app: true, at: '2026-10-04T10:00:00.000Z' })
+    const restarted = h.make({ instanceId: 'inst-2' })
+    const report = await restarted.start()
+    expect(report).toMatchObject({ stopped: [], reattached: [run.id] })
+    expect(restarted.runs.get(run.id)?.state).toBe('running')
+    expect(h.linear.get('FOR-1').status).toBe('In Progress')
+    expect(h.of('MISMATCH_RESOLVED', restarted).map((e) => e.data)).toMatchObject([
+      { actor: 'nightshift', app: true, action: 'reassert' },
+    ])
+  })
+
   test('runs in gating re-run that step', async () => {
     const h = harness()
     const run = await dispatchOne(h)
