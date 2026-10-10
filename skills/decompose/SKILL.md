@@ -48,4 +48,4 @@ Turn the approved design into work the supervisor can dispatch. Each issue is on
 ## Done
 
 - Every child issue passes `ns issue check <ID>`, has an estimate and its relations.
-- Tell the user the plan is ready for `ns implement`, which covers the issues and asks for merge mode and profile. Do not run it yourself.
+- Tell the user the plan is ready for `ns implement` on every child at once: children stay queued until their blockers are done. Do not run it yourself.
