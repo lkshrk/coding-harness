@@ -195,6 +195,23 @@ async function issueFileItems(paths: readonly string[], source: RepoSource): Pro
   return items
 }
 
+async function explorerFileItems(input: ContextInput, source: RepoSource): Promise<Item[]> {
+  const items: Item[] = []
+  const seen = new Set<string>()
+  for (const { path: raw, why } of input.explorerFiles ?? []) {
+    const path = raw.replace(/^\.\//, '')
+    if (seen.has(path)) continue
+    seen.add(path)
+    const bytes = await source.read(path)
+    if (bytes === undefined) continue
+    const body = isBinary(bytes)
+      ? 'Binary file, content omitted.'
+      : codeBlock(new TextDecoder().decode(bytes))
+    items.push({ source: path, text: `## ${path}\nWhy: ${why.trim()}\n${body}` })
+  }
+  return items
+}
+
 function neighbourOutlines(graph: CodeGraph, files: readonly string[]): Outline[] {
   return graph
     .neighbours(files)
@@ -234,15 +251,26 @@ export async function fileItems(
         order,
       )
     : outlines
-  const outlineItems = neighbours.map((o) => ({
-    source: `${o.path} (outline)`,
-    text: joinParts([
-      `## ${o.path} (outline of a direct caller or callee)`,
-      reasons.get(o.path) ? `Why: ${reasons.get(o.path)}` : '',
-      codeBlock(o.outline, 'text'),
-    ]),
-  }))
-  return [...(await issueFileItems(full, source)), ...outlineItems]
+  const explored = await explorerFileItems(input, source)
+  const lead = new Set(explored.map((i) => i.source))
+  const outlineItems = neighbours
+    .filter((o) => !lead.has(o.path))
+    .map((o) => ({
+      source: `${o.path} (outline)`,
+      text: joinParts([
+        `## ${o.path} (outline of a direct caller or callee)`,
+        reasons.get(o.path) ? `Why: ${reasons.get(o.path)}` : '',
+        codeBlock(o.outline, 'text'),
+      ]),
+    }))
+  return [
+    ...explored,
+    ...(await issueFileItems(
+      full.filter((p) => !lead.has(p)),
+      source,
+    )),
+    ...outlineItems,
+  ]
 }
 
 export async function takePrefix(items: readonly Item[], cap: number, count: (t: string) => Promise<number>) {

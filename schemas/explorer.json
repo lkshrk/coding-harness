@@ -5,6 +5,8 @@
   "properties": {
     "files": {
       "type": "array",
+      "maxItems": 10,
+      "description": "reading list for the next attempt, the most essential first",
       "items": {
         "type": "object",
         "additionalProperties": false,
