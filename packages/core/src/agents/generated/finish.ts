@@ -4,9 +4,9 @@
  */
 export interface FinishPayload {
   /**
-   * DONE: acceptance criteria met and verified; DONE_WITH_CONCERNS: met, with doubts listed in concerns; BLOCKED: cannot proceed, see blocker; NEEDS_CONTEXT: information missing, see blocker.question
+   * DONE: acceptance criteria met and verified; DONE_WITH_CONCERNS: met, with doubts listed in concerns; BLOCKED: cannot proceed, see blocker; NEEDS_CONTEXT: information missing, see blocker.question; HANDOFF: nightshift asked you to stop, see handoff
    */
-  status: 'DONE' | 'DONE_WITH_CONCERNS' | 'BLOCKED' | 'NEEDS_CONTEXT'
+  status: 'DONE' | 'DONE_WITH_CONCERNS' | 'BLOCKED' | 'NEEDS_CONTEXT' | 'HANDOFF'
   /**
    * one to three sentences a human can read in Linear
    */
@@ -39,6 +39,19 @@ export interface FinishPayload {
      * @maxItems 10
      */
     options?: string[]
+  }
+  /**
+   * state for the next attempt, which continues from your commit
+   */
+  handoff?: {
+    done: string[]
+    in_progress: string[]
+    next: string[]
+    questions?: string[]
+    /**
+     * commands that verify the current state
+     */
+    verify?: string[]
   }
   /**
    * agent-specific result, validated against nightshift.output of the agent

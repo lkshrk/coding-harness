@@ -87,6 +87,17 @@
       "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/wip" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "HANDOFF_WRITTEN" } } },
+      "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "finish.schema.json" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "RUN_INTERRUPTED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/runInterrupted" } }
+      }
+    },
+    {
       "if": { "properties": { "type": { "enum": ["WORKER_NO_FINISH", "WORKER_FAILED"] } } },
       "then": {
         "required": ["issue", "run"],
@@ -224,6 +235,8 @@
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
         "WIP_COMMITTED",
+        "HANDOFF_WRITTEN",
+        "RUN_INTERRUPTED",
         "LOCK_REGENERATED",
         "GATE_PASSED",
         "GATE_FAILED",
@@ -377,6 +390,16 @@
             ]
           },
           "detail": { "type": "string" },
+          "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "runInterrupted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason", "handoff"],
+        "properties": {
+          "reason": { "type": "string", "description": "why nightshift stopped the worker" },
+          "handoff": { "type": "boolean", "description": "true when the worker wrote a handoff in time" },
           "by": { "$ref": "#/$defs/by" }
         }
       },
