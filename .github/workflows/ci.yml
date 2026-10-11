@@ -59,6 +59,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run gen && git diff --exit-code && test -z "$(git status --porcelain)"
       - run: bun run check
+      - run: bun run agents:lint
 
   python:
     strategy:

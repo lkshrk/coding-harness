@@ -7,6 +7,7 @@ import {
   NIGHTSHIFT_VERSION,
 } from '@nightshift/core'
 import { composeSupervisor, runSupervisor, serveControl, socketPath, statePath } from '@nightshift/supervisor'
+import { type AgentsDeps, agents } from './agents'
 import { CliError, type CommandDeps, createCtx, EXIT, type Io, parseGlobal, withoutValueFlags } from './cli'
 import { COMMAND_HELP, COMMANDS } from './commands'
 import { DOCTOR_USAGE, type DoctorDeps, doctor, parseDoctorFlags } from './doctor'
@@ -17,7 +18,8 @@ import { down, type ServiceDeps, up } from './service'
 
 export type { Io }
 
-export type CliDeps = DoctorDeps &
+export type CliDeps = AgentsDeps &
+  DoctorDeps &
   EnvDeps &
   IssueCheckDeps &
   CommandDeps & {
@@ -101,7 +103,7 @@ export async function run(argv: string[], io: Io, given: CliDeps = {}): Promise<
     return EXIT.usage
   }
   const args =
-    rest[0] === 'issue' || (rest[0] !== undefined && Object.hasOwn(COMMANDS, rest[0]))
+    rest[0] === 'issue' || rest[0] === 'agents' || (rest[0] !== undefined && Object.hasOwn(COMMANDS, rest[0]))
       ? rest
       : withoutValueFlags(argv)
   const user = flags.config
@@ -131,9 +133,12 @@ export async function run(argv: string[], io: Io, given: CliDeps = {}): Promise<
     const config = loaded(deps, io)
     return config ? env(args.slice(1), config, deps, io) : 1
   }
-  if (command === 'issue') {
+  if (command === 'issue' || command === 'agents') {
     try {
-      return await issue(createCtx(io, flags, deps), args.slice(1), deps)
+      const ctx = createCtx(io, flags, deps)
+      return command === 'issue'
+        ? await issue(ctx, args.slice(1), deps)
+        : await agents(ctx, args.slice(1), deps)
     } catch (e) {
       if (!(e instanceof CliError)) throw e
       io.err(e.message)

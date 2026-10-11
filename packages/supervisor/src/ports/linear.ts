@@ -54,7 +54,8 @@ export type LinearChange = { actor: string; app: boolean; at: string; status?: s
 
 export type IssueUpdate = {
   status?: LifecycleState
-  stage?: string
+  // null removes the stage label.
+  stage?: string | null
 }
 
 export interface LinearPort {
