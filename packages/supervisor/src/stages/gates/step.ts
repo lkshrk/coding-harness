@@ -57,14 +57,14 @@ export function gateStep(d: GateStepDeps): (run: Run, signal?: AbortSignal) => P
         if (headSha !== exported.headSha) {
           throw new Error(`imported ${headSha} but the worker reported ${exported.headSha}`)
         }
-        if (run.baseSha && headSha === run.baseSha) {
-          await cb.workerFailed(run.id, 'no_finish', 'worker finished without changes')
-          return
-        }
         const conflict = cb.baseConflict?.(run)
         const unresolved = conflict && unresolvedMerge(checkout, conflict.base, headSha, conflict.files)
         if (unresolved) {
           await cb.workerFailed(run.id, 'base_conflict', unresolved)
+          return
+        }
+        if (run.baseSha && headSha === run.baseSha) {
+          await cb.workerFailed(run.id, 'no_finish', 'worker finished without changes')
           return
         }
         if (d.lock) {

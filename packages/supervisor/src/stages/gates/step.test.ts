@@ -361,6 +361,18 @@ describe('gate step', () => {
       expect(h.first.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
     })
 
+    test('a worker that leaves the merge unconcluded without changes fails as base_conflict', async () => {
+      const h = harness()
+      git(h.fx.worker, 'reset', '-q', '--hard', h.fx.base)
+      const moved = git(h.fx.checkout, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'moved')
+      await conflicted(h, moved)
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: `the merge of base ${moved} was not concluded (src/a.test.ts)`,
+      })
+      expect(h.of('WORKER_NO_FINISH')).toEqual([])
+    })
+
     test('conflict markers left in a conflicting file fail as base_conflict naming it', async () => {
       const h = harness()
       writeFileSync(join(h.fx.worker, 'src/a.test.ts'), '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> base\n')
