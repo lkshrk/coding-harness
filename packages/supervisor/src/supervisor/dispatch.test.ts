@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { GitHost } from '../ports'
+import type { FailureClass } from '../ports/failure'
 import { BaseConflictError } from '../ports/worker'
 import { snapshot } from '../testing/testing'
 import { dispatchOne, harness } from './testing'
@@ -454,6 +455,45 @@ describe('manual retry', () => {
     })
     expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
     expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
+  })
+
+  function classifiedAs(failure: FailureClass) {
+    const h = harness({ classifier: { classify: async () => ({ class: failure, action: 'escalate_user' }) } })
+    h.config.selection.splice(4, 0, {
+      when: {
+        stage: 'implementation',
+        failure_class: ['task_too_large', 'missing_dependency', 'architectural_conflict'],
+      },
+      agent: 'replanner',
+    })
+    return h
+  }
+
+  async function failedAs(h: ReturnType<typeof harness>, failure: FailureClass) {
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    expect(h.sup.runs.get(run.id)?.failure).toBe(failure)
+  }
+
+  test('a retry after an escalation to the lead dispatches the stage worker', async () => {
+    const h = classifiedAs('architectural_conflict')
+    await failedAs(h, 'architectural_conflict')
+    const next = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(next).toMatchObject({ attempt: 2, agent: 'implementer' })
+  })
+
+  test('a retry after an implementation defect still selects the repairer', async () => {
+    const h = classifiedAs('implementation_defect')
+    await failedAs(h, 'implementation_defect')
+    const next = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(next).toMatchObject({ attempt: 2, agent: 'repairer' })
+  })
+
+  test('--agent still overrides selection after an escalation to the lead', async () => {
+    const h = classifiedAs('architectural_conflict')
+    await failedAs(h, 'architectural_conflict')
+    const next = await h.sup.retryRun('FOR-1', { agent: 'fixer' }, 'cli')
+    expect(next).toMatchObject({ attempt: 2, agent: 'fixer' })
   })
 
   test('a plain retry after a failure with a commit starts fresh from the current base', async () => {

@@ -130,6 +130,21 @@
           }
         },
         "profile": { "type": ["string", "null"] },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["wall_clock", "tokens", "steps", "no_diff_steps", "no_diff_tokens"],
+          "description": "effective worker limits of the active profile; absent when the config cannot be read",
+          "properties": {
+            "wall_clock": { "type": "string" },
+            "tokens": { "type": "string" },
+            "steps": { "type": "integer" },
+            "no_diff_steps": { "type": "integer" },
+            "no_diff_tokens": { "type": "string" },
+            "max_estimate": { "type": "number" },
+            "max_files": { "type": "integer" }
+          }
+        },
         "restart_required": { "type": "boolean" },
         "held": { "type": "array", "items": { "type": "string" } },
         "covered": { "type": "array", "items": { "type": "string" } },
@@ -221,7 +236,9 @@
                       "lines": { "type": "string" },
                       "message": { "type": "string" },
                       "evidence": { "type": "string" },
-                      "confidence": { "type": "number" }
+                      "category": { "type": "string" },
+                      "confidence": { "type": "number" },
+                      "downgraded": { "type": "boolean" }
                     }
                   }
                 }

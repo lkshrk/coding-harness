@@ -167,7 +167,7 @@ describe('EventMapper', () => {
         tokens: { input: 60, output: 1, reasoning: 11, cache: { read: 2688, write: 4 } },
       }),
     ).toEqual([{ kind: 'step', step: 1, tokensIn: 64, tokensOut: 12 }])
-    expect(ev('session.text.ended', { text: 'done' })).toEqual([{ kind: 'text', chars: 4 }])
+    expect(ev('session.text.ended', { text: 'done' })).toEqual([{ kind: 'text', chars: 4, text: 'done' }])
     expect(ev('session.execution.failed', { error: { message: 'HTTP 502 from provider' } })).toEqual([
       { kind: 'error', message: 'HTTP 502 from provider', fatal: true },
     ])
@@ -233,7 +233,7 @@ describe('OpenCodeDriver', () => {
     oc.emit('session.text.ended', { text: 'hi' })
     expect(await take(it, 2)).toEqual([
       { kind: 'tool_result', tool: 'finish', ok: false },
-      { kind: 'text', chars: 2 },
+      { kind: 'text', chars: 2, text: 'hi' },
     ])
     await driver.stop(s, 'test')
   })

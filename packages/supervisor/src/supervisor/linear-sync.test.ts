@@ -159,6 +159,34 @@ describe('mismatch on a running issue', () => {
   })
 })
 
+describe('escalated hold after the issue leaves nightshift', () => {
+  async function escalated() {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Blocked', labels: ['ai-stage:implementation'] }))
+    await h.sup.start()
+    h.sup.cover('FOR-1')
+    await h.sup.holdStage('FOR-1', 'implementation', 'architectural_conflict', 'conflict')
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    return h
+  }
+
+  for (const status of ['Backlog', 'Canceled', 'Done'])
+    test(`a move to ${status} clears the hold on the next sync`, async () => {
+      const h = await escalated()
+      h.linear.patch('FOR-1', { status })
+      await h.sup.tick()
+      expect(h.sup.awaiting('FOR-1')).toBeNull()
+    })
+
+  test('a covered issue that stays Blocked keeps the hold', async () => {
+    const h = await escalated()
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(h.sup.covered()).toEqual(['FOR-1'])
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated', reason: 'architectural_conflict' })
+  })
+})
+
 describe('Linear wins', () => {
   test('an issue canceled in Linear stops its run, destroys the sandbox and releases the lease', async () => {
     const h = harness()

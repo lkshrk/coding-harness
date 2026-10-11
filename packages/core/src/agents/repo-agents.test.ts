@@ -323,8 +323,12 @@ describe('reviewer', () => {
   const valid = outputValidator(schema)
 
   test('output schema matches the review event data', async () => {
-    const { model: _, ...recorded } = events.$defs.data.review.properties
-    expect(shape(schema)).toEqual(shape({ ...events.$defs.data.review, properties: recorded }))
+    const { model: _, findings, ...recorded } = events.$defs.data.review.properties
+    const { downgraded: __, ...item } = findings.items.properties
+    const reviewed = { ...findings, items: { ...findings.items, properties: item } }
+    expect(shape(schema)).toEqual(
+      shape({ ...events.$defs.data.review, properties: { ...recorded, findings: reviewed } }),
+    )
     for (const [, name] of fixtureCases.filter(([a]) => a === 'reviewer'))
       expect(eventData('review')((await replay('reviewer', name)).output)).toEqual([])
   })
@@ -393,6 +397,7 @@ describe('reviewer', () => {
       file: 'a.ts',
       message: 'm',
       evidence: 'e',
+      category: 'other',
       confidence: 0.5,
     })
     expect(valid({ verdict: 'fail', findings: [] }).length).toBeGreaterThan(0)

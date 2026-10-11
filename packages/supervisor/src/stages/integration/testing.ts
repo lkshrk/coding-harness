@@ -80,6 +80,9 @@ export class FakeGh {
   readonly calls: Call[] = []
   readonly prs: FakePr[] = []
   checks: FakeCheck[] = []
+  baseSha = 'b4se5ha'
+  baseChecks: FakeCheck[] = []
+  baseStatuses: { context: string; state: string; target_url?: string }[] = []
   logs: Record<string, string | HostCommandResult> = {}
   threads: FakeThread[] = []
   failNext: HostCommandResult | undefined
@@ -120,8 +123,53 @@ export class FakeGh {
         thread.isResolved = true
         return ok(JSON.stringify({ data: { resolveReviewThread: { thread: { id, isResolved: true } } } }))
       }
-      const nodes = this.threads.map((t) => ({ ...t, comments: { nodes: t.comments } }))
-      return ok(JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } }))
+      // Honours the page sizes and cursor in the query, as GitHub does.
+      const query = cmd.find((a) => a.startsWith('query=')) ?? ''
+      const pageSize = Number(/reviewThreads\(first: (\d+)/.exec(query)?.[1] ?? 100)
+      const after = cmd.find((a) => a.startsWith('after='))?.slice(6)
+      const start = after === undefined ? 0 : Number(after)
+      const page = this.threads.slice(start, start + pageSize)
+      const end = start + page.length
+      const windows = [...query.matchAll(/(?:(\w+):\s*)?comments\((first|last): (\d+)\)/g)]
+      const nodes = page.map((t) => {
+        const node: Record<string, unknown> = { ...t }
+        delete node.comments
+        for (const [, alias, dir, n] of windows) {
+          const count = Number(n)
+          const slice = dir === 'first' ? t.comments.slice(0, count) : t.comments.slice(-count)
+          node[alias ?? 'comments'] = { nodes: slice }
+        }
+        return node
+      })
+      const pageInfo = { hasNextPage: end < this.threads.length, endCursor: String(end) }
+      return ok(
+        JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo } } } } }),
+      )
+    }
+    const commit =
+      cmd[1] === 'api' ? /^repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/check-runs\b/.exec(cmd[2] ?? '') : null
+    if (commit) {
+      const runs = commit[1] === this.baseSha ? this.baseChecks : []
+      return ok(
+        JSON.stringify({
+          total_count: runs.length,
+          check_runs: runs.map((c) => {
+            const r = ROLLUP[c.bucket] ?? { status: 'COMPLETED', conclusion: 'SUCCESS' }
+            return {
+              name: c.name,
+              status: r.status.toLowerCase(),
+              conclusion: r.conclusion ? r.conclusion.toLowerCase() : null,
+              ...(c.run ? { details_url: `https://github.com/lkshrk/omni/actions/runs/${c.run}` } : {}),
+            }
+          }),
+        }),
+      )
+    }
+    const status =
+      cmd[1] === 'api' ? /^repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/status\b/.exec(cmd[2] ?? '') : null
+    if (status) {
+      const statuses = status[1] === this.baseSha ? this.baseStatuses : []
+      return ok(JSON.stringify({ state: statuses.length ? 'pending' : 'success', statuses }))
     }
     if (cmd[1] === 'api' && cmd[3] === 'POST' && cmd[4]?.endsWith('/replies')) {
       const to = Number(cmd[4].split('/').at(-2))
@@ -137,6 +185,8 @@ export class FakeGh {
     if (verb === 'edit') return ok('')
     if (verb === 'view' && arg('--json') === 'statusCheckRollup')
       return ok(JSON.stringify({ statusCheckRollup: this.checks.map(rollupItem) }))
+    if (verb === 'view' && arg('--json') === 'baseRefOid')
+      return ok(JSON.stringify({ baseRefOid: this.baseSha }))
     if (verb === 'view') {
       const pr = this.prs.find((p) => String(p.number) === cmd[3])
       return ok(
@@ -165,6 +215,10 @@ export class FakeGh {
 
   threadReads(): Call[] {
     return this.calls.filter((c) => c.cmd[2] === 'graphql' && !c.cmd.some((a) => a.startsWith('id=')))
+  }
+
+  baseCiReads(): Call[] {
+    return this.calls.filter((c) => c.cmd[1] === 'api' && /\/commits\/[^/]+\/check-runs/.test(c.cmd[2] ?? ''))
   }
 
   ciReads(): Call[] {
@@ -244,6 +298,7 @@ export const SUGGESTION = {
   lines: '1',
   message: 'export a type',
   evidence: '+export const b = 2',
+  category: 'other' as const,
   confidence: 0.4,
 }
 

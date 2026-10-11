@@ -131,6 +131,7 @@ export class PullRequestWatch {
 
   async checkCi(pr: PullRequestRecord, ci: CiState): Promise<void> {
     if (ci.state === 'pending') return
+    const base = ci.state === 'failed' ? await this.rt.deps.gitHost?.baseCi(pr) : null
     this.rt.pullRequests.put({ ...pr, ci: ci.state })
     if (ci.state === 'passed') {
       this.rt.log.append({ type: 'CI_PASSED', issue: pr.issue, run: pr.run, data: { url: ci.url } })
@@ -146,6 +147,8 @@ export class PullRequestWatch {
         failures: ci.failures.map((f) => ({ name: f.name, url: f.url })),
       },
     })
+    if (base?.sha && ci.failedChecks.length && ci.failedChecks.every((c) => base.failedChecks.includes(c)))
+      return this.baseFailed(pr, base.sha, ci.failedChecks)
     if (ci.failures.some((f) => f.log !== '')) new CiFailureStore(this.rt.deps.db).put(pr.run, ci.failures)
     const checks = ci.failedChecks.length ? ci.failedChecks.join(', ') : 'unknown checks'
     await this.rt.postOnce(pr.issue, event.id, `CI failed on ${pr.url}: ${checks}.`)
@@ -158,6 +161,27 @@ export class PullRequestWatch {
     const run = this.rt.runs.get(pr.run)
     if (run) await this.flow.remediate(run, 'ci_failed', `failed checks: ${checks}`)
     await this.flow.refresh(pr.issue)
+  }
+
+  // The base fails the same checks: no repair run, and no repair round counted against the issue.
+  async baseFailed(pr: PullRequestRecord, sha: string, failed: string[]): Promise<void> {
+    const checks = failed.join(', ')
+    await this.rt.postOnce(
+      pr.issue,
+      `base-failed-${sha}`,
+      `CI on ${pr.url} fails in ${checks}, which also fail on base ${sha}. Fix the base, then retry.`,
+    )
+    await this.flow.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION, reason: 'base_failed' })
+    const notified = this.rt.metaMap<string>('base_failed_notified')
+    if (notified[pr.issue] === sha) return
+    notified[pr.issue] = sha
+    this.rt.setMeta('base_failed_notified', JSON.stringify(notified))
+    await this.rt.notify(`CI fails on base ${sha} of ${pr.repository}: ${checks}`, pr.issue, {
+      kind: 'blocked',
+      url: pr.url,
+      context: [`failing on base ${sha}: ${checks}`],
+      action: `Fix ${checks} on ${pr.base}, then \`ns retry\` the held issues`,
+    })
   }
 
   async checkReviews(pr: PullRequestRecord, host: GitHost): Promise<void> {

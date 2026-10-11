@@ -17,6 +17,7 @@ export type CiState = {
   failedChecks: string[]
   failures: CiFailure[]
   url: string
+  sha?: string
 }
 
 export type PullRequestState = {
@@ -64,6 +65,8 @@ export interface GitHost {
     draft: boolean
   }): Promise<PullRequest>
   ci(pr: PullRequest): Promise<CiState>
+  // Check results of the latest completed CI run on the PR's base sha; null when there is none.
+  baseCi(pr: PullRequest): Promise<CiState | null>
   state(pr: PullRequest): Promise<PullRequestState>
   merge(pr: PullRequest, method: 'squash' | 'merge' | 'rebase'): Promise<{ sha: string }>
   reviewThreads(pr: PullRequest): Promise<ReviewThread[]>

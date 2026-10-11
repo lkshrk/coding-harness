@@ -28,6 +28,20 @@ describe('worker lifecycle', () => {
     ])
   })
 
+  test('a no-diff nudge is logged, and the stop ends the run classified as task_too_large', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+    await h.sup.workerNoProgress(run.id, { steps: 25, tokens: 250_000, nudge: 'No change yet.' })
+    expect(h.of('WORKER_NO_PROGRESS').map((e) => [e.run, e.data])).toEqual([
+      [run.id, { steps: 25, tokens: 250_000, nudge: 'No change yet.' }],
+    ])
+    await h.sup.workerFailed(run.id, 'task_too_large', 'no diff after 26 steps and 260000 tokens')
+    expect(h.of('WORKER_FAILED').map((e) => e.data.reason)).toEqual(['task_too_large'])
+    expect(h.of('FAILURE_CLASSIFIED').map((e) => e.data.class)).toEqual(['task_too_large'])
+    expect(h.sup.runs.get(run.id)?.state).toBe('failed')
+  })
+
   test('a valid finish with DONE moves to gating and runs the next step', async () => {
     const h = harness()
     const run = await dispatchOne(h)
