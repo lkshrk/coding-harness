@@ -13,7 +13,7 @@ import type { Db } from '../../state/db'
 import { EventLog } from '../../state/events'
 import { type Run, RunStore } from '../../state/runs'
 import { createUlid } from '../../state/ulid'
-import { CiFailureStore, PullRequestStore, ReviewRoundStore } from '../integration/records'
+import { BaseConflictStore, CiFailureStore, PullRequestStore, ReviewRoundStore } from '../integration/records'
 import { selectVaultPages } from './vault'
 
 export type { TaskMessage, TaskStart } from '../../ports/context'
@@ -105,6 +105,20 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
     })
 }
 
+export function explorerFilesOf(db: Db, issue: string, current: string): ContextInput['explorerFiles'] {
+  const latest = new RunStore(db, { now: () => new Date(), ulid: createUlid() })
+    .forIssue(issue)
+    .filter((r) => r.id !== current && r.agent === 'explorer' && r.finish !== null)
+    .at(-1)
+  const files = (latest?.finish as { report?: { files?: unknown } } | null)?.report?.files
+  if (!Array.isArray(files)) return undefined
+  const valid = files.filter(
+    (f): f is { path: string; why: string } =>
+      typeof f?.path === 'string' && f.path !== '' && typeof f.why === 'string',
+  )
+  return valid.length > 0 ? valid.map(({ path, why }) => ({ path, why })) : undefined
+}
+
 export function answersOf(db: Db, issue: string): { question: string; answer: string }[] {
   const asked = new Map(
     new EventLog(db, { now: () => new Date(), ulid: createUlid() })
@@ -148,8 +162,12 @@ export async function contextInput(
   const spec = issueSpec(issue.identifier, issue.title, parsed.issue)
   await d.syncVault?.()
   const wip = wipOf(d.db, repairFrom)
+  const conflict = repairFrom?.resolveConflicts ? new BaseConflictStore(d.db).forRun(run.id) : null
+  const explorerFiles = explorerFilesOf(d.db, issue.identifier, run.id)
   return {
     ...(wip ? { wip } : {}),
+    ...(conflict ? { baseConflict: { base: conflict.base, files: conflict.files } } : {}),
+    ...(explorerFiles ? { explorerFiles } : {}),
     issue: spec,
     repository: {
       name: run.repository,

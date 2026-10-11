@@ -87,6 +87,16 @@ describe('loadConfig', () => {
       no_diff_tokens: '250k',
     })
     expect(res.config.limits.repair_rounds).toBe(2)
+    expect(res.config.limits.review_blocker_confidence).toBe(0.7)
+  })
+
+  test('a user file overrides limits.review_blocker_confidence; values outside 0-1 are rejected', () => {
+    const res = loadConfig(opts({ user: userWith((u) => (u.limits = { review_blocker_confidence: 0.5 })) }))
+    if (!res.ok) throw new Error(res.errors.map(formatError).join('\n'))
+    expect(res.config.limits.review_blocker_confidence).toBe(0.5)
+    const bad = loadConfig(opts({ user: userWith((u) => (u.limits = { review_blocker_confidence: 1.5 })) }))
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.errors.map((e) => e.path)).toEqual(['limits.review_blocker_confidence'])
   })
 
   test('lists replace as a whole: a user pipeline is exactly the user list', () => {

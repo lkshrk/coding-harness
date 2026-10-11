@@ -294,6 +294,62 @@ export class GhGitHost implements GitHost {
     })
   }
 
+  async baseCi(pr: PullRequest): Promise<CiState | null> {
+    return this.o.tokens.withToken(pr.repository, async (token) => {
+      const env = gitAuthEnv(token)
+      const view = await this.run(
+        ['gh', 'pr', 'view', String(pr.number), '--repo', pr.repo, '--json', 'baseRefOid'],
+        { env },
+      )
+      this.check(view, 'gh pr view')
+      const sha = (JSON.parse(view.stdout) as { baseRefOid?: string }).baseRefOid
+      if (!sha) return null
+      const r = await this.run(['gh', 'api', `repos/${pr.repo}/commits/${sha}/check-runs?per_page=100`], {
+        env,
+      })
+      this.check(r, 'gh api check-runs')
+      const { check_runs = [] } = JSON.parse(r.stdout) as {
+        check_runs?: {
+          name: string
+          status?: string
+          conclusion?: string | null
+          details_url?: string | null
+        }[]
+      }
+      // External CI providers report commit statuses, which the check-runs endpoint omits.
+      const s = await this.run(['gh', 'api', `repos/${pr.repo}/commits/${sha}/status`], { env })
+      this.check(s, 'gh api status')
+      const { statuses = [] } = JSON.parse(s.stdout) as {
+        statuses?: { context: string; state?: string; target_url?: string | null }[]
+      }
+      const checks = [
+        ...check_runs.map((c) => ({
+          name: c.name,
+          url: c.details_url || '',
+          bucket: bucketOf({
+            status: (c.status ?? '').toUpperCase(),
+            conclusion: (c.conclusion ?? '').toUpperCase(),
+          }),
+        })),
+        ...statuses.map((c) => ({
+          name: c.context,
+          url: c.target_url || '',
+          bucket: bucketOf({ state: (c.state ?? '').toUpperCase() }),
+        })),
+      ]
+      const completed = checks.filter((c) => c.bucket !== 'pending')
+      if (!completed.length) return null
+      const failed = completed.filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')
+      return {
+        state: failed.length ? 'failed' : completed.length < checks.length ? 'pending' : 'passed',
+        failedChecks: failed.map((c) => c.name),
+        failures: failed.map((c) => ({ name: c.name, url: c.url, log: '' })),
+        url: `https://github.com/${pr.repo}/commit/${sha}`,
+        sha,
+      }
+    })
+  }
+
   private async failedLog(
     pr: PullRequest,
     c: { name: string; url: string },

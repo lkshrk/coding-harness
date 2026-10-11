@@ -50,14 +50,10 @@ export class LinearSync {
     if (issue) this.observeIssue(issue)
   }
 
-  // Clears the stage label of Done issues. Issues with a live run or a tracked pull request are left
-  // to enforceLinear and the merge handling, which still need the stage.
+  // Clears the stage label of Done issues; issues with a live run are left to enforceLinear.
   async clearDoneStages(): Promise<void> {
     const cfg = this.rt.config()
-    const busy = new Set([
-      ...this.rt.runs.active().map((r) => r.issue),
-      ...this.rt.pullRequests.all().map((p) => p.issue),
-    ])
+    const busy = new Set(this.rt.runs.active().map((r) => r.issue))
     const done = [...this.rt.cache.values()].filter(
       (i) =>
         !busy.has(i.identifier) &&
@@ -71,6 +67,9 @@ export class LinearSync {
     this.rt.cache.set(issue.identifier, issue)
     const lifecycle = lifecycleOf(this.rt.config(), issue.team, issue.status)
     if (lifecycle === 'done' || lifecycle === 'canceled') this.peers.uncover(issue.identifier)
+    const left = lifecycle === 'backlog' || lifecycle === 'done' || lifecycle === 'canceled'
+    if (left && this.peers.viewOptions(issue.identifier).awaiting)
+      this.peers.setAwaiting(issue.identifier, null)
   }
 
   // The only writer of an issue's status, stage label and hold.

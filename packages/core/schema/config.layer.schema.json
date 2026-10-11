@@ -215,7 +215,13 @@
           }
         },
         "repair_rounds": { "type": "integer", "minimum": 0, "maximum": 10 },
-        "best_of": { "type": "integer", "minimum": 1, "maximum": 8 }
+        "best_of": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "review_blocker_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "a reviewer BLOCKER below this confidence is downgraded to SUGGESTION, unless it weakens a test or is a security problem"
+        }
       }
     },
     "policies": { "$ref": "#/$defs/policy" },
@@ -555,6 +561,28 @@
           "type": "object",
           "propertyNames": { "$ref": "#/$defs/modelAlias" },
           "additionalProperties": { "$ref": "#/$defs/model" }
+        },
+        "limits": {
+          "description": "overlaid on limits.worker for runs under this profile",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "wall_clock": { "$ref": "#/$defs/duration" },
+            "tokens": { "$ref": "#/$defs/tokenCount" },
+            "steps": { "type": "integer", "minimum": 1 },
+            "no_diff_steps": { "type": "integer", "minimum": 1 },
+            "no_diff_tokens": { "$ref": "#/$defs/tokenCount" },
+            "max_estimate": {
+              "type": "number",
+              "minimum": 0,
+              "description": "largest issue estimate dispatched under this profile"
+            },
+            "max_files": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "most files an issue may name to be dispatched under this profile"
+            }
+          }
         }
       }
     },

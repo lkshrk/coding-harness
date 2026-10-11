@@ -56,7 +56,16 @@ test('review and failure sources preserve event evidence with fixed content', ()
       run: 'run',
       data: {
         verdict: 'fail',
-        findings: [{ severity: 'BLOCKER', message: 'Bad', file: 'a.ts', evidence: 'line', confidence: 1 }],
+        findings: [
+          {
+            severity: 'BLOCKER',
+            message: 'Bad',
+            file: 'a.ts',
+            evidence: 'line',
+            category: 'other',
+            confidence: 1,
+          },
+        ],
       },
     },
     {

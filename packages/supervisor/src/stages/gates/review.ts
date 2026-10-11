@@ -26,7 +26,9 @@ export type ReviewFinding = {
   lines?: string
   message: string
   evidence: string
+  category: 'weakened_test' | 'security' | 'other'
   confidence: number
+  downgraded?: true
 }
 
 export type ReviewOutput = { verdict: 'pass' | 'fail'; findings: ReviewFinding[] }
@@ -193,7 +195,12 @@ async function review(d: ReviewStepDeps, run: Run): Promise<ReviewOutcome> {
     gateway: await d.gateway(),
     sessionId: run.id,
   })
-  if (res.ok) return { kind: 'verdict', review: res.output, model }
+  if (res.ok)
+    return {
+      kind: 'verdict',
+      review: downgradeBlockers(res.output, config.limits.review_blocker_confidence),
+      model,
+    }
   if (res.reason === 'gateway_error') return { kind: 'error', reason: 'gateway_error', detail: res.detail }
   return {
     kind: 'unreviewed',
@@ -217,12 +224,26 @@ export function reviewStep(d: ReviewStepDeps): (run: Run) => Promise<void> {
   }
 }
 
+export function downgradeBlockers(review: ReviewOutput, threshold: number): ReviewOutput {
+  const findings = review.findings.map(
+    (f): ReviewFinding =>
+      f.severity === 'BLOCKER' && f.category === 'other' && f.confidence < threshold
+        ? { ...f, severity: 'SUGGESTION', downgraded: true }
+        : f,
+  )
+  return { verdict: findings.some((f) => f.severity === 'BLOCKER') ? 'fail' : 'pass', findings }
+}
+
+export function findingLabel(f: Pick<ReviewFinding, 'severity' | 'downgraded'>): string {
+  return f.downgraded ? `**${f.severity}** (downgraded BLOCKER)` : `**${f.severity}**`
+}
+
 export function reviewComment(review: ReviewOutput, model: string): string {
   const head = `Review ${review.verdict === 'pass' ? 'passed' : 'failed'} (\`${model}\`).`
   if (!review.findings.length) return `${head} No findings.`
   const lines = review.findings.map((f) => {
     const where = f.lines ? `${f.file}:${f.lines}` : f.file
-    return `- **${f.severity}** \`${where}\` (confidence ${f.confidence}): ${f.message}\n  Evidence: ${f.evidence.replace(/\n/g, ' ')}`
+    return `- ${findingLabel(f)} \`${where}\` (confidence ${f.confidence}): ${f.message}\n  Evidence: ${f.evidence.replace(/\n/g, ' ')}`
   })
   return [head, '', ...lines].join('\n')
 }

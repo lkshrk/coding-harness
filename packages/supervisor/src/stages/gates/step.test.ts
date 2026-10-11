@@ -19,6 +19,7 @@ import {
   snapshot,
   testConfig,
 } from '../../testing/testing'
+import { BaseConflictStore } from '../integration/records'
 import { SandboxGateRunner } from './runner'
 import { gateStep } from './step'
 import { type GitFixture, git, gitFixture } from './testing'
@@ -150,6 +151,7 @@ function harness(results: Record<string, Partial<ExecResult>> = {}, sub = 'a') {
 
   return {
     fx,
+    db,
     config,
     linear,
     first,
@@ -335,6 +337,88 @@ describe('gate step', () => {
     })
     expect(h.first.runs.get(run.id)?.state).toBe('failed')
     expect(h.gateEvents()).toEqual([])
+  })
+
+  describe('a continued attempt left to resolve a base merge', () => {
+    const conflicted = async (h: ReturnType<typeof harness>, base: string) => {
+      const run = await h.finishedRun()
+      new BaseConflictStore(h.db).put('FOR-1', { base, files: ['src/a.test.ts'], run: run.id })
+      await h.first.workerFinished(run.id, FINISH)
+      await h.first.idle()
+      return run
+    }
+
+    test('a merge the worker did not conclude fails as base_conflict naming the files', async () => {
+      const h = harness()
+      const moved = git(h.fx.checkout, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'moved')
+      const run = await conflicted(h, moved)
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: `the merge of base ${moved} was not concluded (src/a.test.ts)`,
+      })
+      expect(h.first.runs.get(run.id)?.state).toBe('failed')
+      expect(h.gateEvents()).toEqual([])
+      expect(h.first.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    })
+
+    test('a worker that leaves the merge unconcluded without changes fails as base_conflict', async () => {
+      const h = harness()
+      git(h.fx.worker, 'reset', '-q', '--hard', h.fx.base)
+      const moved = git(h.fx.checkout, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'moved')
+      await conflicted(h, moved)
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: `the merge of base ${moved} was not concluded (src/a.test.ts)`,
+      })
+      expect(h.of('WORKER_NO_FINISH')).toEqual([])
+    })
+
+    const resolvedMerge = (
+      h: ReturnType<typeof harness>,
+      file: string,
+      theirs: string,
+      ours: string,
+      merged: string,
+    ) => {
+      git(h.fx.worker, 'checkout', '-q', '--detach', h.fx.base)
+      writeFileSync(join(h.fx.worker, file), theirs)
+      git(h.fx.worker, 'add', '-A')
+      git(h.fx.worker, 'commit', '-q', '-m', 'moved base')
+      const moved = git(h.fx.worker, 'rev-parse', 'HEAD')
+      git(h.fx.worker, 'checkout', '-q', h.fx.branch)
+      writeFileSync(join(h.fx.worker, file), ours)
+      git(h.fx.worker, 'add', '-A')
+      git(h.fx.worker, 'commit', '-q', '-m', 'ours')
+      git(h.fx.worker, 'merge', '-q', '-s', 'ours', '--no-edit', moved)
+      writeFileSync(join(h.fx.worker, file), merged)
+      git(h.fx.worker, 'commit', '-q', '-a', '--amend', '--no-edit')
+      git(h.fx.checkout, 'fetch', '-q', h.fx.worker, `${moved}:refs/moved`)
+      return moved
+    }
+
+    test('a concluded merge whose file holds a line of seven equals signs is gated', async () => {
+      const h = harness()
+      const moved = resolvedMerge(
+        h,
+        'README.md',
+        'Title\n=======\nbase\n',
+        'Title\n=======\nours\n',
+        'Title\n=======\nours\nbase\n',
+      )
+      const run = await h.finishedRun()
+      new BaseConflictStore(h.db).put('FOR-1', { base: moved, files: ['README.md'], run: run.id })
+      await h.first.workerFinished(run.id, FINISH)
+      await h.first.idle()
+      expect(h.of('WORKER_FAILED')).toEqual([])
+      expect(h.gateEvents().map(([t]) => t)).toEqual(['GATE_PASSED', 'GATE_PASSED'])
+    })
+
+    test('a concluded merge without markers is gated', async () => {
+      const h = harness()
+      await conflicted(h, h.fx.base)
+      expect(h.of('WORKER_FAILED')).toEqual([])
+      expect(h.gateEvents().map(([t]) => t)).toEqual(['GATE_PASSED', 'GATE_PASSED'])
+    })
   })
 
   test('a gate infrastructure failure fails the run as a sandbox error', async () => {

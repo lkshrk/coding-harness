@@ -26,6 +26,7 @@ export class Holds {
   }
 
   private setCoverage(issue: string, covered: boolean, by: By): void {
+    if (!covered && this.awaiting(issue)) this.setAwaiting(issue, null)
     if (this.coveredSet().has(issue) === covered) return
     setCovered(this.rt.deps.db, issue, covered)
     this.rt.log.append({ type: 'COVERAGE_CHANGED', issue, data: { covered, by } })

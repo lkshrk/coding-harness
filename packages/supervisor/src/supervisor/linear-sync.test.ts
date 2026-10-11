@@ -182,6 +182,36 @@ describe('stage label on Done', () => {
     expect(h.linear.updates).toEqual([{ identifier: 'FOR-1', change: { stage: null } }])
   })
 
+  test('an issue with an open tracked pull request you move to Done loses its stage label', async () => {
+    const h = harness()
+    h.linear.put(
+      snapshot({
+        identifier: 'FOR-1',
+        status: 'In Review',
+        labels: ['type:feature', 'ai-stage:integration'],
+      }),
+    )
+    await h.sup.start()
+    h.sup.pullRequests.put({
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: 'r1',
+      headSha: 'head1',
+      mode: 'manual',
+      draft: false,
+      ci: 'passed',
+    })
+    h.linear.patch('FOR-1', { status: 'Done' })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+  })
+
   test('a Done issue already cached as Done loses a stage label added later', async () => {
     const h = harness()
     h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['type:feature'] }))
@@ -190,6 +220,34 @@ describe('stage label on Done', () => {
     h.linear.patch('FOR-1', { labels: ['type:feature', 'ai-stage:acceptance'] })
     await h.sup.tick()
     expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+  })
+})
+
+describe('escalated hold after the issue leaves nightshift', () => {
+  async function escalated() {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Blocked', labels: ['ai-stage:implementation'] }))
+    await h.sup.start()
+    h.sup.cover('FOR-1')
+    await h.sup.holdStage('FOR-1', 'implementation', 'architectural_conflict', 'conflict')
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    return h
+  }
+
+  for (const status of ['Backlog', 'Canceled', 'Done'])
+    test(`a move to ${status} clears the hold on the next sync`, async () => {
+      const h = await escalated()
+      h.linear.patch('FOR-1', { status })
+      await h.sup.tick()
+      expect(h.sup.awaiting('FOR-1')).toBeNull()
+    })
+
+  test('a covered issue that stays Blocked keeps the hold', async () => {
+    const h = await escalated()
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(h.sup.covered()).toEqual(['FOR-1'])
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated', reason: 'architectural_conflict' })
   })
 })
 

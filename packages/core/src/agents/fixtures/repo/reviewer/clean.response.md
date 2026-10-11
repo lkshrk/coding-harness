@@ -10,6 +10,7 @@ Line 4 trims the name before insert, and the new test covers the criterion. `Use
       "lines": "4",
       "message": "A name of only whitespace is now saved as an empty string; consider rejecting it.",
       "evidence": "const name = input.name.trim() with input.name = '   ' yields ''",
+      "category": "other",
       "confidence": 0.6
     }
   ]

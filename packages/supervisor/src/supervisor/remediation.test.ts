@@ -129,6 +129,7 @@ describe('failures and retries', () => {
             lines: '1',
             message: 'listbox unbounded',
             evidence: 'e',
+            category: 'other',
             confidence: 0.9,
           },
         ],

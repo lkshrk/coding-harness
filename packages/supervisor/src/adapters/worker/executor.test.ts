@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { AgentDef, Config } from '@nightshift/core'
+import type { AgentDef, Config, Profile } from '@nightshift/core'
 import type { BuiltContext, HarnessEvent, WorkerDriver, WorkerSession, WorkerStart } from '../../ports'
 import { BaseConflictError } from '../../ports/worker'
 import { git, gitFixture } from '../../stages/gates/testing'
@@ -317,6 +317,30 @@ describe('WorkerExecutor.start', () => {
     expect(cb.of('sandbox')).toEqual([
       ['sandbox', run.id, { driver: 'docker', id: `ctr-${run.id}`, image: 'nightshift/omni:1' }],
     ])
+  })
+
+  test("run limits come from the run's profile overlaid on limits.worker", async () => {
+    const base = config.profiles.default as Profile
+    config = {
+      ...config,
+      profiles: {
+        ...config.profiles,
+        local: { ...base, limits: { wall_clock: '20m', steps: 60, no_diff_steps: 5, no_diff_tokens: '40k' } },
+      },
+    }
+    await executor().start({
+      run: { ...run, profile: 'local' },
+      issue: snapshot({ identifier: 'FOR-1' }),
+      files: ['src/a.ts'],
+    })
+    expect(worker.starts[0]?.limits as unknown).toEqual({
+      steps: 60,
+      wallClockMs: 1_200_000,
+      tokens: 2_000_000,
+      graceTurns: 1,
+      noDiff: { steps: 5, tokens: 40_000 },
+    })
+    expect(worker.starts[0]?.agent.files[0]?.content).toContain('steps: 60')
   })
 
   test("ships the agent's skills into the config dir and points OpenCode at them", async () => {

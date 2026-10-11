@@ -247,6 +247,13 @@ describe('explorer', () => {
     const { open_questions: _, ...missing } = report
     expect(validateFinish(explorer, finish(missing)).ok).toBe(false)
   })
+
+  test('files is a reading list of at most 10 entries, the most essential first', () => {
+    const files = Array.from({ length: 11 }, (_, n) => ({ path: `src/${n}.ts`, why: 'w' }))
+    expect(validateFinish(explorer, finish({ ...report, files: files.slice(0, 10) })).ok).toBe(true)
+    expect(validateFinish(explorer, finish({ ...report, files })).ok).toBe(false)
+    expect(sections(explorer.body).get('Output')).toContain('at most 10, the most essential first')
+  })
 })
 
 describe('fixer and repairer', () => {
@@ -323,8 +330,12 @@ describe('reviewer', () => {
   const valid = outputValidator(schema)
 
   test('output schema matches the review event data', async () => {
-    const { model: _, ...recorded } = events.$defs.data.review.properties
-    expect(shape(schema)).toEqual(shape({ ...events.$defs.data.review, properties: recorded }))
+    const { model: _, findings, ...recorded } = events.$defs.data.review.properties
+    const { downgraded: __, ...item } = findings.items.properties
+    const reviewed = { ...findings, items: { ...findings.items, properties: item } }
+    expect(shape(schema)).toEqual(
+      shape({ ...events.$defs.data.review, properties: { ...recorded, findings: reviewed } }),
+    )
     for (const [, name] of fixtureCases.filter(([a]) => a === 'reviewer'))
       expect(eventData('review')((await replay('reviewer', name)).output)).toEqual([])
   })
@@ -393,6 +404,7 @@ describe('reviewer', () => {
       file: 'a.ts',
       message: 'm',
       evidence: 'e',
+      category: 'other',
       confidence: 0.5,
     })
     expect(valid({ verdict: 'fail', findings: [] }).length).toBeGreaterThan(0)

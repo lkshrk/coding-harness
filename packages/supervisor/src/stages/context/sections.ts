@@ -132,11 +132,17 @@ export function historyItems(input: ContextInput): Item[] {
               )
               .join('\n')}`
           : '',
-        a.prConflict
-          ? `The pull request conflicts with base \`${a.prConflict.base}\` in: ${a.prConflict.files.map((f) => `\`${f}\``).join(', ') || '(unknown files)'}. The merge of that base is in progress in the workspace: resolve every conflict keeping both sides' intent, \`git add\` the files and \`git commit --no-edit\` to conclude the merge. Finish BLOCKED if a conflict needs a decision.`
-          : '',
+        a.prConflict ? `The pull request ${mergeInProgress(a.prConflict)}` : '',
       ]),
     }))
+  const conflict = input.baseConflict
+    ? [
+        {
+          source: `base ${input.baseConflict.base}`,
+          text: `## Merge of the base in progress\nThe continued attempt ${mergeInProgress(input.baseConflict)}`,
+        },
+      ]
+    : []
   const wip = input.wip
     ? [
         {
@@ -145,7 +151,11 @@ export function historyItems(input: ContextInput): Item[] {
         },
       ]
     : []
-  return [...wip, ...answers, ...attempts]
+  return [...conflict, ...wip, ...answers, ...attempts]
+}
+
+function mergeInProgress(c: { base: string; files: string[] }): string {
+  return `conflicts with base \`${c.base}\` in: ${c.files.map((f) => `\`${f}\``).join(', ') || '(unknown files)'}. The merge of that base is in progress in the workspace: resolve every conflict keeping both sides' intent, \`git add\` the files and \`git commit --no-edit\` to conclude the merge. Finish BLOCKED if a conflict needs a decision.`
 }
 
 const GLOB = /[*?[\]{}]/
@@ -195,6 +205,23 @@ async function issueFileItems(paths: readonly string[], source: RepoSource): Pro
   return items
 }
 
+async function explorerFileItems(input: ContextInput, source: RepoSource): Promise<Item[]> {
+  const items: Item[] = []
+  const seen = new Set<string>()
+  for (const { path: raw, why } of input.explorerFiles ?? []) {
+    const path = raw.replace(/^\.\//, '')
+    if (seen.has(path)) continue
+    seen.add(path)
+    const bytes = await source.read(path)
+    if (bytes === undefined) continue
+    const body = isBinary(bytes)
+      ? 'Binary file, content omitted.'
+      : codeBlock(new TextDecoder().decode(bytes))
+    items.push({ source: path, text: `## ${path}\nWhy: ${why.trim()}\n${body}` })
+  }
+  return items
+}
+
 function neighbourOutlines(graph: CodeGraph, files: readonly string[]): Outline[] {
   return graph
     .neighbours(files)
@@ -234,15 +261,26 @@ export async function fileItems(
         order,
       )
     : outlines
-  const outlineItems = neighbours.map((o) => ({
-    source: `${o.path} (outline)`,
-    text: joinParts([
-      `## ${o.path} (outline of a direct caller or callee)`,
-      reasons.get(o.path) ? `Why: ${reasons.get(o.path)}` : '',
-      codeBlock(o.outline, 'text'),
-    ]),
-  }))
-  return [...(await issueFileItems(full, source)), ...outlineItems]
+  const explored = await explorerFileItems(input, source)
+  const lead = new Set(explored.map((i) => i.source))
+  const outlineItems = neighbours
+    .filter((o) => !lead.has(o.path))
+    .map((o) => ({
+      source: `${o.path} (outline)`,
+      text: joinParts([
+        `## ${o.path} (outline of a direct caller or callee)`,
+        reasons.get(o.path) ? `Why: ${reasons.get(o.path)}` : '',
+        codeBlock(o.outline, 'text'),
+      ]),
+    }))
+  return [
+    ...explored,
+    ...(await issueFileItems(
+      full.filter((p) => !lead.has(p)),
+      source,
+    )),
+    ...outlineItems,
+  ]
 }
 
 export async function takePrefix(items: readonly Item[], cap: number, count: (t: string) => Promise<number>) {
