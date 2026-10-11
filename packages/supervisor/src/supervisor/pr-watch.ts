@@ -172,12 +172,11 @@ export class PullRequestWatch {
       `CI on ${pr.url} fails in ${checks}, which also fail on base ${sha}. Fix the base, then retry.`,
     )
     await this.flow.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION, reason: 'base_failed' })
-    const key = `${pr.repository}@${sha}`
-    const notified = this.rt.metaMap<string[]>('base_failed_notified')
-    if (notified[key]) return
-    notified[key] = failed
+    const notified = this.rt.metaMap<string>('base_failed_notified')
+    if (notified[pr.issue] === sha) return
+    notified[pr.issue] = sha
     this.rt.setMeta('base_failed_notified', JSON.stringify(notified))
-    await this.rt.notify(`CI fails on base ${sha} of ${pr.repository}`, pr.issue, {
+    await this.rt.notify(`CI fails on base ${sha} of ${pr.repository}: ${checks}`, pr.issue, {
       kind: 'blocked',
       url: pr.url,
       context: [`failing on base ${sha}: ${checks}`],

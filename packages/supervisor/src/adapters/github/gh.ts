@@ -316,14 +316,27 @@ export class GhGitHost implements GitHost {
           details_url?: string | null
         }[]
       }
-      const checks = check_runs.map((c) => ({
-        name: c.name,
-        url: c.details_url || '',
-        bucket: bucketOf({
-          status: (c.status ?? '').toUpperCase(),
-          conclusion: (c.conclusion ?? '').toUpperCase(),
-        }),
-      }))
+      // External CI providers report commit statuses, which the check-runs endpoint omits.
+      const s = await this.run(['gh', 'api', `repos/${pr.repo}/commits/${sha}/status`], { env })
+      this.check(s, 'gh api status')
+      const { statuses = [] } = JSON.parse(s.stdout) as {
+        statuses?: { context: string; state?: string; target_url?: string | null }[]
+      }
+      const checks = [
+        ...check_runs.map((c) => ({
+          name: c.name,
+          url: c.details_url || '',
+          bucket: bucketOf({
+            status: (c.status ?? '').toUpperCase(),
+            conclusion: (c.conclusion ?? '').toUpperCase(),
+          }),
+        })),
+        ...statuses.map((c) => ({
+          name: c.context,
+          url: c.target_url || '',
+          bucket: bucketOf({ state: (c.state ?? '').toUpperCase() }),
+        })),
+      ]
       const completed = checks.filter((c) => c.bucket !== 'pending')
       if (!completed.length) return null
       const failed = completed.filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')

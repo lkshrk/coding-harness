@@ -337,6 +337,33 @@ describe('GhGitHost pull requests', () => {
     expect(gh.logReads()).toEqual([])
   })
 
+  test('reads commit statuses on the base sha alongside its check runs', async () => {
+    const { gh, host } = setup()
+    gh.prs.push({ number: 1, url: ciPr.url, head: 'ns/FOR-1', state: 'OPEN' })
+    gh.baseStatuses = [{ context: 'ci/jenkins', state: 'pending' }]
+    expect(await host.baseCi(ciPr)).toBeNull()
+    gh.baseStatuses = [
+      { context: 'ci/jenkins', state: 'failure', target_url: 'https://jenkins.test/1' },
+      { context: 'ci/audit', state: 'error' },
+      { context: 'ci/docs', state: 'success' },
+    ]
+    gh.baseChecks = [{ name: 'build', bucket: 'pass' }]
+    expect(await host.baseCi(ciPr)).toEqual({
+      state: 'failed',
+      failedChecks: ['ci/jenkins', 'ci/audit'],
+      failures: [
+        { name: 'ci/jenkins', url: 'https://jenkins.test/1', log: '' },
+        { name: 'ci/audit', url: '', log: '' },
+      ],
+      url: `https://github.com/lkshrk/omni/commit/${gh.baseSha}`,
+      sha: gh.baseSha,
+    })
+    const reads = gh.calls.filter((c) => c.cmd[1] === 'api' && c.cmd[2]?.includes('/status'))
+    expect(reads.map((c) => c.cmd[2])).toEqual(
+      Array(2).fill(`repos/lkshrk/omni/commits/${gh.baseSha}/status`),
+    )
+  })
+
   test('a failing check run carries an excerpt of its failed job log', async () => {
     const { gh, host } = setup()
     const noise = (tag: string) =>

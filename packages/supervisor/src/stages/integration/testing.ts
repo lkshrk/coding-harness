@@ -82,6 +82,7 @@ export class FakeGh {
   checks: FakeCheck[] = []
   baseSha = 'b4se5ha'
   baseChecks: FakeCheck[] = []
+  baseStatuses: { context: string; state: string; target_url?: string }[] = []
   logs: Record<string, string | HostCommandResult> = {}
   threads: FakeThread[] = []
   failNext: HostCommandResult | undefined
@@ -163,6 +164,12 @@ export class FakeGh {
           }),
         }),
       )
+    }
+    const status =
+      cmd[1] === 'api' ? /^repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/status\b/.exec(cmd[2] ?? '') : null
+    if (status) {
+      const statuses = status[1] === this.baseSha ? this.baseStatuses : []
+      return ok(JSON.stringify({ state: statuses.length ? 'pending' : 'success', statuses }))
     }
     if (cmd[1] === 'api' && cmd[3] === 'POST' && cmd[4]?.endsWith('/replies')) {
       const to = Number(cmd[4].split('/').at(-2))

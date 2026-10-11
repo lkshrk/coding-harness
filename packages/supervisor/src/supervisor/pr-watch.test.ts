@@ -153,6 +153,24 @@ describe('pull request watching', () => {
     }
   })
 
+  test('each issue held on the same base sha gets its own notification naming its checks', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'pip-audit', bucket: 'fail' }]
+      h.gh.baseChecks = [{ name: 'pip-audit', bucket: 'fail' }]
+      const pr = h.first.pullRequests.get('FOR-1')
+      if (!pr) throw new Error('no PR')
+      h.linear.put(snapshot({ identifier: 'FOR-2', title: 'Trim more', status: 'In Review' }))
+      h.first.pullRequests.put({ ...pr, issue: 'FOR-2', url: `${pr.url}0`, number: 10 })
+      await h.first.tick()
+      const sent = h.of('NOTIFICATION_SENT').filter((e) => String(e.data.title).includes('fails on base'))
+      expect(sent.map((e) => e.data.issue).sort()).toEqual(['FOR-1', 'FOR-2'])
+      for (const e of sent) expect(String(e.data.title)).toContain('pip-audit')
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('checks that pass on the base sha keep the ci_failed remediation', async () => {
     const h = await watching()
     try {
