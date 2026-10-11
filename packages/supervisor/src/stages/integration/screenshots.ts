@@ -28,7 +28,7 @@ export type ScreenshotOutcome = { url: string; omitted: number } | { reason: str
 
 type Shot = { page: string; viewport: string; theme: string; file: string }
 
-type Pair = { key: Shot; before: string | null; after: string }
+type Pair = { key: Shot; before: string | null; after: string | null }
 
 export const SCREENSHOT_MARKER = '<!-- nightshift:screenshots -->'
 
@@ -41,7 +41,12 @@ export async function captureScreenshots(d: ScreenshotDeps, i: ScreenshotInput):
     if ('reason' in before) return before
     const after = await shoot(d, i, i.config, 'after', i.head, join(work, 'after'))
     if ('reason' in after) return after
-    if (after.shots.length === 0) return { reason: 'the screenshots command produced no images' }
+    if (before.shots.length === 0 && after.shots.length === 0)
+      return { reason: 'the screenshots command produced no images' }
+    if (before.shots.length === 0)
+      return { reason: 'the screenshots command produced no images on the base commit' }
+    if (after.shots.length === 0)
+      return { reason: 'the screenshots command produced no images on the head commit' }
     const { pairs, omitted } = capped(pairsOf(before.shots, after.shots), work, i.config)
     if (pairs.length === 0)
       return {
@@ -89,8 +94,7 @@ async function shoot(
       reason: `the screenshots command failed on ${where} (${result?.result.timedOut ? 'timed out' : `exit ${result?.result.exitCode}`})`,
     }
   const manifest = join(into, 'manifest.json')
-  if (!existsSync(manifest))
-    return side === 'before' ? { shots: [] } : { reason: `no manifest.json in ${config.output}` }
+  if (!existsSync(manifest)) return { reason: `no manifest.json in ${config.output} on ${where}` }
   let parsed: unknown
   try {
     parsed = JSON.parse(readFileSync(manifest, 'utf8'))
@@ -114,15 +118,15 @@ function isShot(v: unknown): v is Shot {
 const keyOf = (s: Shot) => `${s.page}\u0000${s.viewport}\u0000${s.theme}`
 
 function pairsOf(before: Shot[], after: Shot[]): Pair[] {
-  const old = new Map(before.map((s) => [keyOf(s), s.file]))
-  const seen = new Set<string>()
-  const pairs: Pair[] = []
-  for (const s of after) {
-    if (seen.has(keyOf(s))) continue
-    seen.add(keyOf(s))
-    pairs.push({ key: s, before: old.get(keyOf(s)) ?? null, after: s.file })
+  const pairs = new Map<string, Pair>()
+  for (const s of after)
+    if (!pairs.has(keyOf(s))) pairs.set(keyOf(s), { key: s, before: null, after: s.file })
+  for (const s of before) {
+    const p = pairs.get(keyOf(s))
+    if (!p) pairs.set(keyOf(s), { key: s, before: s.file, after: null })
+    else if (p.before === null) p.before = s.file
   }
-  return pairs
+  return [...pairs.values()]
 }
 
 function capped(pairs: Pair[], work: string, config: ScreenshotConfig): { pairs: Pair[]; omitted: number } {
@@ -131,9 +135,10 @@ function capped(pairs: Pair[], work: string, config: ScreenshotConfig): { pairs:
   let images = 0
   let bytes = 0
   for (const p of pairs) {
-    const files = [p.before && join(work, 'before', p.before), join(work, 'after', p.after)].filter(
-      (f): f is string => Boolean(f),
-    )
+    const files = [
+      p.before && join(work, 'before', p.before),
+      p.after && join(work, 'after', p.after),
+    ].filter((f): f is string => Boolean(f))
     const size = files.reduce((n, f) => n + statSync(f).size, 0)
     if (images + files.length > config.max_images || bytes + size > maxBytes) break
     kept.push(p)
@@ -149,9 +154,9 @@ function uploadName(s: Shot, side: string): string {
 }
 
 function commentBody(pairs: Pair[], urls: Map<string, string>, omitted: number): string {
-  const cell = (side: string, file: string | null) => {
+  const cell = (side: 'before' | 'after', file: string | null) => {
     const url = file === null ? undefined : urls.get(`${side}/${file}`)
-    return url ? `![${side}](${url})` : '(new page)'
+    return url ? `![${side}](${url})` : side === 'before' ? '(new page)' : '(removed page)'
   }
   const lines = [
     '## Screenshots',

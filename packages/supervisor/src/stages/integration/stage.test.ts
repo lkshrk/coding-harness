@@ -381,6 +381,35 @@ describe('integration stage (screenshots)', () => {
     expect(create?.stdin).toContain('no screenshots were taken: the screenshots command produced no images.')
   })
 
+  test('a command that yields no images on the base commit opens a draft PR that says why', async () => {
+    const headOnly = `if [ -f src/b.ts ]; then ${SHOTS_COMMAND}; else mkdir -p shots && echo '[]' > shots/manifest.json; fi`
+    const h = integrationHarness(root, withUi(['src/**'], headOnly))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    expect(shotComments(h)).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      'no screenshots were taken: the screenshots command produced no images on the base commit.',
+    )
+  })
+
+  test('a page only the base commit renders keeps its before image in the comment', async () => {
+    const both =
+      'mkdir -p shots && head -c 64 src/a.test.ts > shots/home.png && head -c 64 src/a.test.ts > shots/old.png && if [ -f src/b.ts ]; then printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"}]\'; else printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/old","viewport":"desktop","theme":"dark","file":"old.png"}]\'; fi > shots/manifest.json'
+    const h = integrationHarness(root, withUi(['src/**'], both))
+    await h.integrated()
+    expect(h.linear.uploads.map((u) => u.name)).toEqual([
+      'desktop-dark-before.png',
+      'desktop-dark-after.png',
+      'old-desktop-dark-before.png',
+    ])
+    expect(shotComments(h)[0]?.body).toMatch(
+      /\| `\/old` \| desktop \| dark \| !\[before\]\(https:\/\/uploads\.linear\.test\/3\/[^)]*\) \| \(removed page\) \|/,
+    )
+    expect(h.gh.gh('create')[0]?.cmd).not.toContain('--draft')
+  })
+
   test('a UI change in a repository without a screenshots command opens a draft', async () => {
     const h = integrationHarness(root, (c) => {
       const { screenshots: _, ...omni } = withUi(['src/**'])(c).repositories
