@@ -196,7 +196,14 @@ export class Dispatcher {
       throw new ControlError('refused', `${identifier}: no earlier attempt has a commit to continue from`)
     }
     const last = runs.at(-1)
-    const agent = o.agent ?? this.selectFor(view, stage, (last?.attempt ?? 0) + 1, last)
+    const attempt = (last?.attempt ?? 0) + 1
+    const selected = this.selectFor(view, stage, attempt, last)
+    // An escalation selects a non-worker role; a manual retry means the issue was resolved, so pick its worker.
+    const agent =
+      o.agent ??
+      (selected !== undefined && this.rt.deps.agentKind(selected) === 'worker'
+        ? selected
+        : this.selectFor(view, stage, attempt, undefined))
     if (agent === undefined || this.rt.deps.agentKind(agent) !== 'worker') {
       throw new ControlError('refused', `${identifier}: no worker agent for stage ${stage}`)
     }
