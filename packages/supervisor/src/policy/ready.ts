@@ -1,5 +1,7 @@
 import type { Config } from '@nightshift/core'
 import type { LifecycleState } from '../ports'
+import { effectiveLimits } from './limits'
+import { type IssueSize, issueSize } from './size'
 import { type IssueView, lifecycleOf } from './stages'
 
 export type RunningIssue = { identifier: string; repository: string; files: string[] }
@@ -8,7 +10,11 @@ export type DispatchPlan = {
   dispatch: IssueView[]
   unblocked: { view: IssueView; by: string[] }[]
   waiting: { identifier: string; reason: string }[]
+  tooLarge: { view: IssueView; size: IssueSize; route: 'decomposition' | 'hold' }[]
+  sizes: Map<string, IssueSize>
 }
+
+export const DECOMPOSITION = 'decomposition'
 
 const GLOB = /[*?[{]/
 
@@ -64,8 +70,10 @@ export function planDispatch(input: {
   running: RunningIssue[]
   slots: number
   config: Config
+  profileFor?: (view: IssueView) => string
+  forcedSize?: ReadonlySet<string>
 }): DispatchPlan {
-  const plan: DispatchPlan = { dispatch: [], unblocked: [], waiting: [] }
+  const plan: DispatchPlan = { dispatch: [], unblocked: [], waiting: [], tooLarge: [], sizes: new Map() }
   const taken: RunningIssue[] = [...input.running]
   const ready: IssueView[] = []
   for (const view of input.candidates) {
@@ -91,6 +99,19 @@ export function planDispatch(input: {
         identifier: id,
         reason: 'no repo: label for a project with several repositories',
       })
+      continue
+    }
+    const profile = input.profileFor?.(view) ?? input.config.profiles.active
+    const size = issueSize(
+      view,
+      input.config.repositories[repository],
+      effectiveLimits(input.config, profile),
+    )
+    plan.sizes.set(id, size)
+    if (size.over.length && !input.forcedSize?.has(id)) {
+      const route = view.pipeline.includes(DECOMPOSITION) ? 'decomposition' : 'hold'
+      plan.tooLarge.push({ view, size, route })
+      plan.waiting.push({ identifier: id, reason: `too large: ${size.over.join(', ')}` })
       continue
     }
     const clash = taken.find((r) => r.repository === repository && filesOverlap(r.files, view.files))

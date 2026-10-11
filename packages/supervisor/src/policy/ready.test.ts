@@ -123,6 +123,59 @@ describe('planDispatch', () => {
     expect(plan.waiting[0]?.reason).toStartWith('invalid issue: missing section ## Goal')
   })
 
+  describe('size gate', () => {
+    const limited = (max: { max_estimate?: number; max_files?: number }) => {
+      const c = testConfig()
+      const profile = c.profiles.default as { limits?: Record<string, unknown> }
+      profile.limits = { ...max }
+      return c
+    }
+    const sized = (cfg: ReturnType<typeof testConfig>, over: Parameters<typeof snapshot>[0]) => {
+      const v = viewIssue(snapshot(over), cfg)
+      if (!v) throw new Error('unmanaged')
+      return v
+    }
+
+    test('an oversized feature is routed to decomposition, not dispatched', () => {
+      const cfg = limited({ max_estimate: 5 })
+      const a = sized(cfg, { identifier: 'FOR-1', estimate: 8 })
+      const plan = planDispatch({ candidates: [a], running: [], slots: 1, config: cfg })
+      expect(plan.dispatch).toEqual([])
+      expect(plan.tooLarge.map((t) => [t.view.snapshot.identifier, t.route, t.size.over])).toEqual([
+        ['FOR-1', 'decomposition', ['estimate 8 > 5']],
+      ])
+    })
+
+    test('an oversized bug is held', () => {
+      const cfg = limited({ max_files: 2 })
+      const a = sized(cfg, {
+        identifier: 'FOR-1',
+        project: null,
+        labels: ['bug', 'ai-stage:implementation', 'repo:omni'],
+        description: files('a/', 'b.ts'),
+      })
+      const plan = planDispatch({ candidates: [a], running: [], slots: 1, config: cfg })
+      expect(plan.dispatch).toEqual([])
+      expect(plan.tooLarge.map((t) => t.route)).toEqual(['hold'])
+      expect(plan.waiting).toEqual([{ identifier: 'FOR-1', reason: 'too large: files 4 > 2' }])
+    })
+
+    test('a forced issue dispatches; an issue under the limits dispatches', () => {
+      const cfg = limited({ max_estimate: 5 })
+      const big = sized(cfg, { identifier: 'FOR-1', estimate: 8, description: files('a') })
+      const small = sized(cfg, { identifier: 'FOR-2', estimate: 1, description: files('b') })
+      const plan = planDispatch({
+        candidates: [big, small],
+        running: [],
+        slots: 2,
+        config: cfg,
+        forcedSize: new Set(['FOR-1']),
+      })
+      expect(plan.dispatch.map((v) => v.snapshot.identifier).sort()).toEqual(['FOR-1', 'FOR-2'])
+      expect(plan.sizes.get('FOR-2')?.over).toEqual([])
+    })
+  })
+
   test('an issue without a repository waits', () => {
     const a = view({ identifier: 'FOR-1', project: null, labels: ['bug', 'ai-stage:implementation'] })
     const plan = planDispatch({ candidates: [a], running: [], slots: 1, config })
