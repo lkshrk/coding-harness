@@ -1,3 +1,4 @@
+import { AGENTS_USAGE } from '../agents'
 import type { Ctx } from '../cli'
 import { DOCTOR_USAGE } from '../doctor'
 import { ENV_USAGE } from '../env'
@@ -22,6 +23,7 @@ export const COMMAND_HELP: Record<string, { usage: string; description: string }
   supervise: { usage: 'ns supervise', description: 'Run the supervisor in the foreground.' },
   doctor: { usage: DOCTOR_USAGE, description: 'Check configuration and host readiness.' },
   env: { usage: ENV_USAGE, description: 'Build or open a repository environment.' },
+  agents: { usage: AGENTS_USAGE, description: 'Lint or render agent definitions.' },
   issue: { usage: ISSUE_USAGE, description: 'Validate an issue description from a file or Linear.' },
   status: { usage: STATUS_USAGE, description: 'Show supervisor and gateway status.' },
   tasks: { usage: TASKS_USAGE, description: 'List managed issues.' },

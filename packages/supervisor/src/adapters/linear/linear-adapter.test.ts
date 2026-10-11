@@ -156,6 +156,16 @@ describe('createLinearPort', () => {
     ])
   })
 
+  test('update with a null stage removes only the stage group label', async () => {
+    const { port, calls } = fakeLinear({
+      nsIssueTarget: () =>
+        target([rawLabel('l-impl', 'implementation', 'ai-stage'), rawLabel('l-bug', 'bug', 'type')]),
+      nsIssueUpdate: () => ({ issueUpdate: { success: true } }),
+    })
+    await port.update('FOR-1', { stage: null })
+    expect(updates(calls)).toEqual([{ removedLabelIds: ['l-impl'] }])
+  })
+
   test('update of an issue already in the wanted state sends nothing', async () => {
     const { port, calls } = fakeLinear({
       nsIssueTarget: () => target([rawLabel('l-impl', 'implementation', 'ai-stage')], 's-blocked'),

@@ -50,6 +50,19 @@ export class LinearSync {
     if (issue) this.observeIssue(issue)
   }
 
+  // Clears the stage label of Done issues; issues with a live run are left to enforceLinear.
+  async clearDoneStages(): Promise<void> {
+    const cfg = this.rt.config()
+    const busy = new Set(this.rt.runs.active().map((r) => r.issue))
+    const done = [...this.rt.cache.values()].filter(
+      (i) =>
+        !busy.has(i.identifier) &&
+        lifecycleOf(cfg, i.team, i.status) === 'done' &&
+        labelValue(i.labels, LABEL_GROUPS.stage) !== null,
+    )
+    for (const issue of done) await this.applyIntent(issue.identifier, { kind: 'done' })
+  }
+
   observeIssue(issue: IssueSnapshot): void {
     this.rt.cache.set(issue.identifier, issue)
     const lifecycle = lifecycleOf(this.rt.config(), issue.team, issue.status)
@@ -94,7 +107,10 @@ export class LinearSync {
     const labels =
       next.stage === undefined
         ? issue.labels
-        : [...issue.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${next.stage}`]
+        : [
+            ...issue.labels.filter((l) => !l.startsWith(prefix)),
+            ...(next.stage === null ? [] : [`${prefix}${next.stage}`]),
+          ]
     const status = next.status === undefined ? issue.status : teamStatuses(cfg, issue.team)[next.status]
     this.rt.cache.set(identifier, { ...issue, status, labels })
   }

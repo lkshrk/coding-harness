@@ -159,6 +159,70 @@ describe('mismatch on a running issue', () => {
   })
 })
 
+describe('stage label on Done', () => {
+  test('an issue you move to Done loses its stage label on the next sync, other labels stay', async () => {
+    const h = harness()
+    h.linear.put(
+      snapshot({ identifier: 'FOR-1', status: 'Blocked', labels: ['type:feature', 'ai-stage:acceptance'] }),
+    )
+    await h.sup.start()
+    h.linear.patch('FOR-1', { status: 'Done' })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+  })
+
+  test('a Done issue first seen at start loses its stage label, other labels stay', async () => {
+    const h = harness()
+    h.linear.put(
+      snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['type:feature', 'ai-stage:acceptance'] }),
+    )
+    await h.sup.start()
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+    expect(h.linear.updates).toEqual([{ identifier: 'FOR-1', change: { stage: null } }])
+  })
+
+  test('an issue with an open tracked pull request you move to Done loses its stage label', async () => {
+    const h = harness()
+    h.linear.put(
+      snapshot({
+        identifier: 'FOR-1',
+        status: 'In Review',
+        labels: ['type:feature', 'ai-stage:integration'],
+      }),
+    )
+    await h.sup.start()
+    h.sup.pullRequests.put({
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'omni',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'agent',
+      issue: 'FOR-1',
+      run: 'r1',
+      headSha: 'head1',
+      mode: 'manual',
+      draft: false,
+      ci: 'passed',
+    })
+    h.linear.patch('FOR-1', { status: 'Done' })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+  })
+
+  test('a Done issue already cached as Done loses a stage label added later', async () => {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['type:feature'] }))
+    await h.sup.start()
+    await h.sup.tick()
+    h.linear.patch('FOR-1', { labels: ['type:feature', 'ai-stage:acceptance'] })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+  })
+})
+
 describe('escalated hold after the issue leaves nightshift', () => {
   async function escalated() {
     const h = harness()
