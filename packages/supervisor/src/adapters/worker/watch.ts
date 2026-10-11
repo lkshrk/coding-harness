@@ -66,6 +66,7 @@ export class Watcher {
   private progressSteps = 0
   private noDiff: 'watching' | 'nudged' | 'done'
   private noDiffTurns = 0
+  private noDiffNudgeTurn = false
 
   constructor(
     private readonly limits: WatchLimits,
@@ -166,11 +167,17 @@ export class Watcher {
     if (this.steps < t.steps && this.tokens < t.tokens) return []
     this.noDiff = 'nudged'
     this.noDiffTurns = this.limits.graceTurns
+    this.noDiffNudgeTurn = true
     return [{ kind: 'no_diff', act: 'nudge', steps: this.steps, tokens: this.tokens }]
   }
 
   private noDiffTurnEnded(): WatchAction[] {
     if (this.noDiff !== 'nudged') return []
+    // The nudge lands mid-turn; only turns after the one that triggered it are grace turns.
+    if (this.noDiffNudgeTurn) {
+      this.noDiffNudgeTurn = false
+      return []
+    }
     this.noDiffTurns -= 1
     if (this.noDiffTurns > 0) return []
     this.noDiff = 'done'

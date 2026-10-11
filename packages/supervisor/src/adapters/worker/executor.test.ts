@@ -612,7 +612,7 @@ describe('WorkerExecutor watching', () => {
     expect(cb.of('failed')).toEqual([])
   })
 
-  test('no diff past no_diff_steps nudges once, then ends as task_too_large after the grace turn', async () => {
+  test('no diff past no_diff_steps nudges once, then ends as task_too_large after a full grace turn', async () => {
     config = {
       ...config,
       limits: { ...config.limits, worker: { ...config.limits.worker, no_diff_steps: 2 } },
@@ -628,14 +628,18 @@ describe('WorkerExecutor watching', () => {
       { steps: 2, tokens: 22, nudge: NO_DIFF_MESSAGE },
     ])
     worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => worker.sent.length === 2)
+    expect(cb.of('failed')).toEqual([])
+    worker.stream.push(step)
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
     await until(() => cb.of('failed').length === 1)
     expect(cb.of('failed')[0]).toEqual([
       'failed',
       run.id,
       'task_too_large',
-      'no diff after 4 steps and 44 tokens',
+      'no diff after 5 steps and 55 tokens',
     ])
-    expect(worker.sent).toEqual([NO_DIFF_MESSAGE])
+    expect(worker.sent).toEqual([NO_DIFF_MESSAGE, GRACE_MESSAGE])
   })
 
   test('a diff found when the no-diff threshold passes sends no nudge', async () => {

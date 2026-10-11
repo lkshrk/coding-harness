@@ -132,8 +132,9 @@ describe('Watcher', () => {
       const w = new Watcher({ ...noDiff, graceTurns: 2 }, quiet, 0)
       feed(w, [call('read'), step(), step(), step(), step()])
       expect(noDiffs(feed(w, [step(), turnEnd, { kind: 'idle', sinceMs: 30_000 }]))).toEqual([])
+      expect(noDiffs(feed(w, [step(), turnEnd]))).toEqual([])
       expect(noDiffs(feed(w, [step(), turnEnd]))).toEqual([
-        { kind: 'no_diff', act: 'stop', steps: 6, tokens: 60 },
+        { kind: 'no_diff', act: 'stop', steps: 7, tokens: 70 },
       ])
       expect(noDiffs(feed(w, [step(), turnEnd]))).toEqual([])
     })
@@ -149,7 +150,20 @@ describe('Watcher', () => {
       const w = new Watcher(noDiff, quiet, 0)
       feed(w, [call('read'), step(), turnEnd, step(), step()])
       expect(noDiffs(feed(w, [step()]))).toEqual([{ kind: 'no_diff', act: 'nudge', steps: 4, tokens: 40 }])
-      expect(noDiffs(feed(w, [turnEnd]))).toEqual([{ kind: 'no_diff', act: 'stop', steps: 4, tokens: 40 }])
+      expect(noDiffs(feed(w, [turnEnd]))).toEqual([])
+      expect(noDiffs(feed(w, [step(), turnEnd]))).toEqual([
+        { kind: 'no_diff', act: 'stop', steps: 5, tokens: 50 },
+      ])
+    })
+
+    test('the turn that triggers the nudge is not a grace turn', () => {
+      const w = new Watcher(noDiff, quiet, 0)
+      expect(noDiffs(feed(w, [call('read'), step(), step(), step(), step(), turnEnd]))).toEqual([
+        { kind: 'no_diff', act: 'nudge', steps: 4, tokens: 40 },
+      ])
+      expect(noDiffs(feed(w, [step(), turnEnd]))).toEqual([
+        { kind: 'no_diff', act: 'stop', steps: 5, tokens: 50 },
+      ])
     })
   })
 
