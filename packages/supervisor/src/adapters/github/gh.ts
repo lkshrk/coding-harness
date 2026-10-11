@@ -269,9 +269,10 @@ export class GhGitHost implements GitHost {
       }))
       const failed = checks.filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')
       const failedChecks = failed.map((c) => c.name)
+      // GitHub runs no checks on a conflicting PR, so an empty rollup is not a pass.
       const state = failedChecks.length
         ? 'failed'
-        : checks.some((c) => c.bucket === 'pending')
+        : checks.length === 0 || checks.some((c) => c.bucket === 'pending')
           ? 'pending'
           : 'passed'
       const failures: CiFailure[] = []
@@ -319,7 +320,7 @@ export class GhGitHost implements GitHost {
           '--repo',
           pr.repo,
           '--json',
-          'state,mergedAt,mergeCommit,headRefOid',
+          'state,mergedAt,mergeCommit,headRefOid,mergeable',
         ],
         { env: gitAuthEnv(token) },
       )
@@ -328,11 +329,18 @@ export class GhGitHost implements GitHost {
         state: string
         mergeCommit?: { oid?: string } | null
         headRefOid?: string
+        mergeable?: string
       }
       if (v.state === 'MERGED')
         return { state: 'merged', ...(v.mergeCommit?.oid ? { mergeSha: v.mergeCommit.oid } : {}) }
       return {
         state: v.state === 'CLOSED' ? 'closed' : 'open',
+        mergeable:
+          v.mergeable === 'MERGEABLE'
+            ? 'mergeable'
+            : v.mergeable === 'CONFLICTING'
+              ? 'conflicting'
+              : 'unknown',
         ...(v.headRefOid ? { headSha: v.headRefOid } : {}),
       }
     })

@@ -48,6 +48,7 @@ export type Attempt = {
   findings?: string
   ciFailures?: CiFailure[]
   reviewThreads?: ReviewThread[]
+  prConflict?: { base: string; files: string[] }
 }
 
 export type ExecutorStart = {
@@ -56,7 +57,9 @@ export type ExecutorStart = {
   files: string[]
   sourceFiles?: { path: string; content: string }[]
   knowledgeRepo?: string
-  repairFrom?: { run: string; headSha: string } | { ref: string; headSha: string }
+  repairFrom?: ({ run: string; headSha: string } | { ref: string; headSha: string }) & {
+    resolveConflicts?: boolean
+  }
 }
 
 // A continued attempt's head cannot be merged with the current base without conflicts.

@@ -16,7 +16,8 @@ export class PullRequestWatch {
   ) {}
 
   async pullRequestOpened(record: PullRequestRecord, title: string): Promise<void> {
-    this.rt.pullRequests.put(record)
+    const conflict = record.conflict ?? this.rt.pullRequests.get(record.issue)?.conflict
+    this.rt.pullRequests.put({ ...record, ...(conflict ? { conflict } : {}) })
     const logged = this.rt.log
       .since(null, { issue: record.issue, types: ['PR_CREATED'] })
       .some((e) => e.data.url === record.url)
@@ -65,6 +66,9 @@ export class PullRequestWatch {
         if (lifecycle === 'done' && state.state !== 'merged') this.rt.pullRequests.remove(pr.issue)
         else if (state.state === 'merged') await this.pullRequestMerged(pr)
         else if (state.state === 'closed') await this.pullRequestClosed(pr)
+        else if (state.mergeable === 'conflicting') await this.checkConflict(pr, state.headSha ?? pr.headSha)
+        // GitHub is still computing mergeability; every signal waits for the next poll.
+        else if (state.mergeable === 'unknown') continue
         else {
           if (pr.ci === 'pending') await this.checkCi(pr, await host.ci(pr))
           await this.checkReviews(pr, host)
@@ -73,6 +77,56 @@ export class PullRequestWatch {
         console.error(`watch ${pr.url} (${pr.issue}): ${(e as Error).message}`)
       }
     }
+  }
+
+  // One repair round per base sha; a conflict that outlives its round goes to the user.
+  async checkConflict(pr: PullRequestRecord, head: string): Promise<void> {
+    if (this.rt.runs.active().some((r) => r.issue === pr.issue)) return
+    const repos = this.rt.deps.repos
+    const base = await repos.baseSha(pr.repository)
+    const round = pr.conflict
+    if (round?.base === base) {
+      const from = this.rt.runs.get(round.run)
+      // A finished repair counts once integration has caught up with it, pushed or not.
+      const finished = this.rt.runs
+        .forIssue(pr.issue)
+        .some(
+          (r) =>
+            r.state === 'done' &&
+            r.attempt > (from?.attempt ?? 0) &&
+            (r.headSha === null || r.headSha === pr.headSha),
+        )
+      const over = finished || pr.headSha !== round.head || this.flow.awaiting(pr.issue) !== null
+      if (round.held || !over) return
+      this.rt.pullRequests.put({ ...pr, conflict: { ...round, held: true } })
+      const files = round.files.length ? round.files.join(', ') : 'unknown files'
+      await this.rt.postOnce(
+        pr.issue,
+        `pr-conflict-${base}`,
+        `${pr.url} still conflicts with base ${base} after a repair round, in: ${files}. Merge the base into \`${pr.branch}\` by hand, or retry.`,
+      )
+      await this.flow.holdForYou(pr.issue, { kind: 'escalated', stage: INTEGRATION, reason: 'pr_conflict' })
+      await this.rt.notify(`PR #${pr.number} conflicts with its base`, pr.issue, {
+        kind: 'blocked',
+        url: pr.url,
+        context: [`conflicting files: ${files}`],
+        action: `Resolve the conflict on ${pr.branch}, then merge or retry`,
+      })
+      return
+    }
+    const run = this.rt.runs.get(pr.run)
+    if (!run || this.flow.awaiting(pr.issue) !== null) return
+    // A worker-pushed head need not be in the host checkout; a failed fetch or inspection throws
+    // before the round is recorded, so the next poll tries again.
+    const fetched = repos.fetchPullRequest ? await repos.fetchPullRequest(pr.repository, pr) : head
+    const files = (await repos.conflictingFiles?.(pr.repository, base, fetched)) ?? []
+    this.rt.pullRequests.put({ ...pr, conflict: { base, files, run: run.id, head: pr.headSha } })
+    await this.flow.remediate(
+      run,
+      'pr_conflict',
+      `base ${base} conflicts in: ${files.length ? files.join(', ') : 'unknown files'}`,
+    )
+    await this.flow.refresh(pr.issue)
   }
 
   async checkCi(pr: PullRequestRecord, ci: CiState): Promise<void> {

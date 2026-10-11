@@ -132,6 +132,9 @@ export function historyItems(input: ContextInput): Item[] {
               )
               .join('\n')}`
           : '',
+        a.prConflict
+          ? `The pull request conflicts with base \`${a.prConflict.base}\` in: ${a.prConflict.files.map((f) => `\`${f}\``).join(', ') || '(unknown files)'}. The merge of that base is in progress in the workspace: resolve every conflict keeping both sides' intent, \`git add\` the files and \`git commit --no-edit\` to conclude the merge. Finish BLOCKED if a conflict needs a decision.`
+          : '',
       ]),
     }))
   const wip = input.wip

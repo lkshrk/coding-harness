@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { activeProfile, GatewayError, loadAgents, runSingleCall, WORKER_BLOCKS } from '@nightshift/core'
@@ -180,6 +180,38 @@ describe('gitRepos', () => {
       expect(await repos.fetchPullRequest?.('omni', { number: 7, branch: 'ns/FOR-1' })).toBe(head)
       expect(git(checkout, 'rev-parse', 'refs/nightshift/pr/7')).toBe(head)
       expect([git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'symbolic-ref', 'HEAD')]).toEqual(before)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('gitRepos.conflictingFiles', () => {
+  test('names the files a merge of base into head conflicts in, and none for a clean merge', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ns-repos-'))
+    try {
+      const checkout = originWithCheckout(root)
+      const commit = (file: string, content: string) => {
+        writeFileSync(join(checkout, file), content)
+        git(checkout, 'add', '-A')
+        git(checkout, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', file)
+        return git(checkout, 'rev-parse', 'HEAD')
+      }
+      const start = commit('ARCHITECTURE.md', 'one\n')
+      const head = commit('ARCHITECTURE.md', 'head\n')
+      git(checkout, 'checkout', '-q', start)
+      const base = commit('ARCHITECTURE.md', 'base\n')
+      const clean = commit('other.md', 'x\n')
+      const config = testConfig()
+      const repos = gitRepos(
+        () =>
+          ({
+            ...config,
+            repositories: { omni: { ...config.repositories.omni, path: checkout } },
+          }) as typeof config,
+      )
+      expect(await repos.conflictingFiles?.('omni', base, head)).toEqual(['ARCHITECTURE.md'])
+      expect(await repos.conflictingFiles?.('omni', clean, base)).toEqual([])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

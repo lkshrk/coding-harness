@@ -19,7 +19,12 @@ export type CiState = {
   url: string
 }
 
-export type PullRequestState = { state: 'open' | 'merged' | 'closed'; mergeSha?: string; headSha?: string }
+export type PullRequestState = {
+  state: 'open' | 'merged' | 'closed'
+  mergeSha?: string
+  headSha?: string
+  mergeable?: 'mergeable' | 'conflicting' | 'unknown'
+}
 
 export type ReviewComment = { id: number; author: string; body: string }
 
@@ -69,7 +74,11 @@ export interface GitHost {
 export interface RepoInspector {
   baseSha(repository: string): Promise<string>
   fetchPullRequest?(repository: string, pr: Pick<PullRequest, 'number' | 'branch'>): Promise<string>
+  conflictingFiles?(repository: string, base: string, head: string): Promise<string[]>
 }
+
+// One repair round per base sha: `run` is the run the round continues from, `head` the PR head it saw.
+export type PullRequestConflict = { base: string; files: string[]; run: string; head: string; held?: boolean }
 
 export type PullRequestRecord = PullRequest & {
   issue: string
@@ -81,4 +90,5 @@ export type PullRequestRecord = PullRequest & {
   title?: string
   body?: string
   mergeSha?: string
+  conflict?: PullRequestConflict
 }
