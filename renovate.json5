@@ -24,6 +24,14 @@
     },
     {
       customType: 'regex',
+      description: 'SHA-256 pins of a release asset: the comment carries the release, the line its checksum',
+      managerFilePatterns: ['/(^|/)features/.+/tools\\.sh$/'],
+      matchStrings: [
+        '# renovate-digest: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+) digestVersion=(?<currentValue>\\S+)\\n\\S+?="(?<currentDigest>[0-9a-f]{64})"',
+      ],
+    },
+    {
+      customType: 'regex',
       description: 'biome.json schema URL follows the Biome version',
       managerFilePatterns: ['/(^|/)biome\\.json$/'],
       matchStrings: ['biomejs\\.dev/schemas/(?<currentValue>[^/]+)/schema\\.json'],
@@ -59,6 +67,17 @@
       matchFileNames: ['features/stack-*/**', 'features/mise/**'],
       matchUpdateTypes: ['minor', 'patch'],
       automerge: true,
+    },
+    {
+      description: 'Python 3.15: hold until ruamel-yaml-clib and the other agent-layer tools ship 3.15 wheels; the image has no C compiler',
+      matchDepNames: ['python'],
+      allowedVersions: '<3.15',
+    },
+    {
+      description: 'mise: the version and its per-architecture SHA-256 pins in features/mise/tools.sh move together',
+      groupName: 'mise',
+      matchFileNames: ['features/mise/tools.sh'],
+      matchDepNames: ['jdx/mise'],
     },
     {
       description: 'uv: Feature pins (github-releases) and environment base images (docker) move together',
