@@ -420,7 +420,7 @@ describe('integration stage (screenshots)', () => {
     expect(h.gh.gh('create')[0]?.stdin).toContain('the repository has no screenshots command.')
   })
 
-  test('the image cap limits the uploads and the comment says how many were left out', async () => {
+  test('the image cap limits the uploads, says how many were left out and opens a draft', async () => {
     const many =
       'mkdir -p shots && for v in a b c; do head -c 64 src/a.test.ts > shots/$v.png; done && printf \'%s\' \'[{"page":"/","viewport":"a","theme":"dark","file":"a.png"},{"page":"/","viewport":"b","theme":"dark","file":"b.png"},{"page":"/","viewport":"c","theme":"dark","file":"c.png"}]\' > shots/manifest.json'
     const h = integrationHarness(root, (c) => {
@@ -440,7 +440,13 @@ describe('integration stage (screenshots)', () => {
     await h.integrated()
     expect(h.linear.uploads).toHaveLength(4)
     expect(shotComments(h)[0]?.body).toContain('1 more screenshots were left out by the configured cap.')
-    expect(h.gh.gh('create')[0]?.stdin).toContain('1 more screenshots were left out by the configured cap.')
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      '## Screenshots\nDraft: the screenshots are incomplete.\nBefore and after: https://linear.app/h-cloud/issue/FOR-1#comment-',
+    )
+    expect(create?.stdin).toContain('1 more screenshots were left out by the configured cap.')
+    expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
   })
 
   test('a retried attempt replaces the earlier screenshot comment instead of adding one', async () => {

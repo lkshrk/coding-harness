@@ -61,6 +61,7 @@ export function pullRequestBody(i: PullRequestBodyInput): string {
         `Draft: this change touches UI paths, but no screenshots were taken: ${i.screenshots.reason}.`,
       )
     else {
+      if (i.screenshots.omitted > 0) parts.push('Draft: the screenshots are incomplete.')
       parts.push(`Before and after: ${i.screenshots.url}`)
       if (i.screenshots.omitted > 0)
         parts.push(`${i.screenshots.omitted} more screenshots were left out by the configured cap.`)
