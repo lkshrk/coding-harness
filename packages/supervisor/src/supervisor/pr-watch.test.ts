@@ -99,6 +99,117 @@ describe('pull request watching', () => {
     }
   })
 
+  test('checks that also fail on the base sha hold the issue as base_failed with no repair run', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [
+        { name: 'build', bucket: 'pass' },
+        { name: 'pip-audit', bucket: 'fail' },
+      ]
+      h.gh.baseChecks = [
+        { name: 'build', bucket: 'pass' },
+        { name: 'pip-audit', bucket: 'fail' },
+      ]
+      await h.first.tick()
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.of('CI_FAILED')).toHaveLength(1)
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(1)
+      expect(h.first.runs.get(h.run.id)?.failure).toBeNull()
+      expect(h.first.awaiting('FOR-1')).toEqual({
+        kind: 'escalated',
+        stage: 'integration',
+        reason: 'base_failed',
+      })
+      expect(h.linear.get('FOR-1').status).toBe('Blocked')
+      const sent = h.of('NOTIFICATION_SENT').filter((e) => String(e.data.title).includes('base'))
+      expect(sent).toHaveLength(1)
+      expect(sent[0]?.data.title).toContain(h.gh.baseSha)
+      const comments = (await h.linear.comments('FOR-1')).filter((c) => c.body.includes(h.gh.baseSha))
+      expect(comments).toHaveLength(1)
+      expect(comments[0]?.body).toContain('pip-audit')
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('another poll failing on the same base sha sends no second notification', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'pip-audit', bucket: 'fail' }]
+      h.gh.baseChecks = [{ name: 'pip-audit', bucket: 'fail' }]
+      await h.first.tick()
+      const pr = h.first.pullRequests.get('FOR-1')
+      if (!pr) throw new Error('no PR')
+      h.first.pullRequests.put({ ...pr, ci: 'pending' })
+      await h.first.tick()
+      const sent = h.of('NOTIFICATION_SENT').filter((e) => String(e.data.title).includes('fails on base'))
+      expect(sent).toHaveLength(1)
+      expect(h.of('CI_FAILED')).toHaveLength(2)
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('checks that pass on the base sha keep the ci_failed remediation', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'e2e', bucket: 'fail' }]
+      h.gh.baseChecks = [{ name: 'e2e', bucket: 'pass' }]
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED').map((e) => e.data)).toEqual([
+        {
+          class: 'implementation_defect',
+          action: 'retry_same',
+          evidence: 'failed checks: e2e',
+          fallback: false,
+        },
+      ])
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a base sha without a completed run keeps the ci_failed remediation', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'e2e', bucket: 'fail' }]
+      h.gh.baseChecks = [{ name: 'e2e', bucket: 'pending' }]
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('after a base_failed hold a retry on the fixed base continues normally', async () => {
+    const h = await watching({ retry: { baseMs: 0, maxMs: 0 } })
+    try {
+      h.gh.checks = [{ name: 'pip-audit', bucket: 'fail' }]
+      h.gh.baseChecks = [{ name: 'pip-audit', bucket: 'fail' }]
+      await h.first.tick()
+      expect(h.first.awaiting('FOR-1')?.reason).toBe('base_failed')
+      h.gh.baseSha = 'f1xed'
+      h.gh.baseChecks = [{ name: 'pip-audit', bucket: 'pass' }]
+      h.gh.checks = [{ name: 'pip-audit', bucket: 'pass' }]
+      const retried = await h.first.retryRun('FOR-1', {}, 'cli')
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+      expect(retried.id).not.toBe(h.run.id)
+      const head = await repaired(h, {})
+      expect(h.first.pullRequests.get('FOR-1')?.headSha).toBe(head)
+      await h.first.tick()
+      expect(h.of('CI_PASSED')).toHaveLength(1)
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('a merge logs MERGED, sets done and unblocks an issue blocked only by it', async () => {
     const h = await watching()
     try {

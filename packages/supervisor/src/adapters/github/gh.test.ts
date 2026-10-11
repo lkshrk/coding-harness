@@ -297,6 +297,46 @@ describe('GhGitHost pull requests', () => {
     account: 'agent',
   }
 
+  test('reads the check results of the latest completed run on the base sha', async () => {
+    const { gh, host } = setup()
+    gh.prs.push({ number: 1, url: ciPr.url, head: 'ns/FOR-1', state: 'OPEN' })
+    expect(await host.baseCi(ciPr)).toBeNull()
+    gh.baseChecks = [{ name: 'pip-audit', bucket: 'pending' }]
+    expect(await host.baseCi(ciPr)).toBeNull()
+    gh.baseChecks = [
+      { name: 'build', bucket: 'pass' },
+      { name: 'pip-audit', bucket: 'fail', run: 9 },
+      { name: 'lint', bucket: 'cancel' },
+    ]
+    const url = `https://github.com/lkshrk/omni/commit/${gh.baseSha}`
+    expect(await host.baseCi(ciPr)).toEqual({
+      state: 'failed',
+      failedChecks: ['pip-audit', 'lint'],
+      failures: [
+        { name: 'pip-audit', url: 'https://github.com/lkshrk/omni/actions/runs/9', log: '' },
+        { name: 'lint', url: '', log: '' },
+      ],
+      url,
+      sha: gh.baseSha,
+    })
+    gh.baseChecks = [
+      { name: 'build', bucket: 'pass' },
+      { name: 'deploy', bucket: 'skipping' },
+    ]
+    expect(await host.baseCi(ciPr)).toEqual({
+      state: 'passed',
+      failedChecks: [],
+      failures: [],
+      url,
+      sha: gh.baseSha,
+    })
+    expect(gh.baseCiReads().map((c) => c.cmd[2])).toEqual(
+      Array(4).fill(`repos/lkshrk/omni/commits/${gh.baseSha}/check-runs?per_page=100`),
+    )
+    expect(gh.baseCiReads()[0]?.env.GH_TOKEN).toBe(AGENT_TOKEN)
+    expect(gh.logReads()).toEqual([])
+  })
+
   test('a failing check run carries an excerpt of its failed job log', async () => {
     const { gh, host } = setup()
     const noise = (tag: string) =>
