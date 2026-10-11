@@ -121,6 +121,30 @@ describe('SandboxGateRunner', () => {
     expect(sandbox.destroyed).toEqual(['ctr-01RUN-gate'])
   })
 
+  test('collects an output directory to the host after the checks pass', async () => {
+    const { sandbox, runner } = setup()
+    sandbox.onExec = (cmd) => {
+      if (!cmd[2]?.includes('cp -R') || !cmd[5]) return undefined
+      mkdirSync(cmd[5], { recursive: true })
+      writeFileSync(join(cmd[5], 'home.png'), 'png')
+      return {}
+    }
+    const into = join(root, 'collected')
+    await runner.run(repo, '', 'c0ffee', checks, { run: '01RUN', collect: { dir: 'shots', into } })
+    const copy = sandbox.execs.find((e) => e.cmd[2]?.includes('cp -R'))
+    expect(copy?.cmd[4]).toBe('/work/omni/shots')
+    expect(readFileSync(join(into, 'home.png'), 'utf8')).toBe('png')
+    expect(sandbox.destroyed).toEqual(['ctr-01RUN-gate'])
+  })
+
+  test('collects nothing when a check fails', async () => {
+    const { sandbox, runner } = setup({ 'make lint': { exitCode: 1 } })
+    const into = join(root, 'collected')
+    await runner.run(repo, '', 'c0ffee', checks, { run: '01RUN', collect: { dir: 'shots', into } })
+    expect(sandbox.execs.some((e) => e.cmd[2]?.includes('cp -R'))).toBe(false)
+    expect(existsSync(into)).toBe(false)
+  })
+
   test('destroys a stale gate sandbox of the same run before creating a fresh one', async () => {
     const { sandbox, runner } = setup()
     const stale = { driver: 'docker' as const, id: 'old', name: '01RUN' }

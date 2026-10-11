@@ -65,10 +65,15 @@ export interface LinearPort {
   comments(identifier: string): Promise<LinearComment[]>
   lastChange(identifier: string): Promise<LinearChange | null>
   update(identifier: string, change: IssueUpdate): Promise<void>
-  comment(identifier: string, body: string, opts?: { parentId?: string }): Promise<LinearComment>
+  comment(
+    identifier: string,
+    body: string,
+    opts?: { parentId?: string; replace?: boolean },
+  ): Promise<LinearComment>
   attachLink(identifier: string, url: string, title: string): Promise<void>
   /** Creates a child of `parent` in its team, project and milestone, reusing one with the same title and description. */
   createChild(parent: string, issue: { title: string; description: string }): Promise<string>
   /** Makes `blocker` block `blocked`; a no-op when the relation exists. */
   addBlocks(blocker: string, blocked: string): Promise<void>
+  uploadFile(name: string, contentType: string, bytes: Uint8Array): Promise<string>
 }

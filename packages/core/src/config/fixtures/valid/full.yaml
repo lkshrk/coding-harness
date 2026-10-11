@@ -65,6 +65,11 @@ repositories:
         run: bun test
         timeout: 20m
     risk_paths: ['migrations/**', '.github/**']
+    ui_paths: ['web/src/routes/**', '**/*.svelte']
+    screenshots:
+      run: pnpm test:screenshots
+      output: web/test/screenshots
+      max_images: 24
     macos_only: false
   wow-addon:
     path: /Users/me/Dev/wow-addon

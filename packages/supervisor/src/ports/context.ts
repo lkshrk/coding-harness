@@ -39,7 +39,7 @@ export interface GateRunner {
     bundle: string,
     headSha: string,
     checks: Check[],
-    opts?: { run?: string; signal?: AbortSignal },
+    opts?: { run?: string; signal?: AbortSignal; collect?: { dir: string; into: string } },
   ): Promise<GateResult[]>
 }
 
