@@ -1,4 +1,6 @@
 import {
+  type EffectiveLimits,
+  effectiveLimits,
   type Health,
   openStateReadOnly,
   questionRecords,
@@ -20,12 +22,14 @@ export async function statusRecord(ctx: Ctx): Promise<StatusRecord | { superviso
   try {
     const s = readStatus(db)
     const signal = signalConfigured(ctx) ? readSignalState(db) : null
+    const limits = profileLimits(ctx, s.activeProfile)
     return {
       supervisor: up ? 'running' : 'down',
       dispatch: up?.dispatch ?? s.dispatch,
       gateway: up?.gateway ?? null,
       ...(signal ? { signal } : {}),
       profile: s.activeProfile,
+      ...(limits ? { limits } : {}),
       restart_required: s.restartRequired,
       held: s.held,
       covered: s.covered,
@@ -47,6 +51,28 @@ function signalConfigured(ctx: Ctx): boolean {
   }
 }
 
+function profileLimits(ctx: Ctx, profile: string | null): EffectiveLimits | undefined {
+  try {
+    return effectiveLimits(ctx.config(), profile ?? undefined)
+  } catch {
+    return undefined
+  }
+}
+
+function limitsLine(l: EffectiveLimits): string {
+  const gate = [
+    l.max_estimate !== undefined ? `max estimate ${l.max_estimate}` : '',
+    l.max_files !== undefined ? `max ${l.max_files} files` : '',
+  ].filter(Boolean)
+  return [
+    `limits: ${l.wall_clock}`,
+    `${l.tokens} tokens`,
+    `${l.steps} steps`,
+    `no diff after ${l.no_diff_steps} steps / ${l.no_diff_tokens} tokens`,
+    ...gate,
+  ].join(', ')
+}
+
 function render(ctx: Ctx, r: Awaited<ReturnType<typeof statusRecord>>): string[] {
   const p = paint(ctx.color)
   const lines: string[] = []
@@ -64,6 +90,7 @@ function render(ctx: Ctx, r: Awaited<ReturnType<typeof statusRecord>>): string[]
     `dispatch: ${dispatch}  gateway: ${gateway}${signal}${r.restart_required ? '  (restart required)' : ''}`,
   )
   lines.push(`profile: ${r.profile ?? 'none'}`)
+  if (r.limits) lines.push(limitsLine(r.limits))
   if (r.workers.length === 0) lines.push('workers: none')
   else {
     lines.push('workers:')

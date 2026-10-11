@@ -379,6 +379,24 @@ export interface Profile {
   models: {
     [k: string]: Model
   }
+  /**
+   * overlaid on limits.worker for runs under this profile
+   */
+  limits?: {
+    wall_clock?: Duration
+    tokens?: TokenCount
+    steps?: number
+    no_diff_steps?: number
+    no_diff_tokens?: TokenCount
+    /**
+     * largest issue estimate dispatched under this profile
+     */
+    max_estimate?: number
+    /**
+     * most files an issue may name to be dispatched under this profile
+     */
+    max_files?: number
+  }
 }
 export interface Model {
   /**

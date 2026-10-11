@@ -92,6 +92,7 @@ test('preserves the public runtime exports', async () => {
     'dockerCli',
     'dshPatch',
     'duplicateInput',
+    'effectiveLimits',
     'eventsAfter',
     'expandFiles',
     'failureReason',
