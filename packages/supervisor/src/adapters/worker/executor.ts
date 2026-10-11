@@ -10,6 +10,7 @@ import {
   renderFinishPlugin,
   type WorkerImage,
 } from '@nightshift/core'
+import { effectiveLimits } from '../../policy/limits'
 import { branchOf, parseDuration, parseTokens, workdirOf } from '../../policy/naming'
 import type {
   BuiltContext,
@@ -206,7 +207,7 @@ export class WorkerExecutor implements RunExecutor {
           apiKey: await this.d.gatewayKey(run),
           sessionId: run.id,
         },
-        limits: this.limits(def),
+        limits: this.limits(def, run),
         workdir,
       })
     } catch (e) {
@@ -218,7 +219,7 @@ export class WorkerExecutor implements RunExecutor {
       session: session.id,
       attach: shellJoin(session.attach),
     })
-    this.runs.watch(run, session, sandbox, workdir, this.limits(def), this.now())
+    this.runs.watch(run, session, sandbox, workdir, this.limits(def, run), this.now())
   }
 
   async reattach(run: Run): Promise<void> {
@@ -231,7 +232,7 @@ export class WorkerExecutor implements RunExecutor {
       { id: run.session, attach: [] },
       sandbox,
       workdirOf(run),
-      this.limits(def),
+      this.limits(def, run),
       Date.parse(run.startedAt),
     )
   }
@@ -304,8 +305,8 @@ export class WorkerExecutor implements RunExecutor {
     }
   }
 
-  private limits(def: AgentDef): RunLimits {
-    const w = this.d.config.limits.worker
+  private limits(def: AgentDef, run: Run): RunLimits {
+    const w = effectiveLimits(this.d.config, run.profile)
     return {
       steps: w.steps,
       wallClockMs: parseDuration(w.wall_clock),
