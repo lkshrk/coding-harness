@@ -385,6 +385,18 @@ describe('gate step', () => {
       expect(h.gateEvents()).toEqual([])
     })
 
+    test('a conflict separator left after removing the other markers fails as base_conflict', async () => {
+      const h = harness()
+      writeFileSync(join(h.fx.worker, 'src/a.test.ts'), 'ours\n=======\ntheirs\n')
+      git(h.fx.worker, 'commit', '-q', '-am', 'resolve')
+      await conflicted(h, h.fx.base)
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: 'conflict markers left in: src/a.test.ts',
+      })
+      expect(h.gateEvents()).toEqual([])
+    })
+
     test('a concluded merge without markers is gated', async () => {
       const h = harness()
       await conflicted(h, h.fx.base)

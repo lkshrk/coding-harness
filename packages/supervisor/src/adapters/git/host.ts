@@ -39,7 +39,7 @@ export function unresolvedMerge(
   if (merged.exitCode === 1) return `the merge of base ${base} was not concluded (${files.join(', ')})`
   if (merged.exitCode !== 0)
     throw new Error(`git merge-base ${base} ${head}: ${merged.stderr.toString().trim()}`)
-  const grep = run('grep', '-l', '-E', '^(<{7}|>{7})( |$)', head, '--', ...files)
+  const grep = run('grep', '-l', '-E', '^((<{7}|>{7}|[|]{7})( |$)|={7}$)', head, '--', ...files)
   if (grep.exitCode > 1) throw new Error(`git grep ${head}: ${grep.stderr.toString().trim()}`)
   const marked = grep.stdout
     .toString()
