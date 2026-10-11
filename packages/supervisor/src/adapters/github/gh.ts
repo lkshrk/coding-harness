@@ -58,22 +58,27 @@ async function gitRemote(checkout: string, remote: string): Promise<string> {
 
 export { BRANCH_PREFIX }
 
-export const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+// A thread's root comment is the reply target and its newest drives the watermark; middle comments past one page are skipped.
+export const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id
           isResolved
           isOutdated
           path
           line
-          comments(first: 100) { nodes { databaseId author { login } body } }
+          root: comments(first: 1) { nodes { databaseId author { login } body } }
+          comments(last: 100) { nodes { databaseId author { login } body } }
         }
       }
     }
   }
 }`
+
+type GhComment = { databaseId: number; author?: { login: string } | null; body: string }
 
 export const RESOLVE_MUTATION = `mutation($id: ID!) {
   resolveReviewThread(input: { threadId: $id }) { thread { id isResolved } }
@@ -84,13 +89,15 @@ export type GhThreadsResponse = {
     repository?: {
       pullRequest?: {
         reviewThreads?: {
+          pageInfo?: { hasNextPage: boolean; endCursor?: string | null }
           nodes?: {
             id: string
             isResolved: boolean
             isOutdated: boolean
             path: string
             line?: number | null
-            comments?: { nodes?: { databaseId: number; author?: { login: string } | null; body: string }[] }
+            root?: { nodes?: GhComment[] }
+            comments?: { nodes?: GhComment[] }
           }[]
         }
       }
@@ -361,37 +368,49 @@ export class GhGitHost implements GitHost {
   async reviewThreads(pr: PullRequest): Promise<ReviewThread[]> {
     const [owner, name] = pr.repo.split('/')
     return this.o.tokens.withToken(pr.repository, async (token) => {
-      const r = await this.run(
-        [
-          'gh',
-          'api',
-          'graphql',
-          '-f',
-          `query=${THREADS_QUERY}`,
-          '-f',
-          `owner=${owner}`,
-          '-f',
-          `name=${name}`,
-          '-F',
-          `number=${pr.number}`,
-        ],
-        { env: gitAuthEnv(token) },
-      )
-      this.check(r, 'gh api graphql reviewThreads')
-      const nodes =
-        (JSON.parse(r.stdout) as GhThreadsResponse).data?.repository?.pullRequest?.reviewThreads?.nodes ?? []
-      return nodes.map((t) => ({
-        id: t.id,
-        resolved: t.isResolved,
-        outdated: t.isOutdated,
-        path: t.path,
-        line: t.line ?? null,
-        comments: (t.comments?.nodes ?? []).map((c) => ({
-          id: c.databaseId,
-          author: c.author?.login ?? '',
-          body: c.body,
-        })),
-      }))
+      const threads: ReviewThread[] = []
+      let after: string | undefined
+      do {
+        const r = await this.run(
+          [
+            'gh',
+            'api',
+            'graphql',
+            '-f',
+            `query=${THREADS_QUERY}`,
+            '-f',
+            `owner=${owner}`,
+            '-f',
+            `name=${name}`,
+            '-F',
+            `number=${pr.number}`,
+            ...(after === undefined ? [] : ['-f', `after=${after}`]),
+          ],
+          { env: gitAuthEnv(token) },
+        )
+        this.check(r, 'gh api graphql reviewThreads')
+        const page = (JSON.parse(r.stdout) as GhThreadsResponse).data?.repository?.pullRequest?.reviewThreads
+        for (const t of page?.nodes ?? []) {
+          const tail = t.comments?.nodes ?? []
+          const root = t.root?.nodes?.[0]
+          const comments =
+            root && !tail.some((c) => c.databaseId === root.databaseId) ? [root, ...tail] : tail
+          threads.push({
+            id: t.id,
+            resolved: t.isResolved,
+            outdated: t.isOutdated,
+            path: t.path,
+            line: t.line ?? null,
+            comments: comments.map((c) => ({
+              id: c.databaseId,
+              author: c.author?.login ?? '',
+              body: c.body,
+            })),
+          })
+        }
+        after = page?.pageInfo?.hasNextPage ? (page.pageInfo.endCursor ?? undefined) : undefined
+      } while (after !== undefined)
+      return threads
     })
   }
 
