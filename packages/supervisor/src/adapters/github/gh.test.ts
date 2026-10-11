@@ -267,12 +267,21 @@ describe('GhGitHost pull requests', () => {
     ]
     expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], failures: [], url: pr.url })
     gh.checks = []
-    expect(await host.ci(pr)).toEqual({ state: 'passed', failedChecks: [], failures: [], url: pr.url })
+    expect(await host.ci(pr)).toEqual({ state: 'pending', failedChecks: [], failures: [], url: pr.url })
     expect(gh.gh('checks')).toHaveLength(0)
     expect(gh.ciReads()).toHaveLength(4)
-    expect(await host.state(pr)).toEqual({ state: 'open' })
+    expect(await host.state(pr)).toEqual({ state: 'open', mergeable: 'mergeable' })
     ;(gh.prs[0] as { headSha?: string }).headSha = 'pushed-by-hand'
-    expect(await host.state(pr)).toEqual({ state: 'open', headSha: 'pushed-by-hand' })
+    expect(await host.state(pr)).toEqual({ state: 'open', mergeable: 'mergeable', headSha: 'pushed-by-hand' })
+    for (const [raw, mergeable] of [
+      ['MERGEABLE', 'mergeable'],
+      ['CONFLICTING', 'conflicting'],
+      ['UNKNOWN', 'unknown'],
+    ] as const) {
+      ;(gh.prs[0] as { mergeable?: string }).mergeable = raw
+      expect((await host.state(pr)).mergeable).toBe(mergeable)
+    }
+    expect(gh.gh('view').at(-1)?.cmd.at(-1)).toContain('mergeable')
     ;(gh.prs[0] as { state: string }).state = 'MERGED'
     expect(await host.state(pr)).toEqual({ state: 'merged', mergeSha: 'm3rg3d' })
     expect(gh.gh('view')[0]?.env.GH_TOKEN).toBe(PERSONAL_TOKEN)

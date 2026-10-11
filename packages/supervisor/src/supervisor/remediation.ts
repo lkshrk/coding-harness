@@ -6,7 +6,7 @@ import type { RunFlow, SupervisorRuntime } from './runtime'
 
 const ENVIRONMENT_STREAK_PAUSE = 3
 const ENVIRONMENT_REASONS = ['sandbox_error', 'gateway_error', 'supervisor_restart']
-const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed', 'review_comments']
+const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed', 'review_comments', 'pr_conflict']
 
 const REPLANNED = ['split', 'create_blocker', 'escalate_lead']
 

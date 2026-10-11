@@ -13,7 +13,7 @@ import type { Db } from '../../state/db'
 import { EventLog } from '../../state/events'
 import { type Run, RunStore } from '../../state/runs'
 import { createUlid } from '../../state/ulid'
-import { CiFailureStore, ReviewRoundStore } from '../integration/records'
+import { CiFailureStore, PullRequestStore, ReviewRoundStore } from '../integration/records'
 import { selectVaultPages } from './vault'
 
 export type { TaskMessage, TaskStart } from '../../ports/context'
@@ -82,6 +82,7 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
   const log = new EventLog(db, stores)
   const ci = new CiFailureStore(db)
   const reviews = new ReviewRoundStore(db)
+  const conflict = new PullRequestStore(db).get(issue)?.conflict
   return new RunStore(db, stores)
     .forIssue(issue)
     .filter((r) => r.id !== current && r.failure !== null)
@@ -99,6 +100,7 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
         ...(findings ? { findings } : {}),
         ...(ciFailures.length ? { ciFailures } : {}),
         ...(reviewThreads.length ? { reviewThreads } : {}),
+        ...(conflict?.run === r.id ? { prConflict: { base: conflict.base, files: conflict.files } } : {}),
       }
     })
 }

@@ -449,6 +449,19 @@ describe('WorkerExecutor.start', () => {
       expect(git(fx.repo, 'rev-parse', 'HEAD')).toBe(fx.head)
     })
 
+    test('a conflict repair leaves the merge in progress for the worker', async () => {
+      const fx = continued({ base: { 'shared.txt': 'base\n' }, head: { 'shared.txt': 'attempt\n' } })
+      await executor().start({
+        run: { ...run, attempt: 2, baseSha: fx.base },
+        issue: snapshot({ identifier: 'FOR-1' }),
+        files: [],
+        repairFrom: { run: '01JPREV', headSha: fx.head, resolveConflicts: true },
+      })
+      expect(git(fx.repo, 'diff', '--name-only', '--diff-filter=U')).toBe('shared.txt')
+      expect(git(fx.repo, 'rev-parse', 'MERGE_HEAD')).toBe(fx.base)
+      expect(worker.starts).toHaveLength(1)
+    })
+
     test('a head that already contains the base is used as is', async () => {
       const fx = continued({ base: { 'base.txt': 'new\n' }, head: { 'work.txt': 'work\n' } }, true)
       await start(fx.base, fx.head)
