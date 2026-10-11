@@ -123,6 +123,20 @@ describe('repository agents', () => {
       }
     }
   })
+
+  test('the shared base gives every worker the comment rule', () => {
+    const rules = sections(readFileSync(join(ROOT, 'agents/_base/worker.md'), 'utf8')).get('Rules') ?? ''
+    for (const phrase of [
+      'docstrings, SQL `--` and YAML/shell `#`',
+      'none by default, one line at most',
+      'a non-obvious reason, an invariant, a workaround',
+      'ticket, issue, PR or task ID',
+      '"until X lands", "for now", "new", "next to the old"',
+      'restated code',
+    ])
+      expect(rules).toContain(phrase)
+    expect((agents.get('implementer') as AgentDef).body).not.toContain('Write no comments unless')
+  })
 })
 
 describe('lead', () => {
@@ -343,6 +357,34 @@ describe('reviewer', () => {
     )
     const blocker = output.findings.find((f) => f.severity === 'BLOCKER')
     expect(blocker?.evidence).toContain('expect(send.calls).toBe(3)')
+  })
+
+  test('blocks added comments with ticket IDs or temporary state; other comment style is a suggestion', () => {
+    const rules = sections((agents.get('reviewer') as AgentDef).body).get('Rules') ?? ''
+    expect(rules).toMatch(/comment or docstring that names a ticket or issue ID or describes temporary state/)
+    expect(rules).toContain('other comment style')
+  })
+
+  test('a comment citing a ticket yields a BLOCKER quoting that line', async () => {
+    const { output, input } = await replay<{ verdict: string; findings: Record<string, string>[] }>(
+      'reviewer',
+      'ticket-comment',
+    )
+    expect(input).toMatch(/^\+5 +# ROU-123: /m)
+    expect(output.verdict).toBe('fail')
+    const blocker = output.findings.find((f) => f.severity === 'BLOCKER')
+    expect(blocker?.file).toBe('scripts/sync.py')
+    expect(blocker?.evidence).toContain('# ROU-123: ')
+  })
+
+  test('a one-line comment giving a non-obvious reason passes', async () => {
+    const { output, input } = await replay<{ verdict: string; findings: Record<string, string>[] }>(
+      'reviewer',
+      'reason-comment',
+    )
+    expect(input).toMatch(/^\+\d+ +# .+$/m)
+    expect(output.verdict).toBe('pass')
+    expect(output.findings.filter((f) => f.severity === 'BLOCKER')).toEqual([])
   })
 
   test('verdict follows the BLOCKER findings', () => {
