@@ -24,7 +24,7 @@ export type ScreenshotInput = {
   config: ScreenshotConfig | undefined
 }
 
-export type ScreenshotOutcome = { url: string; omitted: number } | { reason: string }
+export type ScreenshotOutcome = { url: string } | { reason: string }
 
 type Shot = { page: string; viewport: string; theme: string; file: string }
 
@@ -47,11 +47,9 @@ export async function captureScreenshots(d: ScreenshotDeps, i: ScreenshotInput):
       return { reason: 'the screenshots command produced no images on the base commit' }
     if (after.shots.length === 0)
       return { reason: 'the screenshots command produced no images on the head commit' }
-    const { pairs, omitted } = capped(pairsOf(before.shots, after.shots), work, i.config)
-    if (pairs.length === 0)
-      return {
-        reason: `the screenshots exceed the cap of ${i.config.max_images} images and ${i.config.max_mb} MB`,
-      }
+    const pairs = pairsOf(before.shots, after.shots)
+    const over = overCap(pairs, work, i.config)
+    if (over) return { reason: over }
     const urls = new Map<string, string>()
     for (const p of pairs)
       for (const [side, file] of [
@@ -62,9 +60,9 @@ export async function captureScreenshots(d: ScreenshotDeps, i: ScreenshotInput):
         const bytes = new Uint8Array(readFileSync(join(work, side, file)))
         urls.set(`${side}/${file}`, await d.linear.uploadFile(uploadName(p.key, side), 'image/png', bytes))
       }
-    const comment = await d.linear.comment(i.issue, commentBody(pairs, urls, omitted), { replace: true })
+    const comment = await d.linear.comment(i.issue, commentBody(pairs, urls), { replace: true })
     const org = (await d.linear.workspace()).organization.urlKey
-    return { url: commentUrl(org, i.issue, comment.id) ?? `comment ${comment.id}`, omitted }
+    return { url: commentUrl(org, i.issue, comment.id) ?? `comment ${comment.id}` }
   } catch (e) {
     return { reason: `screenshots failed: ${(e as Error).message}` }
   } finally {
@@ -102,8 +100,16 @@ async function shoot(
     return { reason: `${config.output}/manifest.json on ${where} is not valid JSON` }
   }
   if (!Array.isArray(parsed)) return { reason: `${config.output}/manifest.json on ${where} is not a list` }
-  const shots = parsed.filter(isShot).filter((s) => existsSync(join(into, s.file)))
-  return { shots }
+  const listed = `${config.output}/manifest.json on ${where}`
+  for (const [n, entry] of parsed.entries()) {
+    if (!isShot(entry))
+      return {
+        reason: `${listed} has an invalid entry ${n + 1} (needs page, viewport, theme and a relative .png file)`,
+      }
+    if (!existsSync(join(into, entry.file)))
+      return { reason: `${listed} lists ${entry.file}, which the command did not write` }
+  }
+  return { shots: parsed as Shot[] }
 }
 
 function isShot(v: unknown): v is Shot {
@@ -129,23 +135,14 @@ function pairsOf(before: Shot[], after: Shot[]): Pair[] {
   return [...pairs.values()]
 }
 
-function capped(pairs: Pair[], work: string, config: ScreenshotConfig): { pairs: Pair[]; omitted: number } {
-  const maxBytes = config.max_mb * 1024 * 1024
-  const kept: Pair[] = []
-  let images = 0
-  let bytes = 0
-  for (const p of pairs) {
-    const files = [
-      p.before && join(work, 'before', p.before),
-      p.after && join(work, 'after', p.after),
-    ].filter((f): f is string => Boolean(f))
-    const size = files.reduce((n, f) => n + statSync(f).size, 0)
-    if (images + files.length > config.max_images || bytes + size > maxBytes) break
-    kept.push(p)
-    images += files.length
-    bytes += size
-  }
-  return { pairs: kept, omitted: pairs.length - kept.length }
+function overCap(pairs: Pair[], work: string, config: ScreenshotConfig): string | null {
+  const files = pairs.flatMap((p) => [
+    ...(p.before === null ? [] : [join(work, 'before', p.before)]),
+    ...(p.after === null ? [] : [join(work, 'after', p.after)]),
+  ])
+  const bytes = files.reduce((n, f) => n + statSync(f).size, 0)
+  if (files.length <= config.max_images && bytes <= config.max_mb * 1024 * 1024) return null
+  return `the ${files.length} screenshots exceed the cap of ${config.max_images} images and ${config.max_mb} MB`
 }
 
 function uploadName(s: Shot, side: string): string {
@@ -153,7 +150,7 @@ function uploadName(s: Shot, side: string): string {
   return `${slug || 'page'}-${side}.png`
 }
 
-function commentBody(pairs: Pair[], urls: Map<string, string>, omitted: number): string {
+function commentBody(pairs: Pair[], urls: Map<string, string>): string {
   const cell = (side: 'before' | 'after', file: string | null) => {
     const url = file === null ? undefined : urls.get(`${side}/${file}`)
     return url ? `![${side}](${url})` : side === 'before' ? '(new page)' : '(removed page)'
@@ -168,7 +165,6 @@ function commentBody(pairs: Pair[], urls: Map<string, string>, omitted: number):
         `| \`${p.key.page}\` | ${p.key.viewport} | ${p.key.theme} | ${cell('before', p.before)} | ${cell('after', p.after)} |`,
     ),
   ]
-  if (omitted > 0) lines.push('', `${omitted} more screenshots were left out by the configured cap.`)
   lines.push('', SCREENSHOT_MARKER)
   return lines.join('\n')
 }

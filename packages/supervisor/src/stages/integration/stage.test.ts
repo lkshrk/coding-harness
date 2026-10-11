@@ -420,7 +420,7 @@ describe('integration stage (screenshots)', () => {
     expect(h.gh.gh('create')[0]?.stdin).toContain('the repository has no screenshots command.')
   })
 
-  test('the image cap limits the uploads, says how many were left out and opens a draft', async () => {
+  test('screenshots over the image cap upload nothing and open a draft that says why', async () => {
     const many =
       'mkdir -p shots && for v in a b c; do head -c 64 src/a.test.ts > shots/$v.png; done && printf \'%s\' \'[{"page":"/","viewport":"a","theme":"dark","file":"a.png"},{"page":"/","viewport":"b","theme":"dark","file":"b.png"},{"page":"/","viewport":"c","theme":"dark","file":"c.png"}]\' > shots/manifest.json'
     const h = integrationHarness(root, (c) => {
@@ -438,15 +438,41 @@ describe('integration stage (screenshots)', () => {
       }
     })
     await h.integrated()
-    expect(h.linear.uploads).toHaveLength(4)
-    expect(shotComments(h)[0]?.body).toContain('1 more screenshots were left out by the configured cap.')
+    expect(h.linear.uploads).toEqual([])
+    expect(shotComments(h)).toEqual([])
     const [create] = h.gh.gh('create')
     expect(create?.cmd.at(-1)).toBe('--draft')
     expect(create?.stdin).toContain(
-      '## Screenshots\nDraft: the screenshots are incomplete.\nBefore and after: https://linear.app/h-cloud/issue/FOR-1#comment-',
+      '## Screenshots\nDraft: this change touches UI paths, but no screenshots were taken: the 6 screenshots exceed the cap of 4 images and 20 MB.',
     )
-    expect(create?.stdin).toContain('1 more screenshots were left out by the configured cap.')
     expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
+  })
+
+  test('a manifest entry whose file is missing uploads nothing and opens a draft that says why', async () => {
+    const missing =
+      'mkdir -p shots && head -c 64 src/a.test.ts > shots/home.png && printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/about","viewport":"desktop","theme":"dark","file":"about.png"}]\' > shots/manifest.json'
+    const h = integrationHarness(root, withUi(['src/**'], missing))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    expect(shotComments(h)).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      'no screenshots were taken: shots/manifest.json on the base commit lists about.png, which the command did not write.',
+    )
+  })
+
+  test('an invalid manifest entry uploads nothing and opens a draft that says why', async () => {
+    const invalid =
+      'mkdir -p shots && head -c 64 src/a.test.ts > shots/home.png && printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/x","viewport":"desktop","file":"x.png"}]\' > shots/manifest.json'
+    const h = integrationHarness(root, withUi(['src/**'], invalid))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      'no screenshots were taken: shots/manifest.json on the base commit has an invalid entry 2 (needs page, viewport, theme and a relative .png file).',
+    )
   })
 
   test('a retried attempt replaces the earlier screenshot comment instead of adding one', async () => {

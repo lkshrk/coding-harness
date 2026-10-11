@@ -135,7 +135,7 @@ export class IntegrationHandler implements StageHandler {
           })
         : { reason: 'screenshots are not available in this supervisor' }
     if (shots && 'reason' in shots) this.d.out?.(`${id}: no screenshots: ${shots.reason}`)
-    const draft = risk.length > 0 || (shots !== undefined && ('reason' in shots || shots.omitted > 0))
+    const draft = risk.length > 0 || (shots !== undefined && 'reason' in shots)
     const body = this.body(work, run, cb, risk, config, shots)
     const pr = await this.d.host.openPullRequest({
       repository: run.repository,
