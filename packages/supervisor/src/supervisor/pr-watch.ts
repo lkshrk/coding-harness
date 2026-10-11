@@ -67,6 +67,8 @@ export class PullRequestWatch {
         else if (state.state === 'merged') await this.pullRequestMerged(pr)
         else if (state.state === 'closed') await this.pullRequestClosed(pr)
         else if (state.mergeable === 'conflicting') await this.checkConflict(pr, state.headSha ?? pr.headSha)
+        // GitHub is still computing mergeability; every signal waits for the next poll.
+        else if (state.mergeable === 'unknown') continue
         else {
           if (pr.ci === 'pending') await this.checkCi(pr, await host.ci(pr))
           await this.checkReviews(pr, host)
@@ -104,7 +106,10 @@ export class PullRequestWatch {
     }
     const run = this.rt.runs.get(pr.run)
     if (!run || this.flow.awaiting(pr.issue) !== null) return
-    const files = (await repos.conflictingFiles?.(pr.repository, base, head).catch(() => undefined)) ?? []
+    // A worker-pushed head need not be in the host checkout; a failed fetch or inspection throws
+    // before the round is recorded, so the next poll tries again.
+    const fetched = repos.fetchPullRequest ? await repos.fetchPullRequest(pr.repository, pr) : head
+    const files = (await repos.conflictingFiles?.(pr.repository, base, fetched)) ?? []
     this.rt.pullRequests.put({ ...pr, conflict: { base, files, run: run.id, head: pr.headSha } })
     await this.flow.remediate(
       run,

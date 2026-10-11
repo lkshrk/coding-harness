@@ -416,13 +416,27 @@ describe('pull request watching', () => {
     const root = mkdtempSync(join(tmpdir(), 'ns-watch-'))
     const repos = {
       base: '',
+      head: '',
       files: ['ARCHITECTURE.md'],
+      fetched: [] as string[],
+      inspected: [] as string[],
+      fetchFails: false,
       baseSha: async () => repos.base,
-      conflictingFiles: async () => repos.files,
+      fetchPullRequest: async (_: string, pr: { branch: string }) => {
+        if (repos.fetchFails) throw new Error('git fetch: could not read from remote')
+        repos.fetched.push(pr.branch)
+        return repos.head
+      },
+      conflictingFiles: async (_: string, _base: string, head: string) => {
+        repos.inspected.push(head)
+        if (!repos.fetched.length) throw new Error(`git merge-tree: not a valid object name ${head}`)
+        return repos.files
+      },
     }
     const h = integrationHarness(root, (c) => c, { repos, retry: { baseMs: 0, maxMs: 0 } })
     repos.base = h.fx.base
     const run = await h.integrated()
+    repos.head = run.headSha ?? ''
     const pr = h.gh.prs[0] as { mergeable?: string }
     pr.mergeable = 'CONFLICTING'
     const moved = () => git(h.fx.checkout, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'moved')
@@ -461,6 +475,40 @@ describe('pull request watching', () => {
       await h.first.tick()
       expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
       expect(h.first.runs.forIssue('FOR-1')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('unknown mergeability defers failed CI and fresh review threads to a later poll', async () => {
+    const h = await conflicted()
+    try {
+      h.pr.mergeable = 'UNKNOWN'
+      h.gh.checks = [{ name: 'build', bucket: 'fail' }]
+      h.gh.threads = [fakeThread('T1', 11, 'Trim the name before saving.')]
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.of('CI_FAILED')).toEqual([])
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('conflicting files are read from the fetched PR head, and a failed fetch starts no round yet', async () => {
+    const h = await conflicted()
+    try {
+      h.repos.fetchFails = true
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.first.pullRequests.get('FOR-1')?.conflict).toBeUndefined()
+      h.repos.fetchFails = false
+      await h.first.tick()
+      expect(h.repos.fetched).toEqual([h.first.pullRequests.get('FOR-1')?.branch ?? ''])
+      expect(h.repos.inspected.at(-1)).toBe(h.run.headSha ?? '')
+      expect(h.first.pullRequests.get('FOR-1')?.conflict?.files).toEqual(['ARCHITECTURE.md'])
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
     } finally {
       h.cleanup()
     }

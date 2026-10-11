@@ -270,9 +270,9 @@ describe('GhGitHost pull requests', () => {
     expect(await host.ci(pr)).toEqual({ state: 'pending', failedChecks: [], failures: [], url: pr.url })
     expect(gh.gh('checks')).toHaveLength(0)
     expect(gh.ciReads()).toHaveLength(4)
-    expect(await host.state(pr)).toEqual({ state: 'open', mergeable: 'unknown' })
+    expect(await host.state(pr)).toEqual({ state: 'open', mergeable: 'mergeable' })
     ;(gh.prs[0] as { headSha?: string }).headSha = 'pushed-by-hand'
-    expect(await host.state(pr)).toEqual({ state: 'open', mergeable: 'unknown', headSha: 'pushed-by-hand' })
+    expect(await host.state(pr)).toEqual({ state: 'open', mergeable: 'mergeable', headSha: 'pushed-by-hand' })
     for (const [raw, mergeable] of [
       ['MERGEABLE', 'mergeable'],
       ['CONFLICTING', 'conflicting'],

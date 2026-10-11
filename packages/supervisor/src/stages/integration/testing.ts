@@ -143,7 +143,7 @@ export class FakeGh {
         JSON.stringify({
           state: pr?.state,
           mergeCommit: pr?.state === 'MERGED' ? { oid: 'm3rg3d' } : null,
-          mergeable: pr?.mergeable ?? 'UNKNOWN',
+          mergeable: pr?.mergeable ?? 'MERGEABLE',
           ...(pr?.headSha ? { headRefOid: pr.headSha } : {}),
         }),
       )
