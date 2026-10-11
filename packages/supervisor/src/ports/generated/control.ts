@@ -56,6 +56,10 @@ export interface AnswerRequest {
 export interface StopRequest {
   target: Target
   reason?: string
+  /**
+   * kill the worker without a handoff
+   */
+  now?: boolean
 }
 export interface RetryRequest {
   target: Target

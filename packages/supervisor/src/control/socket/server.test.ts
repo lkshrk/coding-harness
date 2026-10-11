@@ -227,7 +227,7 @@ describe('control socket', () => {
   test('POST /stop stops the run, destroys the sandbox, releases the lease and holds the issue', async () => {
     const h = harness()
     const run = await running(h)
-    const res = await h.req('POST', '/stop', { target: run.id, reason: 'wrong approach' })
+    const res = await h.req('POST', '/stop', { target: run.id, reason: 'wrong approach', now: true })
     expect(res).toEqual({ status: 200, body: { run: run.id } })
     expect(h.sup.runs.get(run.id)?.state).toBe('stopped')
     expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])

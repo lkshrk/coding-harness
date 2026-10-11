@@ -5,7 +5,8 @@ import { Channel } from './channel'
 import { type CapReason, type Progress, type WatchAction, Watcher, type WatchThresholds } from './watch'
 import { diffLines } from './workspace'
 
-export const GRACE_MESSAGE = 'Limit reached: call finish now with your current status.'
+export const GRACE_MESSAGE =
+  'Limit reached: commit your work and call finish now. If the work is not done, finish with status HANDOFF and a handoff note (done, in_progress, next, questions, verify); the next attempt continues from your commit.'
 export const NO_DIFF_MESSAGE =
   'No change yet. Either commit the smallest first step now, or call finish with BLOCKED, needs: context, and your findings.'
 

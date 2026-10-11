@@ -162,7 +162,7 @@ export type RunFlow = {
   ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
   stopRun(runId: string, reason: string, opts?: StopOptions): Promise<void>
-  end(runId: string, to: 'done' | 'failed' | 'stopped', cause: Event): Promise<Run>
+  end(runId: string, to: 'done' | 'failed' | 'stopped' | 'interrupted', cause: Event): Promise<Run>
   resolveRun(target: string): Run | undefined
   completeStage(identifier: string): Promise<void>
   enterVerification(identifier: string): Promise<void>

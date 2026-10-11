@@ -16,8 +16,16 @@ import {
 
 const NO_FINISH_REASONS = ['step_cap', 'time_cap', 'token_cap', 'no_finish']
 
+export const handoffMessage = (reason: string, seconds: number) =>
+  `nightshift is stopping this run (${reason}). Within ${seconds} seconds: finish your current step, commit your work, and call finish with status HANDOFF and a handoff note (done, in_progress, next, questions, verify). The next attempt continues from your commit.`
+
+type Interruption = { reason: string; by?: By; requeue: boolean }
+
+type PendingHandoff = Interruption & { resolve: () => void }
+
 export class RunLifecycle {
   private readonly stalls = new Map<string, number>()
+  private readonly handoffs = new Map<string, PendingHandoff>()
 
   constructor(
     private readonly rt: SupervisorRuntime,
@@ -102,10 +110,11 @@ export class RunLifecycle {
     if (this.late(runId, 'finish')) return
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
+    const handoff = (payload as FinishLike | null)?.status === 'HANDOFF'
     let event: Event
     try {
       event = this.rt.log.append({
-        type: 'WORKER_FINISHED',
+        type: handoff ? 'HANDOFF_WRITTEN' : 'WORKER_FINISHED',
         issue: run.issue,
         run: run.id,
         data: payload as Record<string, unknown>,
@@ -117,6 +126,13 @@ export class RunLifecycle {
     }
     this.rt.runs.update(runId, { finish: payload })
     const finish = payload as FinishLike
+    const pending = this.handoffs.get(runId)
+    if (handoff && run.agent !== INGEST_AGENT) {
+      await this.interrupted(runId, pending ?? { reason: 'worker handed off', requeue: true }, true)
+      pending?.resolve()
+      return
+    }
+    pending?.resolve()
     if (run.agent === INGEST_AGENT) {
       await this.flow.ingestFinished(run, event, finish)
       return
@@ -142,6 +158,11 @@ export class RunLifecycle {
     if (this.late(runId, `failure ${reason}`)) return
     const run = this.rt.requireRun(runId)
     if (isTerminal(run.state)) return
+    const pending = this.handoffs.get(runId)
+    if (pending) {
+      pending.resolve()
+      return
+    }
     if (reason === 'gateway_error') this.flow.gatewayReachable(false, detail ?? reason)
     if (run.agent === INGEST_AGENT) {
       await this.flow.ingestRunFailed(runId, detail ? `${reason}: ${detail}` : reason)
@@ -192,22 +213,74 @@ export class RunLifecycle {
     this.flow.releaseLease(run.issue)
   }
 
+  // The worker gets the grace period to hand off; one that does not is killed and its work tree kept as WIP.
+  async interruptRun(
+    runId: string,
+    reason: string,
+    opts: { by?: By; requeue?: boolean } = {},
+  ): Promise<void> {
+    const run = this.rt.requireRun(runId)
+    if (run.state !== 'running' || run.agent === INGEST_AGENT || this.handoffs.has(runId)) return
+    const seconds = this.rt.config().limits.handoff_grace_seconds
+    const why: Interruption = { reason, requeue: opts.requeue ?? true, ...(opts.by ? { by: opts.by } : {}) }
+    const answered = new Promise<void>((resolve) => this.handoffs.set(runId, { ...why, resolve }))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expired = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, seconds * 1000)
+    })
+    try {
+      await this.rt.deps.executor.nudge(run, handoffMessage(reason, seconds)).catch((e: Error) => {
+        console.error(`${run.issue}: asking run ${run.id} to hand off failed: ${e.message}`)
+      })
+      await Promise.race([answered, expired])
+    } finally {
+      clearTimeout(timer)
+      this.handoffs.delete(runId)
+    }
+    if (this.rt.requireRun(runId).state !== 'running') return
+    await this.rt.deps.executor.stop(run, `interrupted: ${reason}`)
+    await this.interrupted(runId, why, false)
+  }
+
+  private async interrupted(runId: string, why: Interruption, handoff: boolean): Promise<void> {
+    await this.preserveHead(runId, 'interrupted')
+    const run = this.rt.requireRun(runId)
+    const event = this.rt.log.append({
+      type: 'RUN_INTERRUPTED',
+      issue: run.issue,
+      run: run.id,
+      data: { reason: why.reason, handoff, ...(why.by ? { by: why.by } : {}) },
+    })
+    await this.end(runId, 'interrupted', event)
+    this.stalls.delete(runId)
+    await this.releaseSandbox(runId)
+    this.flow.releaseLease(run.issue)
+    if (why.requeue) await this.flow.applyIntent(run.issue, { kind: 'retryScheduled' })
+  }
+
   requireActive(target: string): Run {
     const run = activeRun(this.rt.runs, target)
     if (!run) throw new ControlError('not_found', `no active run for ${target}`)
     return run
   }
 
-  async stopForUser(target: string, reason: string | undefined, by: By): Promise<Run> {
+  async stopForUser(
+    target: string,
+    reason: string | undefined,
+    by: By,
+    opts: { now?: boolean } = {},
+  ): Promise<Run> {
     const run = this.requireActive(target)
-    await this.stopRun(run.id, reason ?? 'stopped by you', { by })
+    const why = reason ?? 'stopped by you'
+    if (!opts.now && run.state === 'running') await this.interruptRun(run.id, why, { by, requeue: false })
+    if (!isTerminal(this.rt.requireRun(run.id).state)) await this.stopRun(run.id, why, { by })
     const issue = this.rt.cache.get(run.issue) ?? (await this.rt.deps.linear.issue(run.issue))
     const stage = (issue && viewIssue(issue, this.rt.config())?.stage) ?? ''
     await this.flow.holdForYou(run.issue, { kind: 'escalated', stage })
     return this.rt.requireRun(run.id)
   }
 
-  async end(runId: string, to: 'done' | 'failed' | 'stopped', cause: Event): Promise<Run> {
+  async end(runId: string, to: 'done' | 'failed' | 'stopped' | 'interrupted', cause: Event): Promise<Run> {
     return this.rt.runs.transition(runId, to, cause)
   }
 

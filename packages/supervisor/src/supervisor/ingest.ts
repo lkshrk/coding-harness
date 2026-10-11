@@ -7,7 +7,7 @@ import { type FinishLike, INGEST_AGENT, type SupervisorRuntime } from './runtime
 
 export type IngestPeers = {
   profileFor: (view: IssueView) => string
-  end: (runId: string, to: 'done' | 'failed' | 'stopped', cause: Event) => Promise<Run>
+  end: (runId: string, to: 'done' | 'failed' | 'stopped' | 'interrupted', cause: Event) => Promise<Run>
   forgetStalls: (runId: string) => void
   releaseSandbox: (runId: string) => Promise<void>
   observeIssue: (issue: IssueSnapshot) => void

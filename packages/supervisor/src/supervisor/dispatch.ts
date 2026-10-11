@@ -47,7 +47,8 @@ export class Dispatcher {
     if (repository === null || stage === null) return undefined
     const last = this.rt.runs.forIssue(id).at(-1)
     const attempt = (last?.attempt ?? 0) + 1
-    const agent = o.agent ?? this.selectFor(view, stage, attempt, last)
+    const agent =
+      o.agent ?? (last?.state === 'interrupted' ? last.agent : this.selectFor(view, stage, attempt, last))
     if (agent === undefined) return undefined
     const profile = o.profile ?? this.profileFor(view)
     const model = this.rt.deps.modelFor(agent, profile, this.rt.config())
@@ -147,7 +148,11 @@ export class Dispatcher {
         ? this.rt.runs.get(continues)
         : this.rt.runs
             .forIssue(issue)
-            .find((r) => r.attempt === attempt - 1 && r.failure === 'implementation_defect')
+            .find(
+              (r) =>
+                r.attempt === attempt - 1 &&
+                (r.failure === 'implementation_defect' || r.state === 'interrupted'),
+            )
     return from?.headSha ? { run: from.id, headSha: from.headSha } : undefined
   }
 

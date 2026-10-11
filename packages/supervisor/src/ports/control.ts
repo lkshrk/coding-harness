@@ -25,7 +25,7 @@ export interface InboxSupervisor {
   cover(issue: string, by?: By): void
   sendMessage(target: string, text: string, by: By): Promise<Run>
   answerQuestion(issue: string, text: string, by: By): Promise<void>
-  stopForUser(target: string, reason: string | undefined, by: By): Promise<Run>
+  stopForUser(target: string, reason: string | undefined, by: By, opts?: { now?: boolean }): Promise<Run>
   retryRun(target: string, o: { agent?: string; profile?: string; continue?: boolean }, by: By): Promise<Run>
 }
 

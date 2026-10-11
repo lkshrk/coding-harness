@@ -80,6 +80,9 @@ function lockHolder(dbPath: string): string | null {
   }
 }
 
+// The supervisor waits the handoff grace and then for gate steps before it exits.
+const STOP_MARGIN_SEC = 60
+
 export function serviceSpec(
   config: Config,
   o: { bun: string; env: Record<string, string | undefined>; rbw?: string | null },
@@ -99,6 +102,7 @@ export function serviceSpec(
     env,
     logFile: join(expandHome(config.paths.state, home), 'supervisor.log'),
     ...(o.rbw ? { rbw: o.rbw } : {}),
+    stopTimeoutSec: config.limits.handoff_grace_seconds + STOP_MARGIN_SEC,
   }
 }
 

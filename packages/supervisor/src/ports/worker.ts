@@ -49,6 +49,15 @@ export type Attempt = {
   ciFailures?: CiFailure[]
   reviewThreads?: ReviewThread[]
   prConflict?: { base: string; files: string[] }
+  handoff?: Handoff
+}
+
+export type Handoff = {
+  done: string[]
+  in_progress: string[]
+  next: string[]
+  questions?: string[]
+  verify?: string[]
 }
 
 export type ExecutorStart = {

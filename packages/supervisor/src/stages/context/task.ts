@@ -5,6 +5,7 @@ import type {
   BlockerOutput,
   ContextBuilder,
   ContextInput,
+  Handoff,
   IssueSnapshot,
   LinearPort,
 } from '../../ports'
@@ -77,6 +78,18 @@ function findingsOf(run: Run, log: EventLog): string | undefined {
     .join('\n')
 }
 
+function handoffOf(run: Run): Handoff | undefined {
+  const finish = run.finish as { status?: unknown; handoff?: Handoff } | null
+  return finish?.status === 'HANDOFF' && finish.handoff ? finish.handoff : undefined
+}
+
+function interruptionOf(run: Run, log: EventLog): string {
+  const data = log.since(null, { run: run.id, types: ['RUN_INTERRUPTED'] }).at(-1)?.data as
+    | { reason?: string }
+    | undefined
+  return data?.reason ? `interrupted: ${data.reason}` : ''
+}
+
 export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
   const stores = { now: () => new Date(), ulid: createUlid() }
   const log = new EventLog(db, stores)
@@ -85,8 +98,9 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
   const conflict = new PullRequestStore(db).get(issue)?.conflict
   return new RunStore(db, stores)
     .forIssue(issue)
-    .filter((r) => r.id !== current && r.failure !== null)
+    .filter((r) => r.id !== current && (r.failure !== null || r.state === 'interrupted'))
     .map((r) => {
+      const handoff = handoffOf(r)
       const gateTail = gateTailOf(r, log)
       const findings = findingsOf(r, log)
       const ciFailures = ci.get(r.id).filter((f) => f.log !== '')
@@ -94,8 +108,9 @@ export function attemptsOf(db: Db, issue: string, current: string): Attempt[] {
       return {
         attempt: r.attempt,
         agent: r.agent,
-        failureClass: r.failure as string,
-        summary: summaryOf(r, log),
+        failureClass: r.failure ?? 'interrupted',
+        summary: summaryOf(r, log) || interruptionOf(r, log),
+        ...(handoff ? { handoff } : {}),
         ...(gateTail ? { gateTail } : {}),
         ...(findings ? { findings } : {}),
         ...(ciFailures.length ? { ciFailures } : {}),
