@@ -152,7 +152,9 @@ export class RunStore {
 
   active(): Run[] {
     return this.db
-      .query<Row, []>("SELECT * FROM runs WHERE state NOT IN ('done','failed','stopped','interrupted') ORDER BY id")
+      .query<Row, []>(
+        "SELECT * FROM runs WHERE state NOT IN ('done','failed','stopped','interrupted') ORDER BY id",
+      )
       .all()
       .map(fromRow)
   }
