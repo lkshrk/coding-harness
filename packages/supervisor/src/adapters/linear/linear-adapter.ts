@@ -25,7 +25,7 @@ export function createLinearPort(opts: LinearPortOptions): LinearPort {
   const request = linearRequest(connection)
   const reader = new LinearReader(request)
   const issues = new LinearIssueReader(request)
-  const writer = new LinearWriter(request, issues, () => reader.workspace())
+  const writer = new LinearWriter(request, issues, () => reader.workspace(), opts.fetch)
   return {
     workspace: () => reader.workspace(),
     issues: (q) => issues.issues({ ...q, actOn: config().linear.act_on }),
@@ -40,6 +40,7 @@ export function createLinearPort(opts: LinearPortOptions): LinearPort {
     async attachLink(identifier, url, title) {
       await writer.attachLink(identifier, url, title)
     },
+    uploadFile: (name, contentType, bytes) => writer.uploadFile(name, contentType, bytes),
   }
 }
 

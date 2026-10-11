@@ -58,6 +58,22 @@ uv cache at `/var/cache/nightshift/uv`, with h5py built from source against the 
   run: cd backend && uv run --frozen --offline pytest -q
 ```
 
+## Screenshots
+
+A change touching a repository's `ui_paths` gets before and after screenshots: the integration step
+runs `screenshots.run` in the repository image, offline, on the base and on the head commit. The command
+writes PNG files and a `manifest.json` (a list of `{page, viewport, theme, file}`, `file` relative to
+the output directory) to `screenshots.output`. The images are uploaded to the Linear issue in one comment
+that a later attempt replaces, capped by `max_images` (default 40) and `max_mb` (default 20). If the
+command fails or yields no images, the PR opens as a draft with the reason. For `repositories.routivo`:
+
+```yaml
+ui_paths: ['frontend/src/routes/**', 'frontend/src/lib/components/**', '**/*.svelte', '**/*.css']
+screenshots:
+  run: cd frontend && pnpm test:screenshots
+  output: frontend/test/render/screenshots
+```
+
 ## nightshift-vault
 
 The closeout ingest's vault repository (`VAULT_REPOSITORY`, derived from `paths.vault`, also known to

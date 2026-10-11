@@ -1,4 +1,5 @@
 import type { LinearRequest } from '@linear/sdk'
+import type { FetchFn } from './auth'
 import {
   COMMENT_FIELDS,
   LABEL_FIELDS,
@@ -34,6 +35,16 @@ const CREATE_COMMENT = `mutation nsCommentCreate($input: CommentCreateInput!) {
   commentCreate(input: $input) { success comment { ${COMMENT_FIELDS} } }
 }`
 
+const UPDATE_COMMENT = `mutation nsCommentUpdate($id: String!, $input: CommentUpdateInput!) {
+  commentUpdate(id: $id, input: $input) { success comment { ${COMMENT_FIELDS} } }
+}`
+
+const FILE_UPLOAD = `mutation nsFileUpload($filename: String!, $contentType: String!, $size: Int!) {
+  fileUpload(filename: $filename, contentType: $contentType, size: $size) {
+    success uploadFile { uploadUrl assetUrl headers { key value } }
+  }
+}`
+
 const ATTACHMENTS = `query nsIssueAttachments($id: String!) {
   issue(id: $id) { id attachments(first: 100) { nodes { id url } } }
 }`
@@ -51,6 +62,7 @@ export class LinearWriter {
     private readonly request: LinearRequest,
     private readonly reader: LinearIssueReader,
     private readonly loadWorkspace: () => Promise<LinearWorkspace>,
+    private readonly upload: FetchFn = (url, init) => fetch(url, init),
   ) {}
 
   async update(identifier: string, change: (team: string) => IssueChange): Promise<boolean> {
@@ -75,12 +87,14 @@ export class LinearWriter {
   async comment(
     identifier: string,
     body: string,
-    opts: { parentId?: string } = {},
+    opts: { parentId?: string; replace?: boolean } = {},
   ): Promise<LinearIssueComment> {
     const thread = await this.reader.thread(identifier)
     if (!thread) throw new Error(`linear: no issue ${identifier}`)
     const marker = MARKER.exec(body)?.[0]
     const existing = marker === undefined ? undefined : thread.comments.find((c) => c.body.includes(marker))
+    if (existing && opts.replace && existing.body !== body)
+      return this.updateComment(identifier, existing.id, body)
     if (existing) return existing
     const input = { issueId: thread.issueId, body, ...(opts.parentId ? { parentId: opts.parentId } : {}) }
     const data = await this.request<
@@ -90,6 +104,39 @@ export class LinearWriter {
     if (!data.commentCreate.success || !data.commentCreate.comment)
       throw new Error(`linear: commentCreate ${identifier} not confirmed`)
     return toComment(data.commentCreate.comment)
+  }
+
+  async uploadFile(name: string, contentType: string, bytes: Uint8Array): Promise<string> {
+    type Data = {
+      fileUpload: {
+        success: boolean
+        uploadFile: { uploadUrl: string; assetUrl: string; headers: { key: string; value: string }[] } | null
+      }
+    }
+    const data = await this.request<Data, { filename: string; contentType: string; size: number }>(
+      FILE_UPLOAD,
+      { filename: name, contentType, size: bytes.byteLength },
+    )
+    const signed = data.fileUpload.uploadFile
+    if (!data.fileUpload.success || !signed) throw new Error(`linear: fileUpload ${name} not confirmed`)
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'Cache-Control': 'public, max-age=31536000',
+    }
+    for (const h of signed.headers) headers[h.key] = h.value
+    const res = await this.upload(signed.uploadUrl, { method: 'PUT', headers, body: bytes })
+    if (!res.ok) throw new Error(`linear: upload of ${name} failed (HTTP ${res.status})`)
+    return signed.assetUrl
+  }
+
+  private async updateComment(identifier: string, id: string, body: string): Promise<LinearIssueComment> {
+    const data = await this.request<
+      { commentUpdate: { success: boolean; comment: RawComment | null } },
+      { id: string; input: { body: string } }
+    >(UPDATE_COMMENT, { id, input: { body } })
+    if (!data.commentUpdate.success || !data.commentUpdate.comment)
+      throw new Error(`linear: commentUpdate ${identifier} not confirmed`)
+    return toComment(data.commentUpdate.comment)
   }
 
   async attachLink(identifier: string, url: string, title: string): Promise<boolean> {

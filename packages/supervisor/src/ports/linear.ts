@@ -61,6 +61,11 @@ export interface LinearPort {
   comments(identifier: string): Promise<LinearComment[]>
   lastChange(identifier: string): Promise<LinearChange | null>
   update(identifier: string, change: IssueUpdate): Promise<void>
-  comment(identifier: string, body: string, opts?: { parentId?: string }): Promise<LinearComment>
+  comment(
+    identifier: string,
+    body: string,
+    opts?: { parentId?: string; replace?: boolean },
+  ): Promise<LinearComment>
   attachLink(identifier: string, url: string, title: string): Promise<void>
+  uploadFile(name: string, contentType: string, bytes: Uint8Array): Promise<string>
 }

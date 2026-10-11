@@ -2,6 +2,7 @@ import { validateIssue } from '@nightshift/core'
 import type { IssueSnapshot } from '../../ports'
 import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
+import type { ScreenshotOutcome } from './screenshots'
 
 export type PullRequestBodyInput = {
   issue: IssueSnapshot
@@ -11,6 +12,7 @@ export type PullRequestBodyInput = {
   review: { verdict: 'pass' | 'fail'; findings: ReviewFinding[] } | null
   unreviewed: string | null
   riskPaths: readonly string[]
+  screenshots?: ScreenshotOutcome
   traceUrl?: string
 }
 
@@ -51,6 +53,18 @@ export function pullRequestBody(i: PullRequestBodyInput): string {
   if (i.riskPaths.length) {
     parts.push('', '## Risk paths', 'Draft: this change touches configured risk paths.')
     parts.push(...i.riskPaths.map((p) => `- \`${p}\``))
+  }
+  if (i.screenshots) {
+    parts.push('', '## Screenshots')
+    if ('reason' in i.screenshots)
+      parts.push(
+        `Draft: this change touches UI paths, but no screenshots were taken: ${i.screenshots.reason}.`,
+      )
+    else {
+      parts.push(`Before and after: ${i.screenshots.url}`)
+      if (i.screenshots.omitted > 0)
+        parts.push(`${i.screenshots.omitted} more screenshots were left out by the configured cap.`)
+    }
   }
   parts.push('', '## Trace', i.traceUrl ? `${i.traceUrl} (session \`${i.runId}\`)` : `Session \`${i.runId}\``)
   return `${parts.join('\n')}\n`

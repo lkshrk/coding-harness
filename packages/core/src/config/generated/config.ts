@@ -316,6 +316,11 @@ export interface Repository {
    */
   checks: Check[]
   risk_paths: Glob[]
+  /**
+   * a change touching these gets before and after screenshots from the screenshots command
+   */
+  ui_paths?: Glob[]
+  screenshots?: Screenshots
   macos_only: boolean
   /**
    * GitHub account for this repository instead of github.default
@@ -326,6 +331,25 @@ export interface Check {
   name: Id
   run: string
   timeout: Duration
+}
+/**
+ * run in the repository image on base and head; writes PNGs and manifest.json to output
+ */
+export interface Screenshots {
+  run: string
+  /**
+   * directory relative to the repository root
+   */
+  output: string
+  timeout: Duration
+  /**
+   * images uploaded per change, before and after together
+   */
+  max_images: number
+  /**
+   * total size of the images uploaded per change
+   */
+  max_mb: number
 }
 export interface Project {
   match:

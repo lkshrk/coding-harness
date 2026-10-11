@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { type Config, expandHome } from '@nightshift/core'
 import { BRANCH_PREFIX, runRef } from '../../policy/naming'
 import { INTEGRATION, lifecycleOf, viewIssue } from '../../policy/stages'
@@ -10,6 +11,7 @@ import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
 import { pullRequestBody, pullRequestTitle } from './body'
 import type { PullRequestRecord, PullRequestStore } from './records'
+import { captureScreenshots, type ScreenshotDeps, type ScreenshotOutcome } from './screenshots'
 
 export interface IntegrationCallbacks {
   readonly runs: Pick<RunStore, 'forIssue'>
@@ -26,6 +28,7 @@ export type IntegrationDeps = {
   config: () => Config
   host: GitHost
   callbacks: () => IntegrationCallbacks
+  screenshots?: ScreenshotDeps
   home?: string
   out?: (line: string) => void
 }
@@ -91,10 +94,10 @@ export class IntegrationHandler implements StageHandler {
       throw new Error(
         `${id}: head commit is a WIP commit (${run.headSha.slice(0, 12)}); refusing to open a PR`,
       )
-    const risk = riskPathsTouched(
-      changedFiles(checkout, run.baseSha || `${run.headSha}^`, run.headSha),
-      repo.risk_paths,
-    )
+    const base = run.baseSha || `${run.headSha}^`
+    const changed = changedFiles(checkout, base, run.headSha)
+    const risk = riskPathsTouched(changed, repo.risk_paths)
+    const ui = riskPathsTouched(changed, repo.ui_paths ?? [])
     const requested = viewIssue(work.issue, config, { covered: true })?.mergeMode ?? 'manual'
     if (requested !== 'manual')
       this.d.out?.(`${id}: merge mode ${requested} is not supported yet; using manual`)
@@ -118,14 +121,29 @@ export class IntegrationHandler implements StageHandler {
       )
       return
     }
-    const body = this.body(work, run, cb, risk, config)
+    let shots: ScreenshotOutcome | undefined
+    if (ui.length > 0)
+      shots = this.d.screenshots
+        ? await captureScreenshots(this.d.screenshots, {
+            issue: id,
+            run: run.id,
+            repository: run.repository,
+            gitDir: join(checkout, '.git'),
+            base,
+            head: run.headSha,
+            config: repo.screenshots,
+          })
+        : { reason: 'screenshots are not available in this supervisor' }
+    if (shots && 'reason' in shots) this.d.out?.(`${id}: no screenshots: ${shots.reason}`)
+    const draft = risk.length > 0 || (shots !== undefined && 'reason' in shots)
+    const body = this.body(work, run, cb, risk, config, shots)
     const pr = await this.d.host.openPullRequest({
       repository: run.repository,
       branch,
       base: repo.base,
       title,
       body,
-      draft: risk.length > 0,
+      draft,
     })
     await cb.pullRequestOpened(
       {
@@ -136,14 +154,21 @@ export class IntegrationHandler implements StageHandler {
         title,
         body,
         mode: 'manual',
-        draft: risk.length > 0,
+        draft,
         ci: 'pending',
       },
       title,
     )
   }
 
-  private body(work: StageWork, run: Run, cb: IntegrationCallbacks, risk: string[], config: Config): string {
+  private body(
+    work: StageWork,
+    run: Run,
+    cb: IntegrationCallbacks,
+    risk: string[],
+    config: Config,
+    screenshots: ScreenshotOutcome | undefined,
+  ): string {
     const review = cb.log.since(null, { run: run.id, types: ['REVIEW_RECEIVED'] }).at(-1)?.data as
       | { verdict: 'pass' | 'fail'; findings: ReviewFinding[] }
       | undefined
@@ -156,6 +181,7 @@ export class IntegrationHandler implements StageHandler {
       review: review ?? null,
       unreviewed: review ? null : cb.forcedManual(work.issue.identifier),
       riskPaths: risk,
+      ...(screenshots ? { screenshots } : {}),
       ...(phoenix ? { traceUrl: phoenix } : {}),
     })
   }

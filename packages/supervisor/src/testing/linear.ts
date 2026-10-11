@@ -32,6 +32,7 @@ export class FakeLinear implements LinearPort {
   readonly updates: { identifier: string; change: IssueUpdate }[] = []
   readonly attachments = new Map<string, { url: string; title: string }[]>()
   readonly changes = new Map<string, LinearChange>()
+  readonly uploads: { name: string; contentType: string; size: number }[] = []
   workspaceValue: LinearWorkspace = testWorkspace()
   stale: Map<string, IssueSnapshot> | null = null
   private ids = 0
@@ -135,7 +136,22 @@ export class FakeLinear implements LinearPort {
     return this.changes.get(identifier) ?? null
   }
 
-  async comment(identifier: string, body: string, opts: { parentId?: string } = {}): Promise<LinearComment> {
+  async comment(
+    identifier: string,
+    body: string,
+    opts: { parentId?: string; replace?: boolean } = {},
+  ): Promise<LinearComment> {
+    const marker = /<!-- nightshift:\S+? -->/.exec(body)?.[0]
+    const thread = this.threads.get(identifier) ?? []
+    const existing = opts.replace && marker ? thread.find((c) => c.body.includes(marker)) : undefined
+    if (existing) {
+      const updated = { ...existing, body }
+      this.threads.set(
+        identifier,
+        thread.map((c) => (c.id === existing.id ? updated : c)),
+      )
+      return updated
+    }
     this.ids += 1
     const c = {
       id: `c${this.ids}`,
@@ -151,6 +167,11 @@ export class FakeLinear implements LinearPort {
   async attachLink(identifier: string, url: string, title: string): Promise<void> {
     const list = this.attachments.get(identifier) ?? []
     if (!list.some((a) => a.url === url)) this.attachments.set(identifier, [...list, { url, title }])
+  }
+
+  async uploadFile(name: string, contentType: string, bytes: Uint8Array): Promise<string> {
+    this.uploads.push({ name, contentType, size: bytes.byteLength })
+    return `https://uploads.linear.test/${this.uploads.length}/${name}`
   }
 
   reply(identifier: string, parentId: string, body: string, by = 'you'): void {

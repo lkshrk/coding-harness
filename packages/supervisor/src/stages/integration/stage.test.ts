@@ -7,7 +7,16 @@ import { importBundle } from '../../adapters/git/host'
 import type { Run } from '../../state/runs'
 import { snapshot } from '../../testing/testing'
 import { git } from '../gates/testing'
-import { AGENT_TOKEN, FINISH, gate, integrationHarness, PERSONAL_TOKEN, until } from './testing'
+import { SCREENSHOT_MARKER } from './screenshots'
+import {
+  AGENT_TOKEN,
+  FINISH,
+  gate,
+  integrationHarness,
+  PERSONAL_TOKEN,
+  SHOTS_COMMAND,
+  until,
+} from './testing'
 
 let root: string
 beforeEach(() => {
@@ -229,6 +238,14 @@ describe('integration stage (manual)', () => {
     expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
   })
 
+  test('a repository without ui_paths runs no screenshot command', async () => {
+    const h = integrationHarness(root)
+    await h.integrated()
+    expect(h.shots.runs).toEqual([])
+    expect(h.linear.uploads).toEqual([])
+    expect(h.gh.gh('create')[0]?.stdin).not.toContain('## Screenshots')
+  })
+
   test('a repository with github: personal opens the PR under the personal account', async () => {
     const h = integrationHarness(root)
     await h.integrated({
@@ -284,5 +301,144 @@ describe('integration stage (manual)', () => {
     expect(h.gh.gh('create')[0]?.stdin).toContain(
       'Unreviewed: the reviewer returned invalid output twice. Merge manually',
     )
+  })
+})
+
+describe('integration stage (screenshots)', () => {
+  const withUi =
+    (ui: string[], run = SHOTS_COMMAND) =>
+    (c: Config): Config => ({
+      ...c,
+      repositories: {
+        ...c.repositories,
+        omni: {
+          ...(c.repositories.omni as Config['repositories'][string]),
+          ui_paths: ui,
+          screenshots: { run, output: 'shots', timeout: '5m', max_images: 40, max_mb: 20 },
+        },
+      },
+    })
+
+  const shotComments = (h: ReturnType<typeof integrationHarness>) =>
+    (h.linear.threads.get('FOR-1') ?? []).filter((c) => c.body.includes(SCREENSHOT_MARKER))
+
+  test('a UI change runs the command on base and head, posts one before/after comment and links it', async () => {
+    const h = integrationHarness(root, withUi(['src/**/*.ts']))
+    const run = await h.integrated()
+
+    expect(h.shots.runs.map((r) => [r.sha, r.checks])).toEqual([
+      [h.fx.base, [SHOTS_COMMAND]],
+      [run.headSha ?? '', [SHOTS_COMMAND]],
+    ])
+    expect(h.linear.uploads.map((u) => [u.name, u.contentType])).toEqual([
+      ['desktop-dark-before.png', 'image/png'],
+      ['desktop-dark-after.png', 'image/png'],
+    ])
+    const [comment] = shotComments(h)
+    expect(shotComments(h)).toHaveLength(1)
+    expect(comment?.body).toContain('| `/` | desktop | dark | ![before](https://uploads.linear.test/1/')
+    expect(comment?.body).toContain('![after](https://uploads.linear.test/2/')
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd).not.toContain('--draft')
+    expect(create?.stdin).toContain(
+      `## Screenshots\nBefore and after: https://linear.app/h-cloud/issue/FOR-1#comment-${comment?.id}`,
+    )
+  })
+
+  test('a change outside ui_paths runs nothing and opens the PR as before', async () => {
+    const h = integrationHarness(root, withUi(['web/**', '**/*.svelte']))
+    await h.integrated()
+    expect(h.shots.runs).toEqual([])
+    expect(h.linear.uploads).toEqual([])
+    expect(shotComments(h)).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd).not.toContain('--draft')
+    expect(create?.stdin).not.toContain('## Screenshots')
+  })
+
+  test('a failing screenshot command opens a draft PR that says why', async () => {
+    const h = integrationHarness(root, withUi(['src/**'], 'exit 3'))
+    await h.integrated()
+    expect(h.shots.runs).toHaveLength(1)
+    expect(h.linear.uploads).toEqual([])
+    expect(shotComments(h)).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      '## Screenshots\nDraft: this change touches UI paths, but no screenshots were taken: the screenshots command failed on the base commit (exit 3).',
+    )
+    expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
+  })
+
+  test('a command that yields no images opens a draft PR that says why', async () => {
+    const h = integrationHarness(
+      root,
+      withUi(['src/**'], "mkdir -p shots && echo '[]' > shots/manifest.json"),
+    )
+    await h.integrated()
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain('no screenshots were taken: the screenshots command produced no images.')
+  })
+
+  test('a UI change in a repository without a screenshots command opens a draft', async () => {
+    const h = integrationHarness(root, (c) => {
+      const { screenshots: _, ...omni } = withUi(['src/**'])(c).repositories
+        .omni as Config['repositories'][string]
+      return { ...c, repositories: { ...c.repositories, omni } }
+    })
+    await h.integrated()
+    expect(h.gh.gh('create')[0]?.stdin).toContain('the repository has no screenshots command.')
+  })
+
+  test('the image cap limits the uploads and the comment says how many were left out', async () => {
+    const many =
+      'mkdir -p shots && for v in a b c; do head -c 64 src/a.test.ts > shots/$v.png; done && printf \'%s\' \'[{"page":"/","viewport":"a","theme":"dark","file":"a.png"},{"page":"/","viewport":"b","theme":"dark","file":"b.png"},{"page":"/","viewport":"c","theme":"dark","file":"c.png"}]\' > shots/manifest.json'
+    const h = integrationHarness(root, (c) => {
+      const next = withUi(['src/**'], many)(c)
+      const omni = next.repositories.omni as Config['repositories'][string]
+      return {
+        ...next,
+        repositories: {
+          ...next.repositories,
+          omni: {
+            ...omni,
+            screenshots: { ...(omni.screenshots as NonNullable<typeof omni.screenshots>), max_images: 4 },
+          },
+        },
+      }
+    })
+    await h.integrated()
+    expect(h.linear.uploads).toHaveLength(4)
+    expect(shotComments(h)[0]?.body).toContain('1 more screenshots were left out by the configured cap.')
+    expect(h.gh.gh('create')[0]?.stdin).toContain('1 more screenshots were left out by the configured cap.')
+  })
+
+  test('a retried attempt replaces the earlier screenshot comment instead of adding one', async () => {
+    const h = integrationHarness(root, withUi(['src/**']))
+    await h.integrated()
+    const [first] = shotComments(h)
+    const retry = await h.first.retryRun('FOR-1', {}, 'cli')
+    git(h.fx.worker, 'commit', '-q', '--allow-empty', '-m', 'address review')
+    await h.first.workerStarted(retry.id, { sandbox: 'sb-2', session: 's-2' })
+    await h.first.workerFinished(retry.id, FINISH)
+    const head = importBundle(h.fx.checkout, h.fx.bundle('run2').bundle, h.fx.branch, retry.id)
+    await h.first.headImported(retry.id, head)
+    await h.first.gatesFinished(retry.id, [gate('test')])
+    await h.first.reviewFinished(retry.id, {
+      kind: 'verdict',
+      review: { verdict: 'pass', findings: [] },
+      model: 'glm',
+    })
+    await h.first.tick()
+    await until(() => h.first.pullRequests.get('FOR-1')?.headSha === head, 'PR head updated')
+
+    expect(h.shots.runs.map((r) => r.sha).at(-1)).toBe(head)
+    expect(h.linear.uploads).toHaveLength(4)
+    const comments = shotComments(h)
+    expect(comments).toHaveLength(1)
+    expect(comments[0]?.id).toBe(first?.id ?? '')
+    expect(comments[0]?.body).toContain('https://uploads.linear.test/4/')
+    expect(h.gh.prUpdates().at(-1)?.stdin).toContain(`#comment-${first?.id}`)
   })
 })

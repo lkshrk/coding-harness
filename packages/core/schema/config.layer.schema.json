@@ -418,6 +418,30 @@
         "timeout": { "$ref": "#/$defs/duration" }
       }
     },
+    "screenshots": {
+      "description": "run in the repository image on base and head; writes PNGs and manifest.json to output",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "run": { "type": "string", "minLength": 1 },
+        "output": {
+          "description": "directory relative to the repository root",
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "max_images": {
+          "description": "images uploaded per change, before and after together",
+          "type": "integer",
+          "minimum": 2
+        },
+        "max_mb": {
+          "description": "total size of the images uploaded per change",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
     "repository": {
       "type": "object",
       "additionalProperties": false,
@@ -436,6 +460,13 @@
           "minItems": 1
         },
         "risk_paths": { "type": "array", "items": { "$ref": "#/$defs/glob" }, "uniqueItems": true },
+        "ui_paths": {
+          "description": "a change touching these gets before and after screenshots from the screenshots command",
+          "type": "array",
+          "items": { "$ref": "#/$defs/glob" },
+          "uniqueItems": true
+        },
+        "screenshots": { "$ref": "#/$defs/screenshots" },
         "macos_only": { "type": "boolean" },
         "github": {
           "$ref": "#/$defs/id",

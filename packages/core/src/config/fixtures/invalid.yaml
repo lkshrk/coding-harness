@@ -41,6 +41,12 @@
 - { name: empty stacks, set: { repositories.omni.stacks: [] } }
 - { name: duplicate stacks, set: { repositories.omni.stacks: [node, node] } }
 - { name: empty risk path, set: { repositories.omni.risk_paths: [''] } }
+- { name: empty ui path, set: { repositories.omni.ui_paths: [''] } }
+- { name: duplicate ui paths, set: { repositories.omni.ui_paths: ['**/*.css', '**/*.css'] } }
+- { name: screenshots without output, set: { repositories.omni.screenshots: { run: make shots } } }
+- { name: screenshots empty command, set: { repositories.omni.screenshots: { run: '', output: shots } } }
+- { name: screenshots image cap below a pair, set: { repositories.omni.screenshots: { run: make shots, output: shots, max_images: 1 } } }
+- { name: screenshots unknown key, set: { repositories.omni.screenshots: { run: make shots, output: shots, url: x } } }
 - { name: macos_only string, set: { repositories.omni.macos_only: 'yes' } }
 - { name: unknown repository key, set: { repositories.omni.branch: main } }
 - { name: no projects, set: { projects: [] } }
