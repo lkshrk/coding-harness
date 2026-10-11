@@ -12,6 +12,7 @@ import { runRef } from '../git/host'
 import { Channel } from './channel'
 import {
   GRACE_MESSAGE,
+  NO_DIFF_MESSAGE,
   parseDuration,
   parseTokens,
   shellJoin,
@@ -71,6 +72,9 @@ class Callbacks implements WorkerCallbacks {
   }
   async workerProgress(runId: string, progress: unknown) {
     this.calls.push(['progress', runId, progress])
+  }
+  async workerNoProgress(runId: string, info: unknown) {
+    this.calls.push(['no_progress', runId, info])
   }
   async wipCommitted(runId: string, info: unknown) {
     this.calls.push(['wip', runId, info])
@@ -606,6 +610,75 @@ describe('WorkerExecutor watching', () => {
     await until(() => worker.stopped.length === 1)
     await Bun.sleep(10)
     expect(cb.of('failed')).toEqual([])
+  })
+
+  test('no diff past no_diff_steps nudges once, then ends as task_too_large after a full grace turn', async () => {
+    config = {
+      ...config,
+      limits: { ...config.limits, worker: { ...config.limits.worker, no_diff_steps: 2 } },
+    }
+    await started()
+    worker.stream.push(read)
+    for (let i = 0; i < 4; i++) worker.stream.push(step)
+    await until(() => cb.of('no_progress').length === 1)
+    expect(worker.sent).toEqual([NO_DIFF_MESSAGE])
+    expect(cb.of('no_progress')[0]).toEqual([
+      'no_progress',
+      run.id,
+      { steps: 2, tokens: 22, nudge: NO_DIFF_MESSAGE },
+    ])
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => worker.sent.length === 2)
+    expect(cb.of('failed')).toEqual([])
+    worker.stream.push(step)
+    worker.stream.push({ kind: 'text', chars: 33, text: 'Found the parser in src/parse.ts.' })
+    worker.stream.push({ kind: 'text', chars: 0, text: '' })
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => cb.of('failed').length === 1)
+    expect(cb.of('failed')[0]).toEqual([
+      'failed',
+      run.id,
+      'task_too_large',
+      'no diff after 5 steps and 55 tokens; last summary: Found the parser in src/parse.ts.',
+    ])
+    expect(worker.sent).toEqual([NO_DIFF_MESSAGE, GRACE_MESSAGE])
+  })
+
+  test('a no-diff stop keeps the whole last summary, however long', async () => {
+    config = {
+      ...config,
+      limits: { ...config.limits, worker: { ...config.limits.worker, no_diff_steps: 2 } },
+    }
+    await started()
+    worker.stream.push(read)
+    for (let i = 0; i < 4; i++) worker.stream.push(step)
+    await until(() => cb.of('no_progress').length === 1)
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => worker.sent.length === 2)
+    const summary = `${'Findings. '.repeat(400)}Next step: split the parser change.`
+    worker.stream.push(step)
+    worker.stream.push({ kind: 'text', chars: summary.length, text: summary })
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => cb.of('failed').length === 1)
+    expect(cb.of('failed')[0]?.[3]).toBe(
+      `no diff after 5 steps and 55 tokens; last summary: ${summary.trim()}`,
+    )
+  })
+
+  test('a diff found when the no-diff threshold passes sends no nudge', async () => {
+    config = {
+      ...config,
+      limits: { ...config.limits, worker: { ...config.limits.worker, no_diff_steps: 2 } },
+    }
+    await started()
+    sandbox.onExec = (cmd) => (cmd[2]?.includes('numstat') ? { stdoutTail: '3\t1\tsrc/a.ts\n' } : undefined)
+    worker.stream.push(read)
+    worker.stream.push(step)
+    worker.stream.push(step)
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => worker.sent.length === 1)
+    expect(worker.sent).toEqual([GRACE_MESSAGE])
+    expect(cb.of('no_progress')).toEqual([])
   })
 
   test('progress carries the diff size against the base commit', async () => {

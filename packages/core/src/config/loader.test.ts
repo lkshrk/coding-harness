@@ -79,7 +79,13 @@ describe('loadConfig', () => {
     const res = loadConfig(opts({ user }))
     if (!res.ok) throw new Error(res.errors.map(formatError).join('\n'))
     expect(res.config.limits.concurrency).toBe(2)
-    expect(res.config.limits.worker).toEqual({ wall_clock: '45m', tokens: '2M', steps: 200 })
+    expect(res.config.limits.worker).toEqual({
+      wall_clock: '45m',
+      tokens: '2M',
+      steps: 200,
+      no_diff_steps: 25,
+      no_diff_tokens: '250k',
+    })
     expect(res.config.limits.repair_rounds).toBe(2)
   })
 

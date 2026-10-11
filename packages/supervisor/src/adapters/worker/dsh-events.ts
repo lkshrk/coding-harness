@@ -37,7 +37,9 @@ export class DshEventMapper {
           },
         ]
       case 'text':
-        return [{ kind: 'text', chars: e.text?.length ?? 0 }]
+        return e.text === undefined
+          ? [{ kind: 'text', chars: 0 }]
+          : [{ kind: 'text', chars: e.text.length, text: e.text }]
       case 'error':
         return [{ kind: 'error', message: String(e.message ?? 'dsh error'), fatal: true }]
       case 'status':

@@ -202,7 +202,16 @@
           "properties": {
             "wall_clock": { "$ref": "#/$defs/duration" },
             "tokens": { "$ref": "#/$defs/tokenCount" },
-            "steps": { "type": "integer", "minimum": 1 }
+            "steps": { "type": "integer", "minimum": 1 },
+            "no_diff_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "steps without a diff before a worker gets one nudge to commit a first step or finish"
+            },
+            "no_diff_tokens": {
+              "$ref": "#/$defs/tokenCount",
+              "description": "tokens without a diff before a worker gets one nudge to commit a first step or finish"
+            }
           }
         },
         "repair_rounds": { "type": "integer", "minimum": 0, "maximum": 10 },

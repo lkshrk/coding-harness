@@ -2,7 +2,7 @@ import { viewIssue } from '../policy/stages'
 import type { SandboxHandle } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
-import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
+import type { NoProgressInfo, Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 import { type Event, EventValidationError } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'
 import { activeRun } from '../state/targets'
@@ -41,6 +41,12 @@ export class RunLifecycle {
   async workerProgress(runId: string, progress: Progress): Promise<void> {
     if (this.late(runId, 'progress')) return
     this.rt.log.append({ type: 'WORKER_PROGRESS', run: runId, data: progress })
+  }
+
+  async workerNoProgress(runId: string, info: NoProgressInfo): Promise<void> {
+    if (this.late(runId, 'no progress')) return
+    const run = this.rt.requireRun(runId)
+    this.rt.log.append({ type: 'WORKER_NO_PROGRESS', issue: run.issue, run: run.id, data: info })
   }
 
   async wipCommitted(runId: string, info: { sha: string; lines: number }): Promise<void> {

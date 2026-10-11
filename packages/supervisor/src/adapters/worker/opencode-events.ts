@@ -74,7 +74,9 @@ export class EventMapper {
         ]
       }
       case 'session.text.ended':
-        return [{ kind: 'text', chars: typeof data.text === 'string' ? data.text.length : 0 }]
+        return typeof data.text === 'string'
+          ? [{ kind: 'text', chars: data.text.length, text: data.text }]
+          : [{ kind: 'text', chars: 0 }]
       case 'session.step.failed':
         return [{ kind: 'error', message: errorMessage(data), fatal: false }]
       case 'session.execution.failed':

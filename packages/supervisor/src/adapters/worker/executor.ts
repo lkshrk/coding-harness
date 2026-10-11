@@ -31,7 +31,7 @@ import { INDEX_MOUNT } from '../codegraph'
 import { memoryMb } from './docker'
 import { OPENCODE_CONFIG_DIR } from './opencode'
 import { type RunLimits, RunWatch, type WorkerCallbacks } from './run-watch'
-import { WATCH_DEFAULTS, type WatchThresholds } from './watch'
+import { producesDiff, WATCH_DEFAULTS, type WatchThresholds } from './watch'
 import {
   agentConfig,
   continueFrom,
@@ -44,7 +44,7 @@ import {
   shellJoin,
 } from './workspace'
 
-export { failureReason, GRACE_MESSAGE, type WorkerCallbacks } from './run-watch'
+export { failureReason, GRACE_MESSAGE, NO_DIFF_MESSAGE, type WorkerCallbacks } from './run-watch'
 export { REPO_MOUNT, shellJoin } from './workspace'
 
 export const CA_MOUNT = '/etc/nightshift/ca.pem'
@@ -83,6 +83,7 @@ const DETACHED: WorkerCallbacks = {
   workerFinished: dropped('finish'),
   workerFailed: dropped('failure'),
   workerProgress: dropped('progress'),
+  workerNoProgress: dropped('no progress'),
   wipCommitted: dropped('wip commit'),
 }
 
@@ -310,6 +311,9 @@ export class WorkerExecutor implements RunExecutor {
       wallClockMs: parseDuration(w.wall_clock),
       tokens: parseTokens(w.tokens),
       graceTurns: def.graceTurns,
+      ...(producesDiff(def)
+        ? { noDiff: { steps: w.no_diff_steps, tokens: parseTokens(w.no_diff_tokens) } }
+        : {}),
     }
   }
 

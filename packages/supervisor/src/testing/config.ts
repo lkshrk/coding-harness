@@ -96,7 +96,7 @@ export function testConfig(): Config {
     },
     limits: {
       concurrency: 2,
-      worker: { wall_clock: '45m', tokens: '2M', steps: 200 },
+      worker: { wall_clock: '45m', tokens: '2M', steps: 200, no_diff_steps: 25, no_diff_tokens: '250k' },
       repair_rounds: 2,
       best_of: 2,
     },
