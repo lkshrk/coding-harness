@@ -132,11 +132,17 @@ export function historyItems(input: ContextInput): Item[] {
               )
               .join('\n')}`
           : '',
-        a.prConflict
-          ? `The pull request conflicts with base \`${a.prConflict.base}\` in: ${a.prConflict.files.map((f) => `\`${f}\``).join(', ') || '(unknown files)'}. The merge of that base is in progress in the workspace: resolve every conflict keeping both sides' intent, \`git add\` the files and \`git commit --no-edit\` to conclude the merge. Finish BLOCKED if a conflict needs a decision.`
-          : '',
+        a.prConflict ? `The pull request ${mergeInProgress(a.prConflict)}` : '',
       ]),
     }))
+  const conflict = input.baseConflict
+    ? [
+        {
+          source: `base ${input.baseConflict.base}`,
+          text: `## Merge of the base in progress\nThe continued attempt ${mergeInProgress(input.baseConflict)}`,
+        },
+      ]
+    : []
   const wip = input.wip
     ? [
         {
@@ -145,7 +151,11 @@ export function historyItems(input: ContextInput): Item[] {
         },
       ]
     : []
-  return [...wip, ...answers, ...attempts]
+  return [...conflict, ...wip, ...answers, ...attempts]
+}
+
+function mergeInProgress(c: { base: string; files: string[] }): string {
+  return `conflicts with base \`${c.base}\` in: ${c.files.map((f) => `\`${f}\``).join(', ') || '(unknown files)'}. The merge of that base is in progress in the workspace: resolve every conflict keeping both sides' intent, \`git add\` the files and \`git commit --no-edit\` to conclude the merge. Finish BLOCKED if a conflict needs a decision.`
 }
 
 const GLOB = /[*?[\]{}]/

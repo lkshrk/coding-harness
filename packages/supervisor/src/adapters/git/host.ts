@@ -26,6 +26,29 @@ export function importBundle(checkout: string, bundle: string, ref: string, run:
   return git(checkout, 'rev-parse', '--verify', `${runRef(run)}^{commit}`).trim()
 }
 
+// Why a continued head does not hold a concluded, marker-free merge of base, or undefined when it does.
+export function unresolvedMerge(
+  checkout: string,
+  base: string,
+  head: string,
+  files: string[],
+): string | undefined {
+  const run = (...args: string[]) =>
+    Bun.spawnSync(['git', '-C', checkout, ...args], { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
+  const merged = run('merge-base', '--is-ancestor', base, head)
+  if (merged.exitCode === 1) return `the merge of base ${base} was not concluded (${files.join(', ')})`
+  if (merged.exitCode !== 0)
+    throw new Error(`git merge-base ${base} ${head}: ${merged.stderr.toString().trim()}`)
+  const grep = run('grep', '-l', '-E', '^(<{7}|>{7})( |$)', head, '--', ...files)
+  if (grep.exitCode > 1) throw new Error(`git grep ${head}: ${grep.stderr.toString().trim()}`)
+  const marked = grep.stdout
+    .toString()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => l.slice(head.length + 1))
+  return marked.length ? `conflict markers left in: ${marked.join(', ')}` : undefined
+}
+
 export type ReviewArtifacts = { diff: string; testsTouched: string; tests: string[] }
 
 export function writeReviewArtifacts(

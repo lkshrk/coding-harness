@@ -72,6 +72,38 @@ export class ReviewRoundStore {
   }
 }
 
+const BASE_CONFLICTS_KEY = 'base_conflicts'
+
+// Per issue: the base sha a continued attempt last had to resolve a merge with, and the run resolving it.
+export type BaseConflict = { base: string; files: string[]; run: string }
+
+export class BaseConflictStore {
+  constructor(private readonly db: Db) {}
+
+  get(issue: string): BaseConflict | null {
+    return this.read()[issue] ?? null
+  }
+
+  forRun(run: string): BaseConflict | null {
+    return Object.values(this.read()).find((c) => c.run === run) ?? null
+  }
+
+  put(issue: string, conflict: BaseConflict): void {
+    this.db
+      .query(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(BASE_CONFLICTS_KEY, JSON.stringify({ ...this.read(), [issue]: conflict }))
+  }
+
+  private read(): Record<string, BaseConflict> {
+    const row = this.db
+      .query<{ value: string }, [string]>('SELECT value FROM meta WHERE key = ?')
+      .get(BASE_CONFLICTS_KEY)
+    return row ? (JSON.parse(row.value) as Record<string, BaseConflict>) : {}
+  }
+}
+
 export class PullRequestStore {
   constructor(private readonly db: Db) {}
 

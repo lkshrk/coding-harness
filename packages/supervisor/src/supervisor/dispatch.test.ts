@@ -83,6 +83,98 @@ describe('manual retry', () => {
     expect(h.sup.runs.forIssue('FOR-1')).toHaveLength(2)
   })
 
+  function conflicting(files = ['environments/README.md']) {
+    const repos = {
+      base: 'base1',
+      files,
+      inspected: [] as [string, string][],
+      baseSha: async () => repos.base,
+      conflictingFiles: async (_: string, base: string, head: string) => {
+        repos.inspected.push([base, head])
+        return repos.files
+      },
+    }
+    return { h: harness({ repos }), repos }
+  }
+
+  test('a continuation conflicting with the moved base starts the worker with the merge left to it', async () => {
+    const { h, repos } = conflicting()
+    const first = await failedWithCommit(h)
+    repos.base = 'base2'
+    const next = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(repos.inspected).toEqual([['base2', 'head1']])
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+      run: first.id,
+      headSha: 'head1',
+      resolveConflicts: true,
+    })
+    expect(h.sup.runs.get(next.id)?.state).not.toBe('failed')
+    expect(h.sup.continuedFrom(next)).toBe('head1')
+  })
+
+  test('an automatic repair whose base merge conflicts also leaves the merge to the worker', async () => {
+    const { h, repos } = conflicting()
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(first.id, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(first.id, 'head1')
+    repos.base = 'base2'
+    await h.sup.gatesFinished(first.id, [
+      {
+        check: 'test',
+        passed: false,
+        result: { exitCode: 1, durationMs: 1, stdoutTail: '', stderrTail: '', artifact: '', timedOut: false },
+      },
+    ])
+    expect(h.sup.runs.get(first.id)?.failure).toBe('implementation_defect')
+    h.advance(10_000)
+    await h.sup.tick()
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+      run: first.id,
+      headSha: 'head1',
+      resolveConflicts: true,
+    })
+  })
+
+  test('a clean continuation does not leave a merge to the worker', async () => {
+    const { h, repos } = conflicting([])
+    const first = await failedWithCommit(h)
+    repos.base = 'base2'
+    await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+  })
+
+  test('a second conflict on the same base holds the issue without another run', async () => {
+    const { h, repos } = conflicting()
+    await failedWithCommit(h)
+    repos.base = 'base2'
+    const resolving = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    await h.sup.workerStarted(resolving.id, { sandbox: 'sb2', session: 's2' })
+    await h.sup.workerFailed(resolving.id, 'base_conflict', 'unresolved in: environments/README.md')
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    const runs = h.sup.runs.forIssue('FOR-1').length
+
+    await expect(h.sup.retryRun('FOR-1', { continue: true }, 'cli')).rejects.toMatchObject({
+      code: 'refused',
+    })
+    expect(h.sup.runs.forIssue('FOR-1')).toHaveLength(runs)
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated', reason: 'base_conflict' })
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    const comments = await h.linear.comments('FOR-1')
+    expect(comments.some((c) => c.body.includes('base2') && c.body.includes('environments/README.md'))).toBe(
+      true,
+    )
+
+    repos.base = 'base3'
+    const fresh = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toMatchObject({ resolveConflicts: true })
+    expect(fresh.baseSha).toBe('base3')
+  })
+
   test('--continue skips later attempts without a commit and uses the latest one that has one', async () => {
     let bases = 0
     const h = harness({ repos: { baseSha: async () => `base${++bases}` } })

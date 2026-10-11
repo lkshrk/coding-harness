@@ -19,6 +19,7 @@ import {
   snapshot,
   testConfig,
 } from '../../testing/testing'
+import { BaseConflictStore } from '../integration/records'
 import { SandboxGateRunner } from './runner'
 import { gateStep } from './step'
 import { type GitFixture, git, gitFixture } from './testing'
@@ -150,6 +151,7 @@ function harness(results: Record<string, Partial<ExecResult>> = {}, sub = 'a') {
 
   return {
     fx,
+    db,
     config,
     linear,
     first,
@@ -335,6 +337,48 @@ describe('gate step', () => {
     })
     expect(h.first.runs.get(run.id)?.state).toBe('failed')
     expect(h.gateEvents()).toEqual([])
+  })
+
+  describe('a continued attempt left to resolve a base merge', () => {
+    const conflicted = async (h: ReturnType<typeof harness>, base: string) => {
+      const run = await h.finishedRun()
+      new BaseConflictStore(h.db).put('FOR-1', { base, files: ['src/a.test.ts'], run: run.id })
+      await h.first.workerFinished(run.id, FINISH)
+      await h.first.idle()
+      return run
+    }
+
+    test('a merge the worker did not conclude fails as base_conflict naming the files', async () => {
+      const h = harness()
+      const moved = git(h.fx.checkout, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'moved')
+      const run = await conflicted(h, moved)
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: `the merge of base ${moved} was not concluded (src/a.test.ts)`,
+      })
+      expect(h.first.runs.get(run.id)?.state).toBe('failed')
+      expect(h.gateEvents()).toEqual([])
+      expect(h.first.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    })
+
+    test('conflict markers left in a conflicting file fail as base_conflict naming it', async () => {
+      const h = harness()
+      writeFileSync(join(h.fx.worker, 'src/a.test.ts'), '<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> base\n')
+      git(h.fx.worker, 'commit', '-q', '-am', 'resolve')
+      await conflicted(h, h.fx.base)
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: 'conflict markers left in: src/a.test.ts',
+      })
+      expect(h.gateEvents()).toEqual([])
+    })
+
+    test('a concluded merge without markers is gated', async () => {
+      const h = harness()
+      await conflicted(h, h.fx.base)
+      expect(h.of('WORKER_FAILED')).toEqual([])
+      expect(h.gateEvents().map(([t]) => t)).toEqual(['GATE_PASSED', 'GATE_PASSED'])
+    })
   })
 
   test('a gate infrastructure failure fails the run as a sandbox error', async () => {
