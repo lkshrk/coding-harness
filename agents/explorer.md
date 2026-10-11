@@ -76,4 +76,4 @@ Commit your work on the current branch, then call `finish` exactly once, as your
 - `summary`: one to three sentences a human can read.
 - `evidence`: each command, test or file you checked and its result; `DONE` needs at least one. `finish` is a claim: the gates re-run everything themselves.
 - `changed_files`, `concerns` and `blocker` where they apply.
-- `report`, always: `files` (path and why it matters), `symbols` (name, path, line), `facts` (claim, source, `observed` or `inferred`) and `open_questions`.
+- `report`, always: `files` (the next attempt's reading list, at most 10, the most essential first: path and why it matters), `symbols` (name, path, line), `facts` (claim, source, `observed` or `inferred`) and `open_questions`.

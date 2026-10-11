@@ -247,6 +247,13 @@ describe('explorer', () => {
     const { open_questions: _, ...missing } = report
     expect(validateFinish(explorer, finish(missing)).ok).toBe(false)
   })
+
+  test('files is a reading list of at most 10 entries, the most essential first', () => {
+    const files = Array.from({ length: 11 }, (_, n) => ({ path: `src/${n}.ts`, why: 'w' }))
+    expect(validateFinish(explorer, finish({ ...report, files: files.slice(0, 10) })).ok).toBe(true)
+    expect(validateFinish(explorer, finish({ ...report, files })).ok).toBe(false)
+    expect(sections(explorer.body).get('Output')).toContain('at most 10, the most essential first')
+  })
 })
 
 describe('fixer and repairer', () => {

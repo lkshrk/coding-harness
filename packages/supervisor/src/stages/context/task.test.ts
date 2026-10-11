@@ -201,6 +201,46 @@ describe('contextInput', () => {
     expect(plain.baseConflict).toBeUndefined()
   })
 
+  test('the latest finished explorer run supplies the explorer files', async () => {
+    const config = testConfig()
+    const db = openState(':memory:')
+    const runs = new RunStore(db, { now: () => new Date(0), ulid: createUlid() })
+    const base = { issue: 'FOR-2', profile: 'cloud', model: 'm', repository: 'omni', baseSha: 'abc' }
+    const deps = {
+      config: () => config,
+      db,
+      linear: new FakeLinear(config, () => new Date(0)),
+      builder: {} as never,
+      home: '/h',
+    }
+    const issue = snapshot({ identifier: 'FOR-2' })
+    const first = runs.create({ ...base, agent: 'implementer', attempt: 1 })
+    runs.update(first.id, { failure: 'insufficient_context', finish: { summary: 'lost' } })
+    const without = await contextInput(deps, { run: first, issue, files: [] })
+    expect(without.explorerFiles).toBeUndefined()
+
+    const report = (files: { path: string; why: string }[]) => ({
+      summary: 's',
+      report: { files, symbols: [], facts: [], open_questions: [] },
+    })
+    const older = runs.create({ ...base, agent: 'explorer', attempt: 2 })
+    runs.update(older.id, { finish: report([{ path: 'src/old.ts', why: 'stale' }]) })
+    const latest = runs.create({ ...base, agent: 'explorer', attempt: 3 })
+    runs.update(latest.id, {
+      finish: report([
+        { path: 'src/b.ts', why: 'owns retries' },
+        { path: 'src/a.ts', why: 'calls it' },
+      ]),
+    })
+    runs.create({ ...base, agent: 'explorer', attempt: 4 })
+    const current = runs.create({ ...base, agent: 'implementer', attempt: 5 })
+    const input = await contextInput(deps, { run: current, issue, files: [] })
+    expect(input.explorerFiles).toEqual([
+      { path: 'src/b.ts', why: 'owns retries' },
+      { path: 'src/a.ts', why: 'calls it' },
+    ])
+  })
+
   test('a description outside the template is rejected', async () => {
     const config = testConfig()
     const db = openState(':memory:')

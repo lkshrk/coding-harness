@@ -16,6 +16,7 @@ export type ContextInput = {
   run?: { id: string; attempt: number; profile: string }
   wip?: { sha: string; attempt: number }
   baseConflict?: { base: string; files: string[] }
+  explorerFiles?: { path: string; why: string }[]
 }
 
 export type ContextSection = { name: string; tokens: number; sources: string[]; truncated: boolean }

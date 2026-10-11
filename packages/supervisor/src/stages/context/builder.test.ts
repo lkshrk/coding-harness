@@ -426,6 +426,78 @@ describe('code-graph neighbours', () => {
   })
 })
 
+describe('explorer files', () => {
+  const files = {
+    'src/a.ts': 'export const a = 1\n',
+    'src/key.ts': 'export const key = 1\n',
+    'src/other.ts': 'export const other = 1\n',
+  }
+  const budget = { inputTokens: 100_000, model: 'm' }
+
+  test('lead FILES in the explorer order with their reasons', async () => {
+    const built = await builder(files).build(
+      input(
+        {
+          explorerFiles: [
+            { path: 'src/other.ts', why: 'owns the retry loop' },
+            { path: 'src/key.ts', why: 'defines the key' },
+            { path: 'src/a.ts', why: 'the issue file' },
+          ],
+        },
+        { files: ['src/a.ts'] },
+      ),
+      budget,
+    )
+    expect(section(built, 'FILES').sources).toEqual(['src/other.ts', 'src/key.ts', 'src/a.ts'])
+    expect(built.message).toContain(
+      '## src/other.ts\nWhy: owns the retry loop\n```\nexport const other = 1\n```',
+    )
+    expect(built.message).toContain('## src/a.ts\nWhy: the issue file\n')
+  })
+
+  test('a path missing at the base is left out', async () => {
+    const built = await builder(files).build(
+      input(
+        {
+          explorerFiles: [
+            { path: 'src/gone.ts', why: 'was renamed' },
+            { path: 'src/key.ts', why: 'defines the key' },
+          ],
+        },
+        { files: ['src/a.ts'] },
+      ),
+      budget,
+    )
+    expect(section(built, 'FILES').sources).toEqual(['src/key.ts', 'src/a.ts'])
+    expect(built.message).not.toContain('src/gone.ts')
+  })
+
+  test('take their share of the FILES budget first', async () => {
+    const big = { 'a.ts': pad(300), 'key.ts': pad(300) }
+    const i = input({ explorerFiles: [{ path: 'key.ts', why: 'w' }] }, { files: ['a.ts'] })
+    const built = await builder(big).build(i, { inputTokens: (await fixedTokens(i)) + 500, model: 'm' })
+    expect(section(built, 'FILES')).toMatchObject({ sources: ['key.ts'], truncated: true })
+  })
+
+  test('are not repeated as neighbour outlines', async () => {
+    const built = await new FencedContextBuilder({
+      count: chars,
+      source: () => source(files),
+      graph: () => fakeGraph({ 'src/key.ts': 'L1 const key', 'src/caller.ts': 'L1 function c()' }),
+    }).build(
+      input(
+        {
+          repository: { name: 'omni', checkoutPath: '/repo', base: 'abc123', indexPath: '/idx' },
+          explorerFiles: [{ path: 'src/key.ts', why: 'defines the key' }],
+        },
+        { files: ['src/a.ts'] },
+      ),
+      budget,
+    )
+    expect(section(built, 'FILES').sources).toEqual(['src/key.ts', 'src/a.ts', 'src/caller.ts (outline)'])
+  })
+})
+
 describe('expandFiles', () => {
   test('expands globs and directories against the base tree, keeps entry order, de-duplicates', async () => {
     const files = { 'src/a.ts': '', 'src/b/c.ts': '', 'docs/x.md': '', 'lib/z.ts': '' }
