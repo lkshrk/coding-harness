@@ -27,8 +27,10 @@ export class LinearSync {
       this.cursor === undefined ? {} : { updatedSince: this.cursor },
     )
     const seen = new Set<string>()
+    const finished: string[] = []
     for (const issue of issues) {
       seen.add(issue.identifier)
+      if (this.movedToDone(issue)) finished.push(issue.identifier)
       this.observeIssue(issue)
       if (this.cursor === undefined || issue.updatedAt > this.cursor) this.cursor = issue.updatedAt
     }
@@ -41,13 +43,28 @@ export class LinearSync {
     for (const id of new Set(watched)) {
       if (seen.has(id)) continue
       const issue = await this.rt.deps.linear.issue(id)
-      if (issue) this.observeIssue(issue)
+      if (!issue) continue
+      if (this.movedToDone(issue)) finished.push(id)
+      this.observeIssue(issue)
     }
+    for (const id of finished) await this.applyIntent(id, { kind: 'done' })
   }
 
   async refresh(identifier: string): Promise<void> {
     const issue = await this.rt.deps.linear.issue(identifier)
     if (issue) this.observeIssue(issue)
+  }
+
+  // A move to Done seen by sync; a live run's move is left to enforceLinear, which judges the actor.
+  private movedToDone(issue: IssueSnapshot): boolean {
+    const cfg = this.rt.config()
+    const before = this.rt.cache.get(issue.identifier)
+    if (!before || lifecycleOf(cfg, before.team, before.status) === 'done') return false
+    if (this.rt.runs.active().some((r) => r.issue === issue.identifier)) return false
+    return (
+      lifecycleOf(cfg, issue.team, issue.status) === 'done' &&
+      labelValue(issue.labels, LABEL_GROUPS.stage) !== null
+    )
   }
 
   observeIssue(issue: IssueSnapshot): void {
@@ -91,7 +108,10 @@ export class LinearSync {
     const labels =
       next.stage === undefined
         ? issue.labels
-        : [...issue.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${next.stage}`]
+        : [
+            ...issue.labels.filter((l) => !l.startsWith(prefix)),
+            ...(next.stage === null ? [] : [`${prefix}${next.stage}`]),
+          ]
     const status = next.status === undefined ? issue.status : teamStatuses(cfg, issue.team)[next.status]
     this.rt.cache.set(identifier, { ...issue, status, labels })
   }

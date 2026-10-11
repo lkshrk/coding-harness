@@ -41,6 +41,7 @@ const INTENTS: Intent[] = [
   { kind: 'stageEntered', stage: 'verification', from: 'implementation' },
   { kind: 'unblocked' },
   { kind: 'lost' },
+  { kind: 'done' },
   ...STATES.map((to) => ({ kind: 'humanChanged' as const, to })),
 ]
 
@@ -50,7 +51,7 @@ const escalated = (stage: string): Awaiting => ({ kind: 'escalated', stage })
 const expected: Record<Exclude<Intent['kind'], 'humanChanged'>, Partial<Record<LifecycleState, object>>> = {
   dispatched: Object.fromEntries(LIVE.map((s) => [s, { status: 'running' }])),
   prOpened: Object.fromEntries(LIVE.map((s) => [s, { status: 'review' }])),
-  merged: Object.fromEntries([...LIVE, 'done'].map((s) => [s, { status: 'done' }])),
+  merged: Object.fromEntries([...LIVE, 'done'].map((s) => [s, { status: 'done', stage: null }])),
   prClosed: Object.fromEntries(
     LIVE.map((s) => [s, { status: 'blocked', awaiting: escalated('integration') }]),
   ),
@@ -67,6 +68,7 @@ const expected: Record<Exclude<Intent['kind'], 'humanChanged'>, Partial<Record<L
   stageEntered: Object.fromEntries(LIVE.map((s) => [s, { stage: 'verification', awaiting: null }])),
   unblocked: { backlog: { status: 'ready' } },
   lost: { running: { status: 'ready' } },
+  done: { done: { stage: null } },
 }
 
 describe('transition rule table', () => {
@@ -127,7 +129,7 @@ describe('humanChanged on a running issue', () => {
     ['ready', 'requeue', { runAction: 'stopKeepWip' }],
     ['blocked', 'hold', { runAction: 'stopKeepWip', awaiting: escalated('implementation') }],
     ['canceled', 'drop', { status: 'canceled', runAction: 'stop', awaiting: null }],
-    ['done', 'finish', { status: 'done', runAction: 'stopKeepWip', awaiting: null }],
+    ['done', 'finish', { status: 'done', stage: null, runAction: 'stopKeepWip', awaiting: null }],
     ['running', 'continue', { runAction: 'none' }],
   ]
   for (const [to, outcome, want] of cases) {
@@ -149,6 +151,20 @@ describe('humanChanged on a running issue', () => {
   test('is ignored when no run is live', () => {
     for (const state of STATES.filter((s) => s !== 'running'))
       expect(RULES.humanChanged[state]).toBe('ignore')
+  })
+})
+
+describe('done', () => {
+  for (const stage of ['acceptance', 'integration'])
+    test(`from ${stage} removes the stage label and keeps others`, () => {
+      const v = view('done', stage)
+      const labels = ['type:feature', 'repo:omni', `ai-stage:${stage}`]
+      const result = transition({ ...v, snapshot: { ...v.snapshot, labels } }, { kind: 'done' }, ctx)
+      expect(result).toEqual({ stage: null, log: expect.any(String) })
+    })
+
+  test('merged into Done removes the stage', () => {
+    expect(transition(view('review', 'integration'), { kind: 'merged' }, ctx).stage).toBeNull()
   })
 })
 

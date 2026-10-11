@@ -159,6 +159,27 @@ describe('mismatch on a running issue', () => {
   })
 })
 
+describe('stage label on Done', () => {
+  test('an issue you move to Done loses its stage label on the next sync, other labels stay', async () => {
+    const h = harness()
+    h.linear.put(
+      snapshot({ identifier: 'FOR-1', status: 'Blocked', labels: ['type:feature', 'ai-stage:acceptance'] }),
+    )
+    await h.sup.start()
+    h.linear.patch('FOR-1', { status: 'Done' })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+  })
+
+  test('a Done issue first seen at start is left as it is', async () => {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['ai-stage:acceptance'] }))
+    await h.sup.start()
+    await h.sup.tick()
+    expect(h.linear.updates).toEqual([])
+  })
+})
+
 describe('Linear wins', () => {
   test('an issue canceled in Linear stops its run, destroys the sandbox and releases the lease', async () => {
     const h = harness()
