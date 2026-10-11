@@ -35,6 +35,7 @@ export type FakePr = {
   head: string
   state: 'OPEN' | 'MERGED' | 'CLOSED'
   headSha?: string
+  mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
 }
 
 const ROLLUP: Record<string, { status: string; conclusion: string }> = {
@@ -142,6 +143,7 @@ export class FakeGh {
         JSON.stringify({
           state: pr?.state,
           mergeCommit: pr?.state === 'MERGED' ? { oid: 'm3rg3d' } : null,
+          mergeable: pr?.mergeable ?? 'UNKNOWN',
           ...(pr?.headSha ? { headRefOid: pr.headSha } : {}),
         }),
       )

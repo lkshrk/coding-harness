@@ -116,15 +116,26 @@ export class Dispatcher {
   continuationOf(run: Run): ExecutorStart['repairFrom'] {
     const dispatched = this.rt.log.since(null, { run: run.id, types: ['DISPATCHED'] }).at(-1)
     const { continues, continues_ref, continues_sha } = dispatched?.data ?? {}
+    const resolve = this.conflictRound(run) ? { resolveConflicts: true } : {}
     if (typeof continues_ref === 'string' && typeof continues_sha === 'string')
-      return { ref: continues_ref, headSha: continues_sha }
+      return { ref: continues_ref, headSha: continues_sha, ...resolve }
     const from =
       typeof continues === 'string'
         ? this.rt.runs.get(continues)
         : this.rt.runs
             .forIssue(run.issue)
             .find((r) => r.attempt === run.attempt - 1 && r.failure === 'implementation_defect')
-    return from?.headSha ? { run: from.id, headSha: from.headSha } : undefined
+    return from?.headSha ? { run: from.id, headSha: from.headSha, ...resolve } : undefined
+  }
+
+  // A run repairing a PR conflict leaves the merge of the base to the worker instead of escalating.
+  conflictRound(run: Run): boolean {
+    const conflict = this.rt.pullRequests.get(run.issue)?.conflict
+    const from = conflict && !conflict.held ? this.rt.runs.get(conflict.run) : undefined
+    if (!from) return false
+    return !this.rt.runs
+      .forIssue(run.issue)
+      .some((r) => r.id !== run.id && r.attempt > from.attempt && r.state === 'done')
   }
 
   async launchQueued(): Promise<void> {

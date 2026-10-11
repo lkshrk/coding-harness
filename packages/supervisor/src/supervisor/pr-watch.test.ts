@@ -412,6 +412,108 @@ describe('pull request watching', () => {
     }
   })
 
+  async function conflicted() {
+    const root = mkdtempSync(join(tmpdir(), 'ns-watch-'))
+    const repos = {
+      base: '',
+      files: ['ARCHITECTURE.md'],
+      baseSha: async () => repos.base,
+      conflictingFiles: async () => repos.files,
+    }
+    const h = integrationHarness(root, (c) => c, { repos, retry: { baseMs: 0, maxMs: 0 } })
+    repos.base = h.fx.base
+    const run = await h.integrated()
+    const pr = h.gh.prs[0] as { mergeable?: string }
+    pr.mergeable = 'CONFLICTING'
+    const moved = () => git(h.fx.checkout, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'moved')
+    return { ...h, run, repos, pr, moved, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  test('a conflicting PR starts one pr_conflict remediation naming the base sha and the files', async () => {
+    const h = await conflicted()
+    try {
+      await h.first.tick()
+      const detail = `base ${h.fx.base} conflicts in: ARCHITECTURE.md`
+      expect(h.of('FAILURE_CLASSIFIED').map((e) => e.data)).toEqual([
+        { class: 'implementation_defect', action: 'retry_same', evidence: detail, fallback: false },
+      ])
+      const [attempt] = attemptsOf(h.db, 'FOR-1', 'next')
+      expect(attempt?.prConflict).toEqual({ base: h.fx.base, files: ['ARCHITECTURE.md'] })
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(2)
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+      expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+        run: h.run.id,
+        headSha: h.run.headSha ?? '',
+        resolveConflicts: true,
+      })
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('unknown mergeability starts no run', async () => {
+    const h = await conflicted()
+    try {
+      h.pr.mergeable = 'UNKNOWN'
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('repeated polls of a conflict on the same base sha start one round, a new base sha a new one', async () => {
+    const h = await conflicted()
+    try {
+      await h.first.tick()
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+      await repaired(h, {})
+      expect(h.first.pullRequests.get('FOR-1')?.conflict?.base).toBe(h.fx.base)
+      const moved = h.moved()
+      h.repos.base = moved
+      await h.first.tick()
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(2)
+      expect(h.of('FAILURE_CLASSIFIED').at(-1)?.data).toMatchObject({
+        evidence: `base ${moved} conflicts in: ARCHITECTURE.md`,
+      })
+      expect(h.first.awaiting('FOR-1')).toBeNull()
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a conflict that survives its repair round holds the issue naming the files', async () => {
+    const h = await conflicted()
+    try {
+      await h.first.tick()
+      await h.first.tick()
+      await repaired(h, {})
+      await h.first.tick()
+      expect(h.first.awaiting('FOR-1')).toEqual({
+        kind: 'escalated',
+        stage: 'integration',
+        reason: 'pr_conflict',
+      })
+      expect(h.linear.get('FOR-1').status).toBe('Blocked')
+      const held = (await h.linear.comments('FOR-1')).filter((c) => c.body.includes('still conflicts'))
+      expect(held).toHaveLength(1)
+      expect(held[0]?.body).toContain('ARCHITECTURE.md')
+      const runs = h.first.runs.forIssue('FOR-1').length
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(runs)
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('watching survives a supervisor restart', async () => {
     const h = await watching()
     try {

@@ -109,18 +109,20 @@ export async function continueFrom(
   if (res.exitCode !== 0 || head !== from.headSha) {
     throw new Error(`continuing from ${from.headSha.slice(0, 12)} failed: ${res.stderrTail.trim() || head}`)
   }
-  if (run.baseSha) await mergeBase(sb, sandbox, workdir, run.baseSha, from.headSha)
+  if (run.baseSha) await mergeBase(sb, sandbox, workdir, run.baseSha, from.headSha, from.resolveConflicts)
 }
 
 const CONFLICT_EXIT = 3
 
 // Merge, never rebase: the continued commits keep their hashes, so an open PR branch still fast-forwards.
+// With resolveConflicts the conflicted merge is left in progress for the worker to resolve and commit.
 async function mergeBase(
   sb: Exec,
   sandbox: SandboxHandle,
   workdir: string,
   baseSha: string,
   headSha: string,
+  resolveConflicts = false,
 ): Promise<void> {
   const script = [
     'git merge-base --is-ancestor "$1" HEAD && exit 0',
@@ -128,12 +130,21 @@ async function mergeBase(
     'files=$(git diff --name-only --diff-filter=U)',
     'test -n "$files" || { git merge --abort 2>/dev/null; echo "git merge $1 failed" >&2; exit 1; }',
     'printf "%s\\n" "$files"',
+    'test "$3" = keep && exit 0',
     'git merge --abort',
     `exit ${CONFLICT_EXIT}`,
   ].join('\n')
   const res = await sb.exec(
     sandbox,
-    ['sh', '-c', script, 'sh', baseSha, `Merge base ${baseSha.slice(0, 12)} into continued attempt`],
+    [
+      'sh',
+      '-c',
+      script,
+      'sh',
+      baseSha,
+      `Merge base ${baseSha.slice(0, 12)} into continued attempt`,
+      resolveConflicts ? 'keep' : 'abort',
+    ],
     { cwd: workdir },
   )
   if (res.exitCode === 0) return

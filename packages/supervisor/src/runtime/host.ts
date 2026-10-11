@@ -22,6 +22,16 @@ export function gitRepos(
       git('fetch', '--quiet', '--no-write-fetch-head', repo.remote, `+refs/heads/${pr.branch}:${ref}`)
       return git('rev-parse', '--verify', `${ref}^{commit}`)
     },
+    async conflictingFiles(repository, base, head) {
+      const { cwd } = await hostGit(config, auth, repository)
+      const r = Bun.spawnSync(
+        ['git', 'merge-tree', '--write-tree', '--name-only', '--no-messages', base, head],
+        { cwd, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' },
+      )
+      if (r.exitCode === 0) return []
+      if (r.exitCode !== 1) throw new Error(`git merge-tree ${base} ${head}: ${r.stderr.toString().trim()}`)
+      return r.stdout.toString().trim().split('\n').slice(1).filter(Boolean)
+    },
   }
 }
 
@@ -45,7 +55,7 @@ async function hostGit(
     if (r.exitCode !== 0) throw new Error(`git ${args.join(' ')} in ${cwd}: ${r.stderr.toString().trim()}`)
     return r.stdout.toString().trim()
   }
-  return { repo, git }
+  return { repo, git, cwd }
 }
 
 export function outboxDirs(dir: string): OutboxDirs {
