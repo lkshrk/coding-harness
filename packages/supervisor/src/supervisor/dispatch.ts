@@ -347,17 +347,19 @@ export class Dispatcher {
     }
     const size = this.sizeOf(view, o.profile ?? this.profileFor(view))
     if (size.over.length && !o.forceSize) {
+      this.logSize(view, size, 'too_large')
       throw new ControlError(
         'refused',
         `${identifier} is too large (${size.over.join(', ')}); split it or retry with --force-size`,
       )
     }
+    const explore = !o.agent && !continueFrom && !continueRef && this.wantsExplorer(view, size)
     const active = this.rt.runs.active().find((r) => r.issue === identifier)
     if (active) await this.flow.stopRun(active.id, 'retry requested', { by })
-    this.logSize(view, size, size.over.length ? 'forced' : 'dispatch')
+    this.logSize(view, size, size.over.length ? 'forced' : explore ? 'explore' : 'dispatch')
     this.flow.setAwaiting(identifier, null)
     const run = await this.dispatch(view, {
-      agent,
+      ...(explore ? { agent: EXPLORER, reason: SIZE_EXPLORE } : { agent }),
       ...(o.profile ? { profile: o.profile } : {}),
       ...(continueFrom ? { continueFrom } : {}),
       ...(continueRef ? { continueRef } : {}),

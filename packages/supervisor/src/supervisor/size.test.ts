@@ -47,7 +47,10 @@ describe('size gate on dispatch', () => {
     expect(comments.at(-1)?.body).toContain('files 4 > 2')
     expect(comments.at(-1)?.body).toContain('ns retry --force-size FOR-1')
 
+    const checked = h.of('SIZE_CHECKED').length
     await expect(h.sup.retryRun('FOR-1', {}, 'cli')).rejects.toThrow('too large')
+    expect(h.of('SIZE_CHECKED').length).toBe(checked + 1)
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ over: ['files 4 > 2'], decision: 'too_large' })
     const run = await h.sup.retryRun('FOR-1', { forceSize: true }, 'cli')
     expect(h.sup.runs.forIssue('FOR-1').map((r) => r.id)).toEqual([run.id])
     expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ decision: 'forced' })
@@ -92,5 +95,14 @@ describe('size gate on dispatch', () => {
     expect(h.linear.get('FOR-1').status).toBe('Todo')
     await h.sup.tick()
     expect(h.sup.runs.forIssue('FOR-1').map((r) => r.agent)).toEqual(['explorer', 'implementer'])
+  })
+
+  test('a manual retry of a near-limit feature runs the explorer before its first implementer run', async () => {
+    const h = sized({ max_estimate: 5 })
+    h.linear.put(snapshot({ identifier: 'FOR-1', estimate: 4 }))
+    await h.sup.start()
+    const run = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(run.agent).toBe('explorer')
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ near: true, decision: 'explore' })
   })
 })
