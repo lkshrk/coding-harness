@@ -8,7 +8,7 @@ import type { EventLog } from '../../state/events'
 import { isTerminal, type Run, type RunStore } from '../../state/runs'
 import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
-import { pullRequestBody, pullRequestTitle } from './body'
+import { type AttemptFinish, type AttemptSummary, pullRequestBody, pullRequestTitle } from './body'
 import type { PullRequestRecord, PullRequestStore } from './records'
 
 export interface IntegrationCallbacks {
@@ -54,10 +54,21 @@ export function headSubject(checkout: string, head: string): string {
   return r.stdout.toString().trim()
 }
 
+function isAncestor(checkout: string, ancestor: string, head: string): boolean {
+  const r = Bun.spawnSync(['git', '-C', checkout, 'merge-base', '--is-ancestor', ancestor, head], {
+    stdout: 'ignore',
+    stderr: 'ignore',
+    stdin: 'ignore',
+  })
+  return r.exitCode === 0
+}
+
 export function riskPathsTouched(files: readonly string[], patterns: readonly string[]): string[] {
   const globs = patterns.map((p) => new Bun.Glob(p))
   return files.filter((f) => globs.some((g) => g.match(f)))
 }
+
+const finishOf = (run: Run): AttemptFinish => (run.finish ?? null) as AttemptFinish
 
 export class IntegrationHandler implements StageHandler {
   constructor(private readonly d: IntegrationDeps) {}
@@ -118,7 +129,11 @@ export class IntegrationHandler implements StageHandler {
       )
       return
     }
-    const body = this.body(work, run, cb, risk, config)
+    const attempts = runs
+      .filter((r) => r.attempt <= run.attempt && r.headSha)
+      .filter((r) => r.id === run.id || isAncestor(checkout, r.headSha as string, run.headSha as string))
+      .map((r) => ({ attempt: r.attempt, headSha: r.headSha as string, finish: finishOf(r) }))
+    const body = this.body(work, run, cb, risk, config, attempts)
     const pr = await this.d.host.openPullRequest({
       repository: run.repository,
       branch,
@@ -143,7 +158,14 @@ export class IntegrationHandler implements StageHandler {
     )
   }
 
-  private body(work: StageWork, run: Run, cb: IntegrationCallbacks, risk: string[], config: Config): string {
+  private body(
+    work: StageWork,
+    run: Run,
+    cb: IntegrationCallbacks,
+    risk: string[],
+    config: Config,
+    attempts: AttemptSummary[],
+  ): string {
     const review = cb.log.since(null, { run: run.id, types: ['REVIEW_RECEIVED'] }).at(-1)?.data as
       | { verdict: 'pass' | 'fail'; findings: ReviewFinding[] }
       | undefined
@@ -151,7 +173,8 @@ export class IntegrationHandler implements StageHandler {
     return pullRequestBody({
       issue: work.issue,
       runId: run.id,
-      finish: (run.finish ?? null) as { summary?: string; concerns?: string[] } | null,
+      finish: finishOf(run),
+      attempts,
       gates: cb.gateResults(run.id),
       review: review ?? null,
       unreviewed: review ? null : cb.forcedManual(work.issue.identifier),

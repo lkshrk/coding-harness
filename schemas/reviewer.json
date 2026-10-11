@@ -12,7 +12,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["severity", "file", "message", "evidence", "confidence"],
+        "required": ["severity", "file", "message", "evidence", "category", "confidence"],
         "properties": {
           "severity": { "enum": ["BLOCKER", "SUGGESTION"] },
           "file": { "type": "string", "minLength": 1, "description": "path as it appears in the diff" },
@@ -33,11 +33,15 @@
             "maxLength": 1000,
             "description": "quoted changed line, gate output or a concrete failing input"
           },
+          "category": {
+            "enum": ["weakened_test", "security", "other"],
+            "description": "weakened_test and security BLOCKERs are never downgraded for low confidence"
+          },
           "confidence": {
             "type": "number",
             "minimum": 0,
             "maximum": 1,
-            "description": "how sure the finding is real"
+            "description": "high when evidence reproduces the fault, low when plausible but unshown"
           }
         }
       }

@@ -58,22 +58,27 @@ async function gitRemote(checkout: string, remote: string): Promise<string> {
 
 export { BRANCH_PREFIX }
 
-export const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+// A thread's root comment is the reply target and its newest drives the watermark; middle comments past one page are skipped.
+export const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id
           isResolved
           isOutdated
           path
           line
-          comments(first: 100) { nodes { databaseId author { login } body } }
+          root: comments(first: 1) { nodes { databaseId author { login } body } }
+          comments(last: 100) { nodes { databaseId author { login } body } }
         }
       }
     }
   }
 }`
+
+type GhComment = { databaseId: number; author?: { login: string } | null; body: string }
 
 export const RESOLVE_MUTATION = `mutation($id: ID!) {
   resolveReviewThread(input: { threadId: $id }) { thread { id isResolved } }
@@ -84,13 +89,15 @@ export type GhThreadsResponse = {
     repository?: {
       pullRequest?: {
         reviewThreads?: {
+          pageInfo?: { hasNextPage: boolean; endCursor?: string | null }
           nodes?: {
             id: string
             isResolved: boolean
             isOutdated: boolean
             path: string
             line?: number | null
-            comments?: { nodes?: { databaseId: number; author?: { login: string } | null; body: string }[] }
+            root?: { nodes?: GhComment[] }
+            comments?: { nodes?: GhComment[] }
           }[]
         }
       }
@@ -287,6 +294,62 @@ export class GhGitHost implements GitHost {
     })
   }
 
+  async baseCi(pr: PullRequest): Promise<CiState | null> {
+    return this.o.tokens.withToken(pr.repository, async (token) => {
+      const env = gitAuthEnv(token)
+      const view = await this.run(
+        ['gh', 'pr', 'view', String(pr.number), '--repo', pr.repo, '--json', 'baseRefOid'],
+        { env },
+      )
+      this.check(view, 'gh pr view')
+      const sha = (JSON.parse(view.stdout) as { baseRefOid?: string }).baseRefOid
+      if (!sha) return null
+      const r = await this.run(['gh', 'api', `repos/${pr.repo}/commits/${sha}/check-runs?per_page=100`], {
+        env,
+      })
+      this.check(r, 'gh api check-runs')
+      const { check_runs = [] } = JSON.parse(r.stdout) as {
+        check_runs?: {
+          name: string
+          status?: string
+          conclusion?: string | null
+          details_url?: string | null
+        }[]
+      }
+      // External CI providers report commit statuses, which the check-runs endpoint omits.
+      const s = await this.run(['gh', 'api', `repos/${pr.repo}/commits/${sha}/status`], { env })
+      this.check(s, 'gh api status')
+      const { statuses = [] } = JSON.parse(s.stdout) as {
+        statuses?: { context: string; state?: string; target_url?: string | null }[]
+      }
+      const checks = [
+        ...check_runs.map((c) => ({
+          name: c.name,
+          url: c.details_url || '',
+          bucket: bucketOf({
+            status: (c.status ?? '').toUpperCase(),
+            conclusion: (c.conclusion ?? '').toUpperCase(),
+          }),
+        })),
+        ...statuses.map((c) => ({
+          name: c.context,
+          url: c.target_url || '',
+          bucket: bucketOf({ state: (c.state ?? '').toUpperCase() }),
+        })),
+      ]
+      const completed = checks.filter((c) => c.bucket !== 'pending')
+      if (!completed.length) return null
+      const failed = completed.filter((c) => c.bucket === 'fail' || c.bucket === 'cancel')
+      return {
+        state: failed.length ? 'failed' : completed.length < checks.length ? 'pending' : 'passed',
+        failedChecks: failed.map((c) => c.name),
+        failures: failed.map((c) => ({ name: c.name, url: c.url, log: '' })),
+        url: `https://github.com/${pr.repo}/commit/${sha}`,
+        sha,
+      }
+    })
+  }
+
   private async failedLog(
     pr: PullRequest,
     c: { name: string; url: string },
@@ -361,37 +424,49 @@ export class GhGitHost implements GitHost {
   async reviewThreads(pr: PullRequest): Promise<ReviewThread[]> {
     const [owner, name] = pr.repo.split('/')
     return this.o.tokens.withToken(pr.repository, async (token) => {
-      const r = await this.run(
-        [
-          'gh',
-          'api',
-          'graphql',
-          '-f',
-          `query=${THREADS_QUERY}`,
-          '-f',
-          `owner=${owner}`,
-          '-f',
-          `name=${name}`,
-          '-F',
-          `number=${pr.number}`,
-        ],
-        { env: gitAuthEnv(token) },
-      )
-      this.check(r, 'gh api graphql reviewThreads')
-      const nodes =
-        (JSON.parse(r.stdout) as GhThreadsResponse).data?.repository?.pullRequest?.reviewThreads?.nodes ?? []
-      return nodes.map((t) => ({
-        id: t.id,
-        resolved: t.isResolved,
-        outdated: t.isOutdated,
-        path: t.path,
-        line: t.line ?? null,
-        comments: (t.comments?.nodes ?? []).map((c) => ({
-          id: c.databaseId,
-          author: c.author?.login ?? '',
-          body: c.body,
-        })),
-      }))
+      const threads: ReviewThread[] = []
+      let after: string | undefined
+      do {
+        const r = await this.run(
+          [
+            'gh',
+            'api',
+            'graphql',
+            '-f',
+            `query=${THREADS_QUERY}`,
+            '-f',
+            `owner=${owner}`,
+            '-f',
+            `name=${name}`,
+            '-F',
+            `number=${pr.number}`,
+            ...(after === undefined ? [] : ['-f', `after=${after}`]),
+          ],
+          { env: gitAuthEnv(token) },
+        )
+        this.check(r, 'gh api graphql reviewThreads')
+        const page = (JSON.parse(r.stdout) as GhThreadsResponse).data?.repository?.pullRequest?.reviewThreads
+        for (const t of page?.nodes ?? []) {
+          const tail = t.comments?.nodes ?? []
+          const root = t.root?.nodes?.[0]
+          const comments =
+            root && !tail.some((c) => c.databaseId === root.databaseId) ? [root, ...tail] : tail
+          threads.push({
+            id: t.id,
+            resolved: t.isResolved,
+            outdated: t.isOutdated,
+            path: t.path,
+            line: t.line ?? null,
+            comments: comments.map((c) => ({
+              id: c.databaseId,
+              author: c.author?.login ?? '',
+              body: c.body,
+            })),
+          })
+        }
+        after = page?.pageInfo?.hasNextPage ? (page.pageInfo.endCursor ?? undefined) : undefined
+      } while (after !== undefined)
+      return threads
     })
   }
 

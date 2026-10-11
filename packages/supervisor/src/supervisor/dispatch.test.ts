@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { GitHost } from '../ports'
+import type { FailureClass } from '../ports/failure'
 import { BaseConflictError } from '../ports/worker'
 import { snapshot } from '../testing/testing'
 import { dispatchOne, harness } from './testing'
@@ -81,6 +82,98 @@ describe('manual retry', () => {
       comments.some((c) => c.body.includes('base_conflict') && c.body.includes('src/a.ts, mise.toml')),
     ).toBe(true)
     expect(h.sup.runs.forIssue('FOR-1')).toHaveLength(2)
+  })
+
+  function conflicting(files = ['environments/README.md']) {
+    const repos = {
+      base: 'base1',
+      files,
+      inspected: [] as [string, string][],
+      baseSha: async () => repos.base,
+      conflictingFiles: async (_: string, base: string, head: string) => {
+        repos.inspected.push([base, head])
+        return repos.files
+      },
+    }
+    return { h: harness({ repos }), repos }
+  }
+
+  test('a continuation conflicting with the moved base starts the worker with the merge left to it', async () => {
+    const { h, repos } = conflicting()
+    const first = await failedWithCommit(h)
+    repos.base = 'base2'
+    const next = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(repos.inspected).toEqual([['base2', 'head1']])
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+      run: first.id,
+      headSha: 'head1',
+      resolveConflicts: true,
+    })
+    expect(h.sup.runs.get(next.id)?.state).not.toBe('failed')
+    expect(h.sup.continuedFrom(next)).toBe('head1')
+  })
+
+  test('an automatic repair whose base merge conflicts also leaves the merge to the worker', async () => {
+    const { h, repos } = conflicting()
+    const first = await dispatchOne(h)
+    await h.sup.workerStarted(first.id, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(first.id, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(first.id, 'head1')
+    repos.base = 'base2'
+    await h.sup.gatesFinished(first.id, [
+      {
+        check: 'test',
+        passed: false,
+        result: { exitCode: 1, durationMs: 1, stdoutTail: '', stderrTail: '', artifact: '', timedOut: false },
+      },
+    ])
+    expect(h.sup.runs.get(first.id)?.failure).toBe('implementation_defect')
+    h.advance(10_000)
+    await h.sup.tick()
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({
+      run: first.id,
+      headSha: 'head1',
+      resolveConflicts: true,
+    })
+  })
+
+  test('a clean continuation does not leave a merge to the worker', async () => {
+    const { h, repos } = conflicting([])
+    const first = await failedWithCommit(h)
+    repos.base = 'base2'
+    await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toEqual({ run: first.id, headSha: 'head1' })
+  })
+
+  test('a second conflict on the same base holds the issue without another run', async () => {
+    const { h, repos } = conflicting()
+    await failedWithCommit(h)
+    repos.base = 'base2'
+    const resolving = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    await h.sup.workerStarted(resolving.id, { sandbox: 'sb2', session: 's2' })
+    await h.sup.workerFailed(resolving.id, 'base_conflict', 'unresolved in: environments/README.md')
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    const runs = h.sup.runs.forIssue('FOR-1').length
+
+    await expect(h.sup.retryRun('FOR-1', { continue: true }, 'cli')).rejects.toMatchObject({
+      code: 'refused',
+    })
+    expect(h.sup.runs.forIssue('FOR-1')).toHaveLength(runs)
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated', reason: 'base_conflict' })
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    const comments = await h.linear.comments('FOR-1')
+    expect(comments.some((c) => c.body.includes('base2') && c.body.includes('environments/README.md'))).toBe(
+      true,
+    )
+
+    repos.base = 'base3'
+    const fresh = await h.sup.retryRun('FOR-1', { continue: true }, 'cli')
+    expect(h.executor.starts.at(-1)?.repairFrom).toMatchObject({ resolveConflicts: true })
+    expect(fresh.baseSha).toBe('base3')
   })
 
   test('--continue skips later attempts without a commit and uses the latest one that has one', async () => {
@@ -362,6 +455,45 @@ describe('manual retry', () => {
     })
     expect(h.sup.runs.forIssue('FOR-1').length).toBe(1)
     expect(h.linear.get('FOR-1')).toMatchObject({ status: 'In Review', labels: ['ai-stage:integration'] })
+  })
+
+  function classifiedAs(failure: FailureClass) {
+    const h = harness({ classifier: { classify: async () => ({ class: failure, action: 'escalate_user' }) } })
+    h.config.selection.splice(4, 0, {
+      when: {
+        stage: 'implementation',
+        failure_class: ['task_too_large', 'missing_dependency', 'architectural_conflict'],
+      },
+      agent: 'replanner',
+    })
+    return h
+  }
+
+  async function failedAs(h: ReturnType<typeof harness>, failure: FailureClass) {
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    expect(h.sup.runs.get(run.id)?.failure).toBe(failure)
+  }
+
+  test('a retry after an escalation to the lead dispatches the stage worker', async () => {
+    const h = classifiedAs('architectural_conflict')
+    await failedAs(h, 'architectural_conflict')
+    const next = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(next).toMatchObject({ attempt: 2, agent: 'implementer' })
+  })
+
+  test('a retry after an implementation defect still selects the repairer', async () => {
+    const h = classifiedAs('implementation_defect')
+    await failedAs(h, 'implementation_defect')
+    const next = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(next).toMatchObject({ attempt: 2, agent: 'repairer' })
+  })
+
+  test('--agent still overrides selection after an escalation to the lead', async () => {
+    const h = classifiedAs('architectural_conflict')
+    await failedAs(h, 'architectural_conflict')
+    const next = await h.sup.retryRun('FOR-1', { agent: 'fixer' }, 'cli')
+    expect(next).toMatchObject({ attempt: 2, agent: 'fixer' })
   })
 
   test('a plain retry after a failure with a commit starts fresh from the current base', async () => {

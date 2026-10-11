@@ -11,6 +11,7 @@ export {
 } from './adapters/github/github-tokens'
 export { createLinearPort, type LinearPortOptions } from './adapters/linear/linear-adapter'
 export * from './adapters/worker'
+export { type EffectiveLimits, effectiveLimits } from './policy/limits'
 export {
   blockersSatisfied,
   type DispatchPlan,

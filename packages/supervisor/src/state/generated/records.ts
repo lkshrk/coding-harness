@@ -94,6 +94,18 @@ export interface StatusRecord {
     since?: string
   }
   profile: string | null
+  /**
+   * effective worker limits of the active profile; absent when the config cannot be read
+   */
+  limits?: {
+    wall_clock: string
+    tokens: string
+    steps: number
+    no_diff_steps: number
+    no_diff_tokens: string
+    max_estimate?: number
+    max_files?: number
+  }
   restart_required: boolean
   held: string[]
   covered: string[]
@@ -145,7 +157,9 @@ export interface TestsRecord {
       lines?: string
       message: string
       evidence?: string
+      category?: string
       confidence?: number
+      downgraded?: boolean
     }[]
   }
 }

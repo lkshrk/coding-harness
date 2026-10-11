@@ -54,6 +54,9 @@ export class LinearSync {
     this.rt.cache.set(issue.identifier, issue)
     const lifecycle = lifecycleOf(this.rt.config(), issue.team, issue.status)
     if (lifecycle === 'done' || lifecycle === 'canceled') this.peers.uncover(issue.identifier)
+    const left = lifecycle === 'backlog' || lifecycle === 'done' || lifecycle === 'canceled'
+    if (left && this.peers.viewOptions(issue.identifier).awaiting)
+      this.peers.setAwaiting(issue.identifier, null)
   }
 
   // The only writer of an issue's status, stage label and hold.

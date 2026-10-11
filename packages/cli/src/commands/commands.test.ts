@@ -144,6 +144,34 @@ describe('common rules', () => {
     const r = await cli(['status'], { ...s.deps, control })
     expect(r.out[0]).toBe('dispatch: paused  gateway: unavailable')
   })
+
+  test("status shows the active profile's effective limits", async () => {
+    const s = seeded()
+    const config = {
+      profiles: {
+        active: 'local',
+        memory_budget_gb: 64,
+        local: { roles: { worker: 'ns/w' }, models: {}, limits: { steps: 60, max_files: 4 } },
+      },
+      limits: {
+        worker: { wall_clock: '45m', tokens: '2M', steps: 200, no_diff_steps: 25, no_diff_tokens: '250k' },
+      },
+    } as unknown as Config
+    const deps = { ...s.deps, load: () => ({ ok: true as const, config, sources: [] }) }
+    const r = await cli(['status'], deps)
+    expect(r.out).toContain(
+      'limits: 45m, 2M tokens, 60 steps, no diff after 25 steps / 250k tokens, max 4 files',
+    )
+    const json = JSON.parse((await cli(['status', '--json'], deps)).out.join('\n'))
+    expect(json.limits).toEqual({
+      wall_clock: '45m',
+      tokens: '2M',
+      steps: 60,
+      no_diff_steps: 25,
+      no_diff_tokens: '250k',
+      max_files: 4,
+    })
+  })
 })
 
 describe('read commands', () => {
@@ -336,6 +364,7 @@ describe('result commands', () => {
             lines: '3-4',
             message: 'unchecked',
             evidence: 'e',
+            category: 'other',
             confidence: 0.9,
           },
         ],

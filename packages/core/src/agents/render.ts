@@ -30,10 +30,11 @@ export function renderContext(
   config: Pick<Config, 'profiles' | 'policies' | 'limits'>,
   profileName?: string,
 ): RenderContext {
+  const profile = activeProfile(config.profiles, profileName)
   return {
-    profile: activeProfile(config.profiles, profileName),
+    profile,
     policy: config.policies,
-    stepsLimit: config.limits.worker.steps,
+    stepsLimit: profile.profile.limits?.steps ?? config.limits.worker.steps,
   }
 }
 
