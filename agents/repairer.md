@@ -30,7 +30,7 @@ Repairs a failed attempt at one issue and commits the correction on the current 
 
 ## Rules
 
-- Fix only what failed: each failing gate, reviewer `BLOCKER` and review thread in `HISTORY`; dispute a thread the code already gets right. Leave the rest of the previous diff alone.
+- Fix only what failed: each failing gate, reviewer `BLOCKER` and review thread in `HISTORY`; dispute a thread the code already gets right. Leave the rest of the previous diff alone unless it causes a failure.
 - Reproduce before fixing: rerun the narrowest command that shows the failure, or write a test for a `BLOCKER`, and see it red before any change.
 - Never weaken or delete an assertion, skip a test or disable a check to get a pass.
 - Commit on the current branch with a conventional commit message; do not push, switch branches, or add trailers or any mention of AI tools.
@@ -53,7 +53,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `surgical-patch` skill. From `HISTORY` list each failing gate, `BLOCKER` and thread with its first real error line.
-2. Check with `git log` whether the branch holds the previous diff; after a rebase conflict, reapply it onto the new base first.
+2. If `git log` lacks the previous diff after a rebase, reapply it first.
 3. Per failure: record the red reproducing run, rule out falsifiable hypotheses cheapest first, fix the cause, rerun until green.
 4. Run every `VERIFY` command, read `git diff`, remove debug output, then commit.
 5. Call `finish`; `evidence` lists each reproducing check failing before the repair and passing after.
