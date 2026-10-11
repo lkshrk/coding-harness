@@ -128,7 +128,7 @@ describe('renderContext', () => {
     policies: policy,
     limits: {
       concurrency: 3,
-      worker: { wall_clock: '45m', tokens: '2M', steps: 120 },
+      worker: { wall_clock: '45m', tokens: '2M', steps: 120, no_diff_steps: 25, no_diff_tokens: '250k' },
       repair_rounds: 2,
       best_of: 2,
     },

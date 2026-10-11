@@ -11,7 +11,7 @@ import { RetryQueue } from '../policy/retry'
 import { decide, type IssueView, VERIFICATION, viewIssue } from '../policy/stages'
 import type { Awaiting, GateResult, IssueSnapshot } from '../ports'
 import type { By } from '../ports/control'
-import type { Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
+import type { NoProgressInfo, Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 import type { GateEventData } from '../stages/gates/report'
 import type { ReviewOutcome } from '../stages/gates/review'
 import { type PullRequestRecord, PullRequestStore } from '../stages/integration/records'
@@ -351,6 +351,8 @@ export class Supervisor {
     this.m.lifecycle.sandboxCreated(runId, info)
   workerProgress = (runId: string, progress: Progress): Promise<void> =>
     this.m.lifecycle.workerProgress(runId, progress)
+  workerNoProgress = (runId: string, info: NoProgressInfo): Promise<void> =>
+    this.m.lifecycle.workerNoProgress(runId, info)
   wipCommitted = (runId: string, info: { sha: string; lines: number }): Promise<void> =>
     this.m.lifecycle.wipCommitted(runId, info)
   workerStarted = (runId: string, info: WorkerStartedInfo): Promise<void> =>

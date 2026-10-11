@@ -120,8 +120,28 @@ export class FakeGh {
         thread.isResolved = true
         return ok(JSON.stringify({ data: { resolveReviewThread: { thread: { id, isResolved: true } } } }))
       }
-      const nodes = this.threads.map((t) => ({ ...t, comments: { nodes: t.comments } }))
-      return ok(JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } }))
+      // Honours the page sizes and cursor in the query, as GitHub does.
+      const query = cmd.find((a) => a.startsWith('query=')) ?? ''
+      const pageSize = Number(/reviewThreads\(first: (\d+)/.exec(query)?.[1] ?? 100)
+      const after = cmd.find((a) => a.startsWith('after='))?.slice(6)
+      const start = after === undefined ? 0 : Number(after)
+      const page = this.threads.slice(start, start + pageSize)
+      const end = start + page.length
+      const windows = [...query.matchAll(/(?:(\w+):\s*)?comments\((first|last): (\d+)\)/g)]
+      const nodes = page.map((t) => {
+        const node: Record<string, unknown> = { ...t }
+        delete node.comments
+        for (const [, alias, dir, n] of windows) {
+          const count = Number(n)
+          const slice = dir === 'first' ? t.comments.slice(0, count) : t.comments.slice(-count)
+          node[alias ?? 'comments'] = { nodes: slice }
+        }
+        return node
+      })
+      const pageInfo = { hasNextPage: end < this.threads.length, endCursor: String(end) }
+      return ok(
+        JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo } } } } }),
+      )
     }
     if (cmd[1] === 'api' && cmd[3] === 'POST' && cmd[4]?.endsWith('/replies')) {
       const to = Number(cmd[4].split('/').at(-2))

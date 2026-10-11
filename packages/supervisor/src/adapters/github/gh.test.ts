@@ -430,6 +430,30 @@ describe('GhGitHost review threads', () => {
     expect(read?.env.GH_TOKEN).toBe(AGENT_TOKEN)
   })
 
+  test('reviewThreads concatenates every page of threads', async () => {
+    const { gh, host } = setup()
+    gh.threads = Array.from({ length: 150 }, (_, n) => fakeThread(`T${n}`, n + 1, `note ${n}`))
+    const threads = await host.reviewThreads(pr)
+    expect(threads.map((t) => t.id)).toEqual(gh.threads.map((t) => t.id))
+    const reads = gh.threadReads()
+    expect(reads).toHaveLength(2)
+    expect(reads[0]?.cmd.some((a) => a.startsWith('after='))).toBe(false)
+    expect(reads[1]?.cmd).toContain('after=100')
+  })
+
+  test('a thread longer than one page keeps its first and newest comment', async () => {
+    const { gh, host } = setup()
+    const long = fakeThread('T1', 1, 'first')
+    for (let n = 2; n <= 250; n++) long.comments.push({ databaseId: n, author: null, body: `reply ${n}` })
+    gh.threads = [long]
+    const [thread] = await host.reviewThreads(pr)
+    const ids = thread?.comments.map((c) => c.id) ?? []
+    expect(ids[0]).toBe(1)
+    expect(ids.at(-1)).toBe(250)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(ids).toEqual([...ids].sort((a, b) => a - b))
+  })
+
   test('reply posts to the comment replies endpoint and resolve sends the mutation', async () => {
     const { gh, host } = setup()
     gh.threads = [fakeThread('T1', 11, 'trim before saving')]
