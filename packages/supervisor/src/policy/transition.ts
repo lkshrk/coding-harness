@@ -15,12 +15,14 @@ export type Intent =
   | { kind: 'unblocked' }
   | { kind: 'lost' }
   | { kind: 'humanChanged'; to: LifecycleState }
+  | { kind: 'done' }
 
 export type RunAction = 'stop' | 'stopKeepWip' | 'none'
 
 export type Transition = {
   status?: LifecycleState
-  stage?: string
+  // null removes the stage label.
+  stage?: string | null
   awaiting?: Awaiting | null
   runAction?: RunAction
   log: string
@@ -76,6 +78,7 @@ function humanChange(current: IssueView, to: LifecycleState): Transition {
     case 'finish':
       return {
         status: 'done',
+        stage: null,
         runAction: 'stopKeepWip',
         awaiting: null,
         log: `${log}, work in progress kept`,
@@ -101,7 +104,7 @@ export const RULES: Table = {
     (current) =>
       current.awaiting?.kind === 'after'
         ? { log: `merged; ${current.awaiting.stage} waits for your check` }
-        : { status: 'done', log: 'merged' },
+        : { status: 'done', stage: null, log: 'merged' },
     [...LIVE, 'done'],
   ),
   prClosed: cells(() => ({
@@ -143,6 +146,13 @@ export const RULES: Table = {
   unblocked: cells(() => ({ status: 'ready', log: 'blockers done' }), ['backlog']),
   lost: cells(() => ({ status: 'ready', log: 'runtime state lost; dispatched again' }), ['running']),
   humanChanged: cells((current, intent) => humanChange(current, intent.to), ['running']),
+  done: cells(
+    (current) =>
+      current.stage === null
+        ? { log: 'done; no stage label' }
+        : { stage: null, log: `done; ${current.stage} label removed` },
+    ['done'],
+  ),
 }
 
 export function transition(current: IssueView, intent: Intent, ctx: TransitionContext): Transition {
