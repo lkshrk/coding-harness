@@ -155,7 +155,9 @@ export class FakeLinear implements LinearPort {
 
   async createChild(parent: string, issue: { title: string; description: string }): Promise<string> {
     const p = this.get(parent)
-    const existing = [...this.store.values()].find((i) => i.parent === parent && i.title === issue.title)
+    const existing = [...this.store.values()].find(
+      (i) => i.parent === parent && i.title === issue.title && i.description === issue.description,
+    )
     if (existing) return existing.identifier
     const identifier = `${p.team}-${100 + this.store.size}`
     this.put({

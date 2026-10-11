@@ -323,7 +323,7 @@ describe('LinearWriter.attachLink', () => {
 })
 
 describe('LinearWriter.createChild and addBlocks', () => {
-  const parent = (children: { identifier: string; title: string }[]) => ({
+  const parent = (children: { identifier: string; title: string; description?: string }[]) => ({
     issue: {
       id: 'id-FOR-1',
       team: { id: 't-FOR' },
@@ -334,12 +334,13 @@ describe('LinearWriter.createChild and addBlocks', () => {
   })
 
   test('creates a child in the parent project and reuses one with the same title', async () => {
-    const children: { identifier: string; title: string }[] = []
+    const children: { identifier: string; title: string; description: string }[] = []
     const { writer, calls } = fakeLinear({
       nsIssueParent: () => parent(children),
       nsIssueCreate: (v) => {
+        const input = v.input as { title: string; description: string }
         const identifier = `FOR-${10 + children.length}`
-        children.push({ identifier, title: (v.input as { title: string }).title })
+        children.push({ identifier, title: input.title, description: input.description })
         return { issueCreate: { success: true, issue: { id: `id-${identifier}`, identifier } } }
       },
     })
@@ -348,6 +349,22 @@ describe('LinearWriter.createChild and addBlocks', () => {
     expect(calls.filter((c) => c.operation === 'nsIssueCreate').map((c) => c.variables)).toEqual([
       { input: { teamId: 't-FOR', parentId: 'id-FOR-1', title: 'A', description: 'd', projectId: 'p1' } },
     ])
+  })
+
+  test('does not reuse a child whose title matches but description differs', async () => {
+    const children = [{ identifier: 'FOR-5', title: 'A', description: 'other' }]
+    const { writer, calls } = fakeLinear({
+      nsIssueParent: () => parent(children),
+      nsIssueCreate: (v) => {
+        const input = v.input as { title: string; description: string }
+        const identifier = `FOR-${10 + children.length}`
+        children.push({ identifier, title: input.title, description: input.description })
+        return { issueCreate: { success: true, issue: { id: `id-${identifier}`, identifier } } }
+      },
+    })
+    expect(await writer.createChild('FOR-1', { title: 'A', description: 'd' })).toBe('FOR-11')
+    expect(await writer.createChild('FOR-1', { title: 'A', description: 'd' })).toBe('FOR-11')
+    expect(calls.filter((c) => c.operation === 'nsIssueCreate').length).toBe(1)
   })
 
   test('adds the blocks relation once', async () => {

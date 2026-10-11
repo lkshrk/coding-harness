@@ -45,7 +45,7 @@ const CREATE_ATTACHMENT = `mutation nsAttachmentCreate($input: AttachmentCreateI
 const PARENT = `query nsIssueParent($id: String!) {
   issue(id: $id) {
     id team { id } project { id } projectMilestone { id }
-    children(first: 100) { nodes { identifier title } }
+    children(first: 100) { nodes { identifier title description } }
   }
 }`
 
@@ -132,7 +132,7 @@ export class LinearWriter {
     return true
   }
 
-  /** Creates a child in the parent's team, project and milestone; an existing child with the same title is reused. */
+  /** Creates a child in the parent's team, project and milestone; an existing child with the same title and description is reused. */
   async createChild(parent: string, issue: { title: string; description: string }): Promise<string> {
     type Data = {
       issue: {
@@ -140,7 +140,7 @@ export class LinearWriter {
         team: { id: string }
         project: { id: string } | null
         projectMilestone: { id: string } | null
-        children: { nodes: { identifier: string; title: string }[] }
+        children: { nodes: { identifier: string; title: string; description: string | null }[] }
       }
     }
     let data: Data
@@ -151,7 +151,10 @@ export class LinearWriter {
       throw e
     }
     const p = data.issue
-    const existing = p.children.nodes.find((c) => c.title === issue.title)
+    // Only an exact copy is reused, so a retried creation never substitutes a different issue.
+    const existing = p.children.nodes.find(
+      (c) => c.title === issue.title && (c.description ?? '').trim() === issue.description.trim(),
+    )
     if (existing) return existing.identifier
     const input = {
       teamId: p.team.id,
