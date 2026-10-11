@@ -397,6 +397,66 @@ describe('gate step', () => {
       expect(h.gateEvents()).toEqual([])
     })
 
+    const resolvedMerge = (
+      h: ReturnType<typeof harness>,
+      file: string,
+      theirs: string,
+      ours: string,
+      merged: string,
+    ) => {
+      git(h.fx.worker, 'checkout', '-q', '--detach', h.fx.base)
+      writeFileSync(join(h.fx.worker, file), theirs)
+      git(h.fx.worker, 'add', '-A')
+      git(h.fx.worker, 'commit', '-q', '-m', 'moved base')
+      const moved = git(h.fx.worker, 'rev-parse', 'HEAD')
+      git(h.fx.worker, 'checkout', '-q', h.fx.branch)
+      writeFileSync(join(h.fx.worker, file), ours)
+      git(h.fx.worker, 'add', '-A')
+      git(h.fx.worker, 'commit', '-q', '-m', 'ours')
+      git(h.fx.worker, 'merge', '-q', '-s', 'ours', '--no-edit', moved)
+      writeFileSync(join(h.fx.worker, file), merged)
+      git(h.fx.worker, 'commit', '-q', '-a', '--amend', '--no-edit')
+      git(h.fx.checkout, 'fetch', '-q', h.fx.worker, `${moved}:refs/moved`)
+      return moved
+    }
+
+    test('a heading underline kept from both sides of a resolved merge is not a conflict separator', async () => {
+      const h = harness()
+      const moved = resolvedMerge(
+        h,
+        'README.md',
+        'Title\n=======\nbase\n',
+        'Title\n=======\nours\n',
+        'Title\n=======\nours\nbase\n',
+      )
+      const run = await h.finishedRun()
+      new BaseConflictStore(h.db).put('FOR-1', { base: moved, files: ['README.md'], run: run.id })
+      await h.first.workerFinished(run.id, FINISH)
+      await h.first.idle()
+      expect(h.of('WORKER_FAILED')).toEqual([])
+      expect(h.gateEvents().map(([t]) => t)).toEqual(['GATE_PASSED', 'GATE_PASSED'])
+    })
+
+    test('a separator left beside a heading underline both sides had fails as base_conflict', async () => {
+      const h = harness()
+      const moved = resolvedMerge(
+        h,
+        'README.md',
+        'Title\n=======\nbase\n',
+        'Title\n=======\nours\n',
+        'Title\n=======\nours\n=======\nbase\n',
+      )
+      const run = await h.finishedRun()
+      new BaseConflictStore(h.db).put('FOR-1', { base: moved, files: ['README.md'], run: run.id })
+      await h.first.workerFinished(run.id, FINISH)
+      await h.first.idle()
+      expect(h.of('WORKER_FAILED')[0]?.data).toEqual({
+        reason: 'base_conflict',
+        detail: 'conflict markers left in: README.md',
+      })
+      expect(h.gateEvents()).toEqual([])
+    })
+
     test('a concluded merge without markers is gated', async () => {
       const h = harness()
       await conflicted(h, h.fx.base)
