@@ -195,6 +195,14 @@ export interface Config {
       wall_clock: Duration
       tokens: TokenCount
       steps: number
+      /**
+       * steps without a diff before a worker gets one nudge to commit a first step or finish
+       */
+      no_diff_steps: number
+      /**
+       * tokens without a diff before a worker gets one nudge to commit a first step or finish
+       */
+      no_diff_tokens: string
     }
     repair_rounds: number
     best_of: number

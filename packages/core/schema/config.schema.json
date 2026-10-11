@@ -362,6 +362,17 @@
             "steps": {
               "type": "integer",
               "minimum": 1
+            },
+            "no_diff_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 25,
+              "description": "steps without a diff before a worker gets one nudge to commit a first step or finish"
+            },
+            "no_diff_tokens": {
+              "$ref": "#/$defs/tokenCount",
+              "default": "250k",
+              "description": "tokens without a diff before a worker gets one nudge to commit a first step or finish"
             }
           }
         },

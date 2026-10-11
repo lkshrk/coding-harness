@@ -89,6 +89,8 @@ export type WorkerStartedInfo = { sandbox: string; session: string; attach?: str
 
 export type SandboxCreatedInfo = { driver: SandboxHandle['driver']; id: string; image: string }
 
+export type NoProgressInfo = { steps: number; tokens: number; nudge: string }
+
 export type Progress = {
   steps: number
   tool_calls: number

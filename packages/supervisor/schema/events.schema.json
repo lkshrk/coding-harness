@@ -68,6 +68,13 @@
       "then": { "required": ["run"], "properties": { "data": { "$ref": "#/$defs/data/workerProgress" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "WORKER_NO_PROGRESS" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/workerNoProgress" } }
+      }
+    },
+    {
       "if": { "properties": { "type": { "const": "WORKER_STALLED" } } },
       "then": { "required": ["run"], "properties": { "data": { "$ref": "#/$defs/data/workerStalled" } } }
     },
@@ -212,6 +219,7 @@
         "WORKER_STARTED",
         "WORKER_PROGRESS",
         "WORKER_STALLED",
+        "WORKER_NO_PROGRESS",
         "WORKER_FINISHED",
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
@@ -326,6 +334,16 @@
           "diff_lines": { "type": "integer", "minimum": 0 },
           "last_tool": { "type": "string" },
           "tools": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+        }
+      },
+      "workerNoProgress": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["steps", "tokens", "nudge"],
+        "properties": {
+          "steps": { "type": "integer", "minimum": 0 },
+          "tokens": { "type": "integer", "minimum": 0 },
+          "nudge": { "type": "string", "description": "message sent to the worker" }
         }
       },
       "workerStalled": {

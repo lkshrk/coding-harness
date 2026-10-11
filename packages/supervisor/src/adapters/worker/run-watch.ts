@@ -1,11 +1,13 @@
 import type { HarnessEvent, Ms, SandboxDriver, SandboxHandle, WorkerDriver, WorkerSession } from '../../ports'
 import type { Run } from '../../ports/records'
-import type { SandboxCreatedInfo, WorkerStartedInfo } from '../../ports/worker'
+import type { NoProgressInfo, SandboxCreatedInfo, WorkerStartedInfo } from '../../ports/worker'
 import { Channel } from './channel'
 import { type CapReason, type Progress, type WatchAction, Watcher, type WatchThresholds } from './watch'
 import { diffLines } from './workspace'
 
 export const GRACE_MESSAGE = 'Limit reached: call finish now with your current status.'
+export const NO_DIFF_MESSAGE =
+  'No change yet. Either commit the smallest first step now, or call finish with BLOCKED, needs: context, and your findings.'
 
 export interface WorkerCallbacks {
   sandboxCreated?(runId: string, info: SandboxCreatedInfo): Promise<void>
@@ -14,6 +16,7 @@ export interface WorkerCallbacks {
   workerFinished(runId: string, payload: unknown): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
   workerProgress?(runId: string, progress: Progress): Promise<void>
+  workerNoProgress?(runId: string, info: NoProgressInfo): Promise<void>
   wipCommitted?(runId: string, info: { sha: string; lines: number }): Promise<void>
 }
 
@@ -141,6 +144,8 @@ export class RunWatch {
         const lines = await diffLines(this.d.sandbox, a.sandbox, a.workdir, a.run.baseSha)
         if (lines !== undefined) a.watcher.diff(lines)
         await this.d.callbacks().workerProgress?.(a.run.id, a.watcher.progress())
+      } else if (action.kind === 'no_diff') {
+        await this.noDiff(a, action)
       } else if (action.kind === 'stall') {
         await this.d.callbacks().workerStalled(a.run.id, action.signal, action.detail)
       } else {
@@ -148,6 +153,23 @@ export class RunWatch {
         await this.grace(a, action.reason)
       }
     }
+  }
+
+  private async noDiff(a: Active, action: Extract<WatchAction, { kind: 'no_diff' }>): Promise<void> {
+    const lines = await diffLines(this.d.sandbox, a.sandbox, a.workdir, a.run.baseSha)
+    if (lines !== undefined) a.watcher.diff(lines)
+    if (lines !== undefined && lines > 0) return
+    const detail = `no diff after ${action.steps} steps and ${action.tokens} tokens`
+    if (action.act === 'stop') {
+      await this.fail(a, 'task_too_large', detail)
+      return
+    }
+    await this.d.worker.send(a.session, NO_DIFF_MESSAGE)
+    await this.d.callbacks().workerNoProgress?.(a.run.id, {
+      steps: action.steps,
+      tokens: action.tokens,
+      nudge: NO_DIFF_MESSAGE,
+    })
   }
 
   private async grace(a: Active, reason: string): Promise<void> {
