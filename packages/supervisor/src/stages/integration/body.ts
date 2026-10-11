@@ -27,7 +27,8 @@ function summarySection(i: PullRequestBodyInput): string[] {
   const changed: AttemptSummary[] = []
   for (const a of i.attempts ?? []) if (a.headSha !== changed.at(-1)?.headSha) changed.push(a)
   const [first, ...repairs] = changed.length ? changed : [{ attempt: 0, headSha: '', finish: i.finish }]
-  const concerns = [...new Set([first, ...repairs].flatMap((a) => a?.finish?.concerns ?? []))]
+  const listed = [first, ...repairs].flatMap((a) => a?.finish?.concerns ?? [])
+  const concerns = repairs.length ? [...new Set(listed)] : listed
   return [
     first?.finish?.summary?.trim() || '(no summary)',
     ...(repairs.length

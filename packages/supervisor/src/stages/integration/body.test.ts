@@ -89,4 +89,22 @@ describe('pullRequestBody summary across attempts', () => {
       ['## Summary', 'Trimmed user names before saving.', '', 'Concerns:', '- slow test', ''].join('\n'),
     )
   })
+
+  test('a single attempt keeps repeated concerns as before', () => {
+    const finish = { summary: 'Trimmed user names before saving.', concerns: ['slow test', 'slow test'] }
+    for (const attempts of [undefined, [{ attempt: 1, headSha: 'a1', finish }]]) {
+      const body = pullRequestBody(base({ finish, ...(attempts ? { attempts } : {}) }))
+      expect(summary(body)).toBe(
+        [
+          '## Summary',
+          'Trimmed user names before saving.',
+          '',
+          'Concerns:',
+          '- slow test',
+          '- slow test',
+          '',
+        ].join('\n'),
+      )
+    }
+  })
 })
