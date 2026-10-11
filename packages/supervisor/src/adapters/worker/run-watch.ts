@@ -9,6 +9,8 @@ export const GRACE_MESSAGE = 'Limit reached: call finish now with your current s
 export const NO_DIFF_MESSAGE =
   'No change yet. Either commit the smallest first step now, or call finish with BLOCKED, needs: context, and your findings.'
 
+const SUMMARY_CHARS = 2_000
+
 export interface WorkerCallbacks {
   sandboxCreated?(runId: string, info: SandboxCreatedInfo): Promise<void>
   workerStarted(runId: string, info: WorkerStartedInfo): Promise<void>
@@ -30,6 +32,7 @@ type Active = {
   watcher: Watcher
   graceLeft: number
   invalidFinish: number
+  lastText?: string
   cap?: { reason: CapReason; at: number }
   done: boolean
   input: Channel<HarnessEvent | 'tick'>
@@ -119,6 +122,10 @@ export class RunWatch {
   }
 
   private async handle(a: Active, e: HarnessEvent): Promise<void> {
+    if (e.kind === 'text' && e.text?.trim()) {
+      a.lastText = e.text.trim()
+      return
+    }
     if (e.kind === 'finish') {
       this.end(a)
       await this.d.worker.stop(a.session, 'finished')
@@ -159,9 +166,13 @@ export class RunWatch {
     const lines = await diffLines(this.d.sandbox, a.sandbox, a.workdir, a.run.baseSha)
     if (lines !== undefined) a.watcher.diff(lines)
     if (lines !== undefined && lines > 0) return
-    const detail = `no diff after ${action.steps} steps and ${action.tokens} tokens`
     if (action.act === 'stop') {
-      await this.fail(a, 'task_too_large', detail)
+      const counts = `no diff after ${action.steps} steps and ${action.tokens} tokens`
+      const summary =
+        a.lastText && a.lastText.length > SUMMARY_CHARS
+          ? `${a.lastText.slice(0, SUMMARY_CHARS)}…`
+          : a.lastText
+      await this.fail(a, 'task_too_large', summary ? `${counts}; last summary: ${summary}` : counts)
       return
     }
     await this.d.worker.send(a.session, NO_DIFF_MESSAGE)

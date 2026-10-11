@@ -23,7 +23,7 @@ export type HarnessEvent =
   | { kind: 'step'; step: number; tokensIn: number; tokensOut: number }
   | { kind: 'tool_call'; tool: string; argsDigest: string }
   | { kind: 'tool_result'; tool: string; ok: boolean }
-  | { kind: 'text'; chars: number }
+  | { kind: 'text'; chars: number; text?: string }
   | { kind: 'finish'; payload: unknown }
   | { kind: 'idle'; sinceMs: Ms }
   | { kind: 'error'; message: string; fatal: boolean }

@@ -631,13 +631,15 @@ describe('WorkerExecutor watching', () => {
     await until(() => worker.sent.length === 2)
     expect(cb.of('failed')).toEqual([])
     worker.stream.push(step)
+    worker.stream.push({ kind: 'text', chars: 33, text: 'Found the parser in src/parse.ts.' })
+    worker.stream.push({ kind: 'text', chars: 0, text: '' })
     worker.stream.push({ kind: 'idle', sinceMs: 0 })
     await until(() => cb.of('failed').length === 1)
     expect(cb.of('failed')[0]).toEqual([
       'failed',
       run.id,
       'task_too_large',
-      'no diff after 5 steps and 55 tokens',
+      'no diff after 5 steps and 55 tokens; last summary: Found the parser in src/parse.ts.',
     ])
     expect(worker.sent).toEqual([NO_DIFF_MESSAGE, GRACE_MESSAGE])
   })
