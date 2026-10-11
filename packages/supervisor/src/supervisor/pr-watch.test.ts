@@ -562,6 +562,29 @@ describe('pull request watching', () => {
     }
   })
 
+  test('a repair round that pushes no new head still holds the issue when the conflict remains', async () => {
+    const h = await conflicted()
+    try {
+      await h.first.tick()
+      await h.first.tick()
+      const head = h.first.pullRequests.get('FOR-1')?.headSha
+      await repaired(h, {}, false)
+      expect(h.first.pullRequests.get('FOR-1')?.headSha).toBe(head)
+      await h.first.tick()
+      expect(h.first.awaiting('FOR-1')).toEqual({
+        kind: 'escalated',
+        stage: 'integration',
+        reason: 'pr_conflict',
+      })
+      const held = (await h.linear.comments('FOR-1')).filter((c) => c.body.includes('still conflicts'))
+      expect(held).toHaveLength(1)
+      expect(held[0]?.body).toContain('ARCHITECTURE.md')
+      expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
   test('watching survives a supervisor restart', async () => {
     const h = await watching()
     try {

@@ -86,7 +86,17 @@ export class PullRequestWatch {
     const base = await repos.baseSha(pr.repository)
     const round = pr.conflict
     if (round?.base === base) {
-      const over = pr.headSha !== round.head || this.flow.awaiting(pr.issue) !== null
+      const from = this.rt.runs.get(round.run)
+      // A finished repair counts once integration has caught up with it, pushed or not.
+      const finished = this.rt.runs
+        .forIssue(pr.issue)
+        .some(
+          (r) =>
+            r.state === 'done' &&
+            r.attempt > (from?.attempt ?? 0) &&
+            (r.headSha === null || r.headSha === pr.headSha),
+        )
+      const over = finished || pr.headSha !== round.head || this.flow.awaiting(pr.issue) !== null
       if (round.held || !over) return
       this.rt.pullRequests.put({ ...pr, conflict: { ...round, held: true } })
       const files = round.files.length ? round.files.join(', ') : 'unknown files'
