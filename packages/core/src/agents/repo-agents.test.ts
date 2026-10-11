@@ -370,11 +370,11 @@ describe('reviewer', () => {
       'reviewer',
       'ticket-comment',
     )
-    expect(input).toMatch(/^\+5 +# ROU-123: /m)
+    expect(input).toMatch(/^\+5 +# ABC-123: /m)
     expect(output.verdict).toBe('fail')
     const blocker = output.findings.find((f) => f.severity === 'BLOCKER')
     expect(blocker?.file).toBe('scripts/sync.py')
-    expect(blocker?.evidence).toContain('# ROU-123: ')
+    expect(blocker?.evidence).toContain('# ABC-123: ')
   })
 
   test('a one-line comment giving a non-obvious reason passes', async () => {
