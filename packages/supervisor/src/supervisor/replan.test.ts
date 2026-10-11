@@ -118,6 +118,17 @@ describe('replan proposals', () => {
     expect(h.sup.awaiting('FOR-1')?.kind).toBe('escalated')
   })
 
+  test.each(['approve if the tests pass', 'approve?', 'approve, but rename the second'])(
+    'a conditional or questioning reply (%s) creates nothing',
+    async (reply) => {
+      const { h, proposal } = await proposed()
+      h.linear.reply('FOR-1', proposal.id, reply)
+      await h.sup.tick()
+      expect(h.linear.store.size).toBe(1)
+      expect(h.sup.awaiting('FOR-1')?.kind).toBe('escalated')
+    },
+  )
+
   test('create_blocker is proposed and approved the same way', async () => {
     const { h, proposal } = await proposed({
       action: 'create_blocker',

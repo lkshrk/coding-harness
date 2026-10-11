@@ -67,7 +67,7 @@ export function proposalComment(issue: string, report: ReplanReport): string {
     '| --- | --- | --- | --- |',
     ...rows,
     '',
-    `Reply \`approve\` to create ${issues.length === 1 ? 'it' : 'them'} (\`ns answer ${issue} approve\`), anything else rejects.`,
+    `Reply exactly \`approve\` to create ${issues.length === 1 ? 'it' : 'them'} (\`ns answer ${issue} approve\`); any other reply rejects.`,
   ].join('\n')
 }
 
@@ -138,7 +138,7 @@ export class Replan {
   async answered(issue: string, comment: string, answer: string): Promise<boolean> {
     const p = this.proposal(issue)
     if (!p || p.comment !== comment) return false
-    if (!/^approve\b/i.test(answer.trim())) {
+    if (!/^approve\.?$/i.test(answer.trim())) {
       this.store(issue, null)
       await this.flow.holdForYou(issue, { kind: 'escalated', stage: p.stage, reason: 'replan rejected' })
       return true
