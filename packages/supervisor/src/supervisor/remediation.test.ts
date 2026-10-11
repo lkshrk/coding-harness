@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { RetryQueue } from '../policy/retry'
 import type { Intent } from '../policy/transition'
+import { TaskTooLargeError } from '../stages/context'
 import { PullRequestStore } from '../stages/integration/records'
 import { EventLog } from '../state/events'
 import { RunStore } from '../state/runs'
@@ -231,5 +232,58 @@ describe('failures and retries', () => {
       'test exited 1',
     )
     expect(intents).toEqual([{ kind: 'retryScheduled' }])
+  })
+
+  test('split dispatches the replanner with the failed run, issue and detail', async () => {
+    const seen: string[] = []
+    const h = harness({
+      replanner: {
+        replan: async (r) => {
+          seen.push(`${r.run.issue}:${r.classification.action}:${r.detail}`)
+          return null
+        },
+      },
+    })
+    h.executor.failStart = new TaskTooLargeError('ISSUE and VERIFY take 900 tokens, budget 800')
+    await dispatchOne(h)
+    expect(seen).toEqual([
+      "FOR-1:split:issue too large for the agent's budget: ISSUE and VERIFY take 900 tokens, budget 800",
+    ])
+  })
+
+  test('an invalid replanner report falls back to escalation', async () => {
+    const h = harness({
+      replanner: {
+        replan: async () => ({
+          action: 'split',
+          sub_issues: [
+            { title: 'a', description: 'no template' },
+            { title: 'b', description: 'no template' },
+          ],
+          reason: 'r',
+        }),
+      },
+    })
+    h.executor.failStart = new TaskTooLargeError('too big')
+    await dispatchOne(h)
+    expect(h.sup.awaiting('FOR-1')).toEqual({ kind: 'escalated', stage: 'implementation' })
+    expect((await h.linear.comments('FOR-1')).length).toBe(1)
+  })
+
+  test('escalate_lead from the classifier runs the replanner too', async () => {
+    const actions: string[] = []
+    const h = harness({
+      classifier: { classify: async () => ({ class: 'architectural_conflict', action: 'escalate_lead' }) },
+      replanner: {
+        replan: async (r) => {
+          actions.push(r.classification.action)
+          return { action: 'escalate_lead', reason: 'design open' }
+        },
+      },
+    })
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    expect(actions).toEqual(['escalate_lead'])
+    expect(h.sup.awaiting('FOR-1')?.kind).toBe('escalated')
   })
 })

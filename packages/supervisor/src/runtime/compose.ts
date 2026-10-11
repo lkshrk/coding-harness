@@ -19,6 +19,7 @@ import {
   workerImageFor,
 } from '@nightshift/core'
 import { agentClassifier } from '../adapters/classifier/classifier'
+import { agentReplanner } from '../adapters/classifier/replanner'
 import { CodeGraphIndex } from '../adapters/codegraph'
 import { sqliteCodeGraph } from '../adapters/codegraph/query'
 import { GhGitHost } from '../adapters/github/gh'
@@ -295,6 +296,14 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       agents,
       gateway: hostGateway,
       events: (run) => callbacks().log.since(null, { run }),
+      call: singleCall,
+      out,
+    }),
+    replanner: agentReplanner({
+      config: current,
+      agents,
+      gateway: hostGateway,
+      runs: (issue) => callbacks().runs.forIssue(issue),
       call: singleCall,
       out,
     }),

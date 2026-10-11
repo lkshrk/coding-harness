@@ -3,6 +3,7 @@ import type { AgentKind, IssueView, ViewOptions } from '../policy/stages'
 import type { Intent } from '../policy/transition'
 import type {
   Awaiting,
+  Classification,
   Classifier,
   GitHost,
   IssueSnapshot,
@@ -12,6 +13,7 @@ import type {
   Notifier,
   OutboxDirs,
   RemediationHandler,
+  Replanner,
   RepoInspector,
   RunExecutor,
   SandboxDriver,
@@ -42,6 +44,7 @@ export type SupervisorDeps = {
   modelFor: (agent: string, profile: string, config: Config) => string
   classifier?: Classifier
   remediation?: RemediationHandler
+  replanner?: Replanner
   stageHandler?: StageHandler
   gitHost?: GitHost
   ingest?: VaultIngest
@@ -152,6 +155,8 @@ export type RunFlow = {
   leaseEvent(type: 'LEASE_ACQUIRED', issue: string): void
   askQuestion(run: Run, cause: Event, blocker: NonNullable<FinishLike['blocker']>): Promise<void>
   checkQuestions(): Promise<string[]>
+  replanAnswered(issue: string, comment: string, answer: string): Promise<boolean>
+  proposeReplan(run: Run, c: Classification, detail?: string): Promise<boolean>
   startIngest(view: IssueView): Promise<void>
   ingestFinished(run: Run, event: Event, finish: FinishLike): Promise<void>
   ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void>

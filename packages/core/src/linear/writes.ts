@@ -42,6 +42,18 @@ const CREATE_ATTACHMENT = `mutation nsAttachmentCreate($input: AttachmentCreateI
   attachmentCreate(input: $input) { success }
 }`
 
+const PARENT = `query nsIssueParent($id: String!) {
+  issue(id: $id) { id team { id } project { id } projectMilestone { id } }
+}`
+
+const CREATE_ISSUE = `mutation nsIssueCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { id identifier } }
+}`
+
+const CREATE_RELATION = `mutation nsIssueRelationCreate($input: IssueRelationCreateInput!) {
+  issueRelationCreate(input: $input) { success }
+}`
+
 class UnknownName extends Error {}
 
 export class LinearWriter {
@@ -110,6 +122,48 @@ export class LinearWriter {
     if (!created.attachmentCreate.success)
       throw new Error(`linear: attachmentCreate ${identifier} not confirmed`)
     return true
+  }
+
+  async createBlockingChild(parent: string, issue: { title: string; description: string }): Promise<string> {
+    type Data = {
+      issue: {
+        id: string
+        team: { id: string }
+        project: { id: string } | null
+        projectMilestone: { id: string } | null
+      }
+    }
+    let data: Data
+    try {
+      data = await this.request<Data, { id: string }>(PARENT, { id: parent })
+    } catch (e) {
+      if (notFound(e)) throw new Error(`linear: no issue ${parent}`)
+      throw e
+    }
+    const p = data.issue
+    const input = {
+      teamId: p.team.id,
+      parentId: p.id,
+      title: issue.title,
+      description: issue.description,
+      ...(p.project ? { projectId: p.project.id } : {}),
+      ...(p.projectMilestone ? { projectMilestoneId: p.projectMilestone.id } : {}),
+    }
+    const created = await this.request<
+      { issueCreate: { success: boolean; issue: { id: string; identifier: string } | null } },
+      { input: typeof input }
+    >(CREATE_ISSUE, { input })
+    const child = created.issueCreate.issue
+    if (!created.issueCreate.success || !child)
+      throw new Error(`linear: issueCreate under ${parent} not confirmed`)
+    const relation = { issueId: child.id, relatedIssueId: p.id, type: 'blocks' }
+    const linked = await this.request<
+      { issueRelationCreate: { success: boolean } },
+      { input: typeof relation }
+    >(CREATE_RELATION, { input: relation })
+    if (!linked.issueRelationCreate.success)
+      throw new Error(`linear: issueRelationCreate ${child.identifier} blocks ${parent} not confirmed`)
+    return child.identifier
   }
 
   private workspace(refresh = false): Promise<LinearWorkspace> {
