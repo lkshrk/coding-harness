@@ -171,7 +171,14 @@ describe('applyIntent', () => {
   const cases: [string, string, string[], Awaiting | null, Intent, IssueUpdate][] = [
     ['dispatched', 'Todo', ['ai-stage:implementation'], null, { kind: 'dispatched' }, { status: 'running' }],
     ['prOpened', 'In Progress', ['ai-stage:integration'], null, { kind: 'prOpened' }, { status: 'review' }],
-    ['merged', 'In Review', ['ai-stage:integration'], null, { kind: 'merged' }, { status: 'done' }],
+    [
+      'merged',
+      'In Review',
+      ['ai-stage:integration'],
+      null,
+      { kind: 'merged' },
+      { status: 'done', stage: null },
+    ],
     ['prClosed', 'In Review', ['ai-stage:integration'], null, { kind: 'prClosed' }, { status: 'blocked' }],
     [
       'heldForUser',
@@ -210,6 +217,15 @@ describe('applyIntent', () => {
       expect(h.linear.updates).toEqual([{ identifier: 'FOR-1', change }])
     })
   }
+
+  test('done removes only the stage label of an issue moved to Done', async () => {
+    const { h, rt, sync } = setup('Done', ['type:feature', 'ai-stage:acceptance'])
+    await sync.refresh('FOR-1')
+    await sync.applyIntent('FOR-1', { kind: 'done' })
+    expect(h.linear.updates).toEqual([{ identifier: 'FOR-1', change: { stage: null } }])
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+    expect(rt.cache.get('FOR-1')?.labels).toEqual(['type:feature'])
+  })
 
   test('merged while awaiting your check writes nothing', async () => {
     const { h, sync } = setup('In Review', ['ai-stage:acceptance'], { kind: 'after', stage: 'acceptance' })

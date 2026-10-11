@@ -200,7 +200,10 @@ export class FakeLinear implements LinearPort {
       status = team?.statuses[change.status] ?? status
     }
     if (change.stage !== undefined)
-      labels = [...labels.filter((l) => !l.startsWith('ai-stage:')), `ai-stage:${change.stage}`]
+      labels = [
+        ...labels.filter((l) => !l.startsWith('ai-stage:')),
+        ...(change.stage === null ? [] : [`ai-stage:${change.stage}`]),
+      ]
     this.patch(identifier, { status, labels })
     if (change.status !== undefined || change.stage !== undefined)
       this.changes.set(identifier, {
@@ -208,7 +211,7 @@ export class FakeLinear implements LinearPort {
         app: true,
         at: this.now().toISOString(),
         ...(change.status === undefined ? {} : { status }),
-        ...(change.stage === undefined ? {} : { labels: [`ai-stage:${change.stage}`] }),
+        ...(change.stage === undefined ? {} : { labels }),
       })
   }
 }
