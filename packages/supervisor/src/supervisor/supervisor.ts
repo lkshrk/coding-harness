@@ -347,6 +347,8 @@ export class Supervisor {
     this.m.prWatch.pullRequestOpened(record, title)
   forcedManual = (issue: string): string | null => this.m.prWatch.forcedManual(issue)
   continuedFrom = (run: Run): string | undefined => this.m.dispatcher.continuationOf(run)?.headSha
+  baseConflict = (run: Run): { base: string; files: string[] } | null =>
+    this.m.dispatcher.baseConflicts().forRun(run.id)
   sandboxCreated = (runId: string, info: SandboxCreatedInfo): Promise<void> =>
     this.m.lifecycle.sandboxCreated(runId, info)
   workerProgress = (runId: string, progress: Progress): Promise<void> =>

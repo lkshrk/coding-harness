@@ -13,7 +13,7 @@ import type { Db } from '../../state/db'
 import { EventLog } from '../../state/events'
 import { type Run, RunStore } from '../../state/runs'
 import { createUlid } from '../../state/ulid'
-import { CiFailureStore, PullRequestStore, ReviewRoundStore } from '../integration/records'
+import { BaseConflictStore, CiFailureStore, PullRequestStore, ReviewRoundStore } from '../integration/records'
 import { selectVaultPages } from './vault'
 
 export type { TaskMessage, TaskStart } from '../../ports/context'
@@ -162,9 +162,11 @@ export async function contextInput(
   const spec = issueSpec(issue.identifier, issue.title, parsed.issue)
   await d.syncVault?.()
   const wip = wipOf(d.db, repairFrom)
+  const conflict = repairFrom?.resolveConflicts ? new BaseConflictStore(d.db).forRun(run.id) : null
   const explorerFiles = explorerFilesOf(d.db, issue.identifier, run.id)
   return {
     ...(wip ? { wip } : {}),
+    ...(conflict ? { baseConflict: { base: conflict.base, files: conflict.files } } : {}),
     ...(explorerFiles ? { explorerFiles } : {}),
     issue: spec,
     repository: {

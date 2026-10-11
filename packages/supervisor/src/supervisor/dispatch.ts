@@ -9,12 +9,15 @@ import { ControlError } from '../ports/control'
 import type { PullRequestRecord } from '../ports/git-host'
 import { BaseConflictError } from '../ports/worker'
 import { TaskTooLargeError } from '../stages/context'
+import { BaseConflictStore } from '../stages/integration/records'
 import type { LeaseStore } from '../state/leases'
 import { isTerminal, type Run } from '../state/runs'
 import { isIssueRef } from '../state/targets'
 import type { RunFlow, SupervisorRuntime } from './runtime'
 
 type PrHead = { ref: string; headSha: string }
+
+type Continuation = { run: string; headSha: string } | PrHead
 
 type DispatchOverride = {
   agent?: string
@@ -49,7 +52,21 @@ export class Dispatcher {
     const profile = o.profile ?? this.profileFor(view)
     const model = this.rt.deps.modelFor(agent, profile, this.rt.config())
     const baseSha = await this.rt.deps.repos.baseSha(repository)
+    const from = this.sourceOf(id, attempt, {
+      continues: o.continueFrom?.id,
+      continues_ref: o.continueRef?.ref,
+      continues_sha: o.continueRef?.headSha,
+    })
+    const conflicts = this.baseConflicts()
+    const files =
+      from && !this.conflictRound(id) ? await this.conflictingFiles(repository, baseSha, from) : []
+    if (files.length && conflicts.get(id)?.base === baseSha) {
+      this.retry.take(id)
+      await this.holdBaseConflict(id, stage, baseSha, files)
+      return undefined
+    }
     const run = this.rt.runs.create({ issue: id, agent, profile, model, repository, baseSha, attempt })
+    if (files.length) conflicts.put(id, { base: baseSha, files, run: run.id })
     const dispatched = this.rt.log.append({
       type: 'DISPATCHED',
       issue: id,
@@ -115,27 +132,66 @@ export class Dispatcher {
 
   continuationOf(run: Run): ExecutorStart['repairFrom'] {
     const dispatched = this.rt.log.since(null, { run: run.id, types: ['DISPATCHED'] }).at(-1)
-    const { continues, continues_ref, continues_sha } = dispatched?.data ?? {}
-    const resolve = this.conflictRound(run) ? { resolveConflicts: true } : {}
+    const from = this.sourceOf(run.issue, run.attempt, dispatched?.data ?? {})
+    if (!from) return undefined
+    const resolve = this.conflictRound(run.issue, run.id) || this.baseConflicts().forRun(run.id) !== null
+    return resolve ? { ...from, resolveConflicts: true } : from
+  }
+
+  sourceOf(issue: string, attempt: number, d: Record<string, unknown>): Continuation | undefined {
+    const { continues, continues_ref, continues_sha } = d
     if (typeof continues_ref === 'string' && typeof continues_sha === 'string')
-      return { ref: continues_ref, headSha: continues_sha, ...resolve }
+      return { ref: continues_ref, headSha: continues_sha }
     const from =
       typeof continues === 'string'
         ? this.rt.runs.get(continues)
         : this.rt.runs
-            .forIssue(run.issue)
-            .find((r) => r.attempt === run.attempt - 1 && r.failure === 'implementation_defect')
-    return from?.headSha ? { run: from.id, headSha: from.headSha, ...resolve } : undefined
+            .forIssue(issue)
+            .find((r) => r.attempt === attempt - 1 && r.failure === 'implementation_defect')
+    return from?.headSha ? { run: from.id, headSha: from.headSha } : undefined
   }
 
   // A run repairing a PR conflict leaves the merge of the base to the worker instead of escalating.
-  conflictRound(run: Run): boolean {
-    const conflict = this.rt.pullRequests.get(run.issue)?.conflict
+  conflictRound(issue: string, runId?: string): boolean {
+    const conflict = this.rt.pullRequests.get(issue)?.conflict
     const from = conflict && !conflict.held ? this.rt.runs.get(conflict.run) : undefined
     if (!from) return false
     return !this.rt.runs
-      .forIssue(run.issue)
-      .some((r) => r.id !== run.id && r.attempt > from.attempt && r.state === 'done')
+      .forIssue(issue)
+      .some((r) => r.id !== runId && r.attempt > from.attempt && r.state === 'done')
+  }
+
+  baseConflicts(): BaseConflictStore {
+    return new BaseConflictStore(this.rt.deps.db)
+  }
+
+  // An inspection failure falls back to merging in the sandbox, which ends a conflict as base_conflict.
+  async conflictingFiles(repository: string, base: string, from: Continuation): Promise<string[]> {
+    const inspect = this.rt.deps.repos.conflictingFiles
+    if (!inspect || !base) return []
+    try {
+      return await inspect.call(this.rt.deps.repos, repository, base, from.headSha)
+    } catch (e) {
+      console.error(
+        `${repository}: inspecting the merge of ${base} into ${from.headSha}: ${(e as Error).message}`,
+      )
+      return []
+    }
+  }
+
+  async holdBaseConflict(id: string, stage: string, base: string, files: string[]): Promise<void> {
+    const list = files.join(', ')
+    await this.rt.postOnce(
+      id,
+      `base-conflict-${base}`,
+      `Merging base ${base} into the continued attempt still conflicts after a resolving attempt, in: ${list}. Resolve it by hand, retry without \`--continue\`, or retry once the base moves.`,
+    )
+    await this.flow.holdForYou(id, { kind: 'escalated', stage, reason: 'base_conflict' })
+    await this.rt.notify(`${id} conflicts with base ${base.slice(0, 12)}`, id, {
+      kind: 'blocked',
+      context: [`conflicting files: ${list}`],
+      action: `Resolve the conflict by hand or \`ns retry ${id}\` for a fresh attempt`,
+    })
   }
 
   async launchQueued(): Promise<void> {
@@ -217,6 +273,8 @@ export class Dispatcher {
       ...(continueRef ? { continueRef } : {}),
       by,
     })
+    if (!run && this.flow.awaiting(identifier)?.reason === 'base_conflict')
+      throw new ControlError('refused', `${identifier}: the continued attempt still conflicts with the base`)
     if (!run) throw new ControlError('refused', `${identifier} could not be dispatched (lease held)`)
     await this.flow.refresh(identifier)
     return this.rt.requireRun(run.id)

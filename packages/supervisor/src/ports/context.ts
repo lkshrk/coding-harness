@@ -15,6 +15,7 @@ export type ContextInput = {
   answers: { question: string; answer: string }[]
   run?: { id: string; attempt: number; profile: string }
   wip?: { sha: string; attempt: number }
+  baseConflict?: { base: string; files: string[] }
   explorerFiles?: { path: string; why: string }[]
 }
 

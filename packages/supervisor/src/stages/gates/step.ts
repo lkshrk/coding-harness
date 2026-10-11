@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type Config, expandHome } from '@nightshift/core'
-import { importBundle, writeReviewArtifacts } from '../../adapters/git/host'
+import { importBundle, unresolvedMerge, writeReviewArtifacts } from '../../adapters/git/host'
 import { branchOf, parseDuration, workdirOf } from '../../policy/naming'
 import type { GateResult, GateRunner, SandboxDriver } from '../../ports'
 import { LockFailedError, type LockOutcome, type LockStep } from '../../ports/lock'
@@ -12,6 +12,7 @@ export interface GateCallbacks {
   gatesFinished(runId: string, results: GateResult[]): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
   lockRegenerated(runId: string, lock: LockOutcome['locks'][number]): Promise<void>
+  baseConflict?(run: Run): { base: string; files: string[] } | null
 }
 
 export type GateStepDeps = {
@@ -55,6 +56,12 @@ export function gateStep(d: GateStepDeps): (run: Run, signal?: AbortSignal) => P
         headSha = importBundle(checkout, exported.bundle, branchOf(run), run.id)
         if (headSha !== exported.headSha) {
           throw new Error(`imported ${headSha} but the worker reported ${exported.headSha}`)
+        }
+        const conflict = cb.baseConflict?.(run)
+        const unresolved = conflict && unresolvedMerge(checkout, conflict.base, headSha, conflict.files)
+        if (unresolved) {
+          await cb.workerFailed(run.id, 'base_conflict', unresolved)
+          return
         }
         if (run.baseSha && headSha === run.baseSha) {
           await cb.workerFailed(run.id, 'no_finish', 'worker finished without changes')

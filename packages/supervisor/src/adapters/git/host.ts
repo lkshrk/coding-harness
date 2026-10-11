@@ -26,6 +26,24 @@ export function importBundle(checkout: string, bundle: string, ref: string, run:
   return git(checkout, 'rev-parse', '--verify', `${runRef(run)}^{commit}`).trim()
 }
 
+// Only conclusion is checked: git refuses to commit a merge while any file is unmerged.
+export function unresolvedMerge(
+  checkout: string,
+  base: string,
+  head: string,
+  files: string[],
+): string | undefined {
+  const merged = Bun.spawnSync(['git', '-C', checkout, 'merge-base', '--is-ancestor', base, head], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    stdin: 'ignore',
+  })
+  if (merged.exitCode === 1) return `the merge of base ${base} was not concluded (${files.join(', ')})`
+  if (merged.exitCode !== 0)
+    throw new Error(`git merge-base ${base} ${head}: ${merged.stderr.toString().trim()}`)
+  return undefined
+}
+
 export type ReviewArtifacts = { diff: string; testsTouched: string; tests: string[] }
 
 export function writeReviewArtifacts(

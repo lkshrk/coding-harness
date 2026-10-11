@@ -7,6 +7,7 @@ import { EventLog } from '../../state/events'
 import { RunStore } from '../../state/runs'
 import { createUlid } from '../../state/ulid'
 import { FakeLinear, issueBody, snapshot, testConfig } from '../../testing/testing'
+import { BaseConflictStore } from '../integration/records'
 import { FencedContextBuilder } from './builder'
 import { gitObjectSource } from './git'
 import { historyItems } from './sections'
@@ -164,6 +165,40 @@ describe('contextInput', () => {
     const items = historyItems(continued)
     expect(items[0]?.text).toContain('starts with a WIP commit')
     expect(items[0]?.text).toContain('git reset --soft')
+  })
+
+  test('a continued attempt resolving a base merge names the base and the files in HISTORY', async () => {
+    const config = testConfig()
+    const db = openState(':memory:')
+    const runs = new RunStore(db, { now: () => new Date(0), ulid: createUlid() })
+    const base = { issue: 'FOR-2', agent: 'implementer', profile: 'cloud', model: 'm', repository: 'omni' }
+    const prior = runs.create({ ...base, baseSha: 'abc', attempt: 1 })
+    runs.update(prior.id, { failure: 'unknown', headSha: 'h1' })
+    const current = runs.create({ ...base, baseSha: 'def', attempt: 2 })
+    new BaseConflictStore(db).put('FOR-2', {
+      base: 'def',
+      files: ['environments/README.md'],
+      run: current.id,
+    })
+    const deps = {
+      config: () => config,
+      db,
+      linear: new FakeLinear(config, () => new Date(0)),
+      builder: {} as never,
+      home: '/h',
+    }
+    const start = { run: current, issue: snapshot({ identifier: 'FOR-2' }), files: [] }
+    const resolving = await contextInput(deps, {
+      ...start,
+      repairFrom: { run: prior.id, headSha: 'h1', resolveConflicts: true },
+    })
+    expect(resolving.baseConflict).toEqual({ base: 'def', files: ['environments/README.md'] })
+    const text = historyItems(resolving)[0]?.text ?? ''
+    expect(text).toContain('Merge of the base in progress')
+    expect(text).toContain('`def` in: `environments/README.md`')
+    expect(text).toContain('git commit --no-edit')
+    const plain = await contextInput(deps, { ...start, repairFrom: { run: prior.id, headSha: 'h1' } })
+    expect(plain.baseConflict).toBeUndefined()
   })
 
   test('the latest finished explorer run supplies the explorer files', async () => {
