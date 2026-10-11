@@ -80,6 +80,9 @@ export class FakeGh {
   readonly calls: Call[] = []
   readonly prs: FakePr[] = []
   checks: FakeCheck[] = []
+  baseSha = 'b4se5ha'
+  baseChecks: FakeCheck[] = []
+  baseStatuses: { context: string; state: string; target_url?: string }[] = []
   logs: Record<string, string | HostCommandResult> = {}
   threads: FakeThread[] = []
   failNext: HostCommandResult | undefined
@@ -143,6 +146,31 @@ export class FakeGh {
         JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes, pageInfo } } } } }),
       )
     }
+    const commit =
+      cmd[1] === 'api' ? /^repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/check-runs\b/.exec(cmd[2] ?? '') : null
+    if (commit) {
+      const runs = commit[1] === this.baseSha ? this.baseChecks : []
+      return ok(
+        JSON.stringify({
+          total_count: runs.length,
+          check_runs: runs.map((c) => {
+            const r = ROLLUP[c.bucket] ?? { status: 'COMPLETED', conclusion: 'SUCCESS' }
+            return {
+              name: c.name,
+              status: r.status.toLowerCase(),
+              conclusion: r.conclusion ? r.conclusion.toLowerCase() : null,
+              ...(c.run ? { details_url: `https://github.com/lkshrk/omni/actions/runs/${c.run}` } : {}),
+            }
+          }),
+        }),
+      )
+    }
+    const status =
+      cmd[1] === 'api' ? /^repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/status\b/.exec(cmd[2] ?? '') : null
+    if (status) {
+      const statuses = status[1] === this.baseSha ? this.baseStatuses : []
+      return ok(JSON.stringify({ state: statuses.length ? 'pending' : 'success', statuses }))
+    }
     if (cmd[1] === 'api' && cmd[3] === 'POST' && cmd[4]?.endsWith('/replies')) {
       const to = Number(cmd[4].split('/').at(-2))
       // GitHub accepts replies only to a thread's top-level comment.
@@ -157,6 +185,8 @@ export class FakeGh {
     if (verb === 'edit') return ok('')
     if (verb === 'view' && arg('--json') === 'statusCheckRollup')
       return ok(JSON.stringify({ statusCheckRollup: this.checks.map(rollupItem) }))
+    if (verb === 'view' && arg('--json') === 'baseRefOid')
+      return ok(JSON.stringify({ baseRefOid: this.baseSha }))
     if (verb === 'view') {
       const pr = this.prs.find((p) => String(p.number) === cmd[3])
       return ok(
@@ -185,6 +215,10 @@ export class FakeGh {
 
   threadReads(): Call[] {
     return this.calls.filter((c) => c.cmd[2] === 'graphql' && !c.cmd.some((a) => a.startsWith('id=')))
+  }
+
+  baseCiReads(): Call[] {
+    return this.calls.filter((c) => c.cmd[1] === 'api' && /\/commits\/[^/]+\/check-runs/.test(c.cmd[2] ?? ''))
   }
 
   ciReads(): Call[] {
