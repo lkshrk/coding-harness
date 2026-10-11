@@ -353,8 +353,19 @@ export class LocalGateRunner implements GateRunner {
   }
 }
 
-export const SHOTS_COMMAND =
-  'mkdir -p shots && head -c 64 src/a.test.ts > shots/home-desktop-dark.png && printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home-desktop-dark.png"}]\' > shots/manifest.json'
+const PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+
+/** A shell command writing a 1x1 PNG to `shots/<file>`. */
+export const writePng = (file: string) => `mkdir -p shots && echo ${PNG_BASE64} | base64 -d > shots/${file}`
+
+/** A shell command writing `shots/manifest.json` with the given entries. */
+export const writeManifest = (entries: { page: string; viewport: string; theme?: string; file: string }[]) =>
+  `mkdir -p shots && printf '%s' '${JSON.stringify(entries.map((e) => ({ theme: 'dark', ...e })))}' > shots/manifest.json`
+
+export const SHOTS_COMMAND = `${writePng('home-desktop-dark.png')} && ${writeManifest([
+  { page: '/', viewport: 'desktop', file: 'home-desktop-dark.png' },
+])}`
 
 export async function until(cond: () => boolean, what: string): Promise<void> {
   for (let i = 0; i < 400 && !cond(); i++) await Bun.sleep(5)

@@ -16,6 +16,8 @@ import {
   PERSONAL_TOKEN,
   SHOTS_COMMAND,
   until,
+  writeManifest,
+  writePng,
 } from './testing'
 
 let root: string
@@ -381,22 +383,21 @@ describe('integration stage (screenshots)', () => {
     expect(create?.stdin).toContain('no screenshots were taken: the screenshots command produced no images.')
   })
 
-  test('a command that yields no images on the base commit opens a draft PR that says why', async () => {
-    const headOnly = `if [ -f src/b.ts ]; then ${SHOTS_COMMAND}; else mkdir -p shots && echo '[]' > shots/manifest.json; fi`
+  test('an empty base capture shows the head pages as new and opens a ready PR', async () => {
+    const headOnly = `if [ -f src/b.ts ]; then ${SHOTS_COMMAND}; else ${writeManifest([])}; fi`
     const h = integrationHarness(root, withUi(['src/**'], headOnly))
     await h.integrated()
-    expect(h.linear.uploads).toEqual([])
-    expect(shotComments(h)).toEqual([])
-    const [create] = h.gh.gh('create')
-    expect(create?.cmd.at(-1)).toBe('--draft')
-    expect(create?.stdin).toContain(
-      'no screenshots were taken: the screenshots command produced no images on the base commit.',
+    expect(h.linear.uploads.map((u) => u.name)).toEqual(['desktop-dark-after.png'])
+    expect(shotComments(h)[0]?.body).toMatch(
+      /\| `\/` \| desktop \| dark \| \(new page\) \| !\[after\]\(https:\/\/uploads\.linear\.test\/1\/[^)]*\) \|/,
     )
+    expect(h.gh.gh('create')[0]?.cmd).not.toContain('--draft')
   })
 
   test('a page only the base commit renders keeps its before image in the comment', async () => {
-    const both =
-      'mkdir -p shots && head -c 64 src/a.test.ts > shots/home.png && head -c 64 src/a.test.ts > shots/old.png && if [ -f src/b.ts ]; then printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"}]\'; else printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/old","viewport":"desktop","theme":"dark","file":"old.png"}]\'; fi > shots/manifest.json'
+    const home = { page: '/', viewport: 'desktop', file: 'home.png' }
+    const old = { page: '/old', viewport: 'desktop', file: 'old.png' }
+    const both = `${writePng('home.png')} && ${writePng('old.png')} && if [ -f src/b.ts ]; then ${writeManifest([home])}; else ${writeManifest([home, old])}; fi`
     const h = integrationHarness(root, withUi(['src/**'], both))
     await h.integrated()
     expect(h.linear.uploads.map((u) => u.name)).toEqual([
@@ -420,37 +421,76 @@ describe('integration stage (screenshots)', () => {
     expect(h.gh.gh('create')[0]?.stdin).toContain('the repository has no screenshots command.')
   })
 
-  test('screenshots over the image cap upload nothing and open a draft that says why', async () => {
-    const many =
-      'mkdir -p shots && for v in a b c; do head -c 64 src/a.test.ts > shots/$v.png; done && printf \'%s\' \'[{"page":"/","viewport":"a","theme":"dark","file":"a.png"},{"page":"/","viewport":"b","theme":"dark","file":"b.png"},{"page":"/","viewport":"c","theme":"dark","file":"c.png"}]\' > shots/manifest.json'
-    const h = integrationHarness(root, (c) => {
-      const next = withUi(['src/**'], many)(c)
-      const omni = next.repositories.omni as Config['repositories'][string]
-      return {
-        ...next,
-        repositories: {
-          ...next.repositories,
-          omni: {
-            ...omni,
-            screenshots: { ...(omni.screenshots as NonNullable<typeof omni.screenshots>), max_images: 4 },
-          },
+  const capTo = (max: number, run: string) => (c: Config) => {
+    const next = withUi(['src/**'], run)(c)
+    const omni = next.repositories.omni as Config['repositories'][string]
+    return {
+      ...next,
+      repositories: {
+        ...next.repositories,
+        omni: {
+          ...omni,
+          screenshots: { ...(omni.screenshots as NonNullable<typeof omni.screenshots>), max_images: max },
         },
-      }
-    })
-    await h.integrated()
-    expect(h.linear.uploads).toEqual([])
-    expect(shotComments(h)).toEqual([])
-    const [create] = h.gh.gh('create')
-    expect(create?.cmd.at(-1)).toBe('--draft')
-    expect(create?.stdin).toContain(
-      '## Screenshots\nDraft: this change touches UI paths, but no screenshots were taken: the 6 screenshots exceed the cap of 4 images and 20 MB.',
+      },
+    }
+  }
+
+  const grid = (pages: string[]) => {
+    const entries = pages.flatMap((page, n) =>
+      ['phone', 'tablet', 'desktop'].flatMap((viewport) =>
+        ['light', 'dark'].map((theme) => ({ page, viewport, theme, file: `p${n}-${viewport}-${theme}.png` })),
+      ),
     )
-    expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
+    return [...entries.map((e) => writePng(e.file)), writeManifest(entries)].join(' && ')
+  }
+
+  test('over the cap, pages are reduced to phone and desktop in light mode and named', async () => {
+    const h = integrationHarness(root, capTo(8, grid(['/', '/about'])))
+    await h.integrated()
+    expect(h.linear.uploads.map((u) => u.name)).toEqual([
+      'phone-light-before.png',
+      'phone-light-after.png',
+      'desktop-light-before.png',
+      'desktop-light-after.png',
+      'about-phone-light-before.png',
+      'about-phone-light-after.png',
+      'about-desktop-light-before.png',
+      'about-desktop-light-after.png',
+    ])
+    const body = shotComments(h)[0]?.body ?? ''
+    expect(body).toContain('Reduced to phone and desktop in light mode (image cap):\n- `/`\n- `/about`')
+    expect(body).not.toContain('Left out')
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd).not.toContain('--draft')
+    expect(create?.stdin).toContain(
+      'Reduced to phone and desktop in light mode (image cap):\n- `/`\n- `/about`',
+    )
+    expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(false)
+  })
+
+  test('still over the cap after reducing, whole pages are kept in manifest order and the rest named', async () => {
+    const h = integrationHarness(root, capTo(6, grid(['/', '/about', '/map'])))
+    await h.integrated()
+    expect(h.linear.uploads.map((u) => u.name)).toEqual([
+      'phone-light-before.png',
+      'phone-light-after.png',
+      'desktop-light-before.png',
+      'desktop-light-after.png',
+    ])
+    const body = shotComments(h)[0]?.body ?? ''
+    expect(body).toContain('Reduced to phone and desktop in light mode (image cap):\n- `/`')
+    expect(body).toContain('Left out (image cap):\n- `/about`\n- `/map`')
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd).not.toContain('--draft')
+    expect(create?.stdin).toContain('Left out (image cap):\n- `/about`\n- `/map`')
   })
 
   test('a manifest entry whose file is missing uploads nothing and opens a draft that says why', async () => {
-    const missing =
-      'mkdir -p shots && head -c 64 src/a.test.ts > shots/home.png && printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/about","viewport":"desktop","theme":"dark","file":"about.png"}]\' > shots/manifest.json'
+    const missing = `${writePng('home.png')} && ${writeManifest([
+      { page: '/', viewport: 'desktop', file: 'home.png' },
+      { page: '/about', viewport: 'desktop', file: 'about.png' },
+    ])}`
     const h = integrationHarness(root, withUi(['src/**'], missing))
     await h.integrated()
     expect(h.linear.uploads).toEqual([])
@@ -462,9 +502,22 @@ describe('integration stage (screenshots)', () => {
     )
   })
 
+  test('a manifest file that is not a PNG uploads nothing and opens a draft that says why', async () => {
+    const fake = `mkdir -p shots && : > shots/empty.png && ${writeManifest([
+      { page: '/', viewport: 'desktop', file: 'empty.png' },
+    ])}`
+    const h = integrationHarness(root, withUi(['src/**'], fake))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      'no screenshots were taken: shots/manifest.json on the base commit lists empty.png, which is not a readable PNG image.',
+    )
+  })
+
   test('an invalid manifest entry uploads nothing and opens a draft that says why', async () => {
-    const invalid =
-      'mkdir -p shots && head -c 64 src/a.test.ts > shots/home.png && printf \'%s\' \'[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/x","viewport":"desktop","file":"x.png"}]\' > shots/manifest.json'
+    const invalid = `${writePng('home.png')} && mkdir -p shots && printf '%s' '[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/x","viewport":"desktop","file":"x.png"}]' > shots/manifest.json`
     const h = integrationHarness(root, withUi(['src/**'], invalid))
     await h.integrated()
     expect(h.linear.uploads).toEqual([])

@@ -24,7 +24,7 @@ export type ScreenshotInput = {
   config: ScreenshotConfig | undefined
 }
 
-export type ScreenshotOutcome = { url: string } | { reason: string }
+export type ScreenshotOutcome = { url: string; reduced: string[]; dropped: string[] } | { reason: string }
 
 type Shot = { page: string; viewport: string; theme: string; file: string }
 
@@ -41,15 +41,13 @@ export async function captureScreenshots(d: ScreenshotDeps, i: ScreenshotInput):
     if ('reason' in before) return before
     const after = await shoot(d, i, i.config, 'after', i.head, join(work, 'after'))
     if ('reason' in after) return after
-    if (before.shots.length === 0 && after.shots.length === 0)
-      return { reason: 'the screenshots command produced no images' }
-    if (before.shots.length === 0)
-      return { reason: 'the screenshots command produced no images on the base commit' }
     if (after.shots.length === 0)
-      return { reason: 'the screenshots command produced no images on the head commit' }
-    const pairs = pairsOf(before.shots, after.shots)
-    const over = overCap(pairs, work, i.config)
-    if (over) return { reason: over }
+      return {
+        reason: before.shots.length
+          ? 'the screenshots command produced no images on the head commit'
+          : 'the screenshots command produced no images',
+      }
+    const { pairs, reduced, dropped } = capped(pairsOf(before.shots, after.shots), work, i.config)
     const urls = new Map<string, string>()
     for (const p of pairs)
       for (const [side, file] of [
@@ -60,9 +58,10 @@ export async function captureScreenshots(d: ScreenshotDeps, i: ScreenshotInput):
         const bytes = new Uint8Array(readFileSync(join(work, side, file)))
         urls.set(`${side}/${file}`, await d.linear.uploadFile(uploadName(p.key, side), 'image/png', bytes))
       }
-    const comment = await d.linear.comment(i.issue, commentBody(pairs, urls), { replace: true })
+    const body = commentBody(pairs, urls, reduced, dropped)
+    const comment = await d.linear.comment(i.issue, body, { replace: true })
     const org = (await d.linear.workspace()).organization.urlKey
-    return { url: commentUrl(org, i.issue, comment.id) ?? `comment ${comment.id}` }
+    return { url: commentUrl(org, i.issue, comment.id) ?? `comment ${comment.id}`, reduced, dropped }
   } catch (e) {
     return { reason: `screenshots failed: ${(e as Error).message}` }
   } finally {
@@ -108,6 +107,8 @@ async function shoot(
       }
     if (!existsSync(join(into, entry.file)))
       return { reason: `${listed} lists ${entry.file}, which the command did not write` }
+    if (!isPng(join(into, entry.file)))
+      return { reason: `${listed} lists ${entry.file}, which is not a readable PNG image` }
   }
   return { shots: parsed as Shot[] }
 }
@@ -119,6 +120,22 @@ function isShot(v: unknown): v is Shot {
   if (!(text('page') && text('viewport') && text('theme') && text('file'))) return false
   const file = normalize(s.file as string)
   return !isAbsolute(file) && !file.startsWith('..') && file.toLowerCase().endsWith('.png')
+}
+
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10]
+
+function isPng(path: string): boolean {
+  let bytes: Buffer
+  try {
+    bytes = readFileSync(path)
+  } catch {
+    return false
+  }
+  return (
+    bytes.length > 33 &&
+    PNG_SIGNATURE.every((b, n) => bytes[n] === b) &&
+    bytes.subarray(12, 16).toString('latin1') === 'IHDR'
+  )
 }
 
 const keyOf = (s: Shot) => `${s.page}\u0000${s.viewport}\u0000${s.theme}`
@@ -135,22 +152,52 @@ function pairsOf(before: Shot[], after: Shot[]): Pair[] {
   return [...pairs.values()]
 }
 
-function overCap(pairs: Pair[], work: string, config: ScreenshotConfig): string | null {
-  const files = pairs.flatMap((p) => [
-    ...(p.before === null ? [] : [join(work, 'before', p.before)]),
-    ...(p.after === null ? [] : [join(work, 'after', p.after)]),
-  ])
-  const bytes = files.reduce((n, f) => n + statSync(f).size, 0)
-  if (files.length <= config.max_images && bytes <= config.max_mb * 1024 * 1024) return null
-  return `the ${files.length} screenshots exceed the cap of ${config.max_images} images and ${config.max_mb} MB`
+// Over the cap: every page keeps only phone and desktop in light mode; if still over, whole pages are kept in order.
+function capped(
+  all: Pair[],
+  work: string,
+  config: ScreenshotConfig,
+): { pairs: Pair[]; reduced: string[]; dropped: string[] } {
+  const cost = (pairs: Pair[]) => {
+    const files = pairs.flatMap((p) => [
+      ...(p.before === null ? [] : [join(work, 'before', p.before)]),
+      ...(p.after === null ? [] : [join(work, 'after', p.after)]),
+    ])
+    return { images: files.length, bytes: files.reduce((n, f) => n + statSync(f).size, 0) }
+  }
+  const fits = (pairs: Pair[]) => {
+    const c = cost(pairs)
+    return c.images <= config.max_images && c.bytes <= config.max_mb * 1024 * 1024
+  }
+  if (fits(all)) return { pairs: all, reduced: [], dropped: [] }
+  const pages = [...new Set(all.map((p) => p.key.page))]
+  const small = all.filter((p) => REDUCED_VIEWPORTS.has(p.key.viewport) && p.key.theme === REDUCED_THEME)
+  const reduced = pages.filter((page) => all.some((p) => p.key.page === page && !small.includes(p)))
+  const kept: Pair[] = []
+  const keptPages: string[] = []
+  for (const page of pages) {
+    const own = small.filter((p) => p.key.page === page)
+    if (own.length === 0) continue
+    if (!fits([...kept, ...own])) break
+    kept.push(...own)
+    keptPages.push(page)
+  }
+  return {
+    pairs: kept,
+    reduced: reduced.filter((page) => keptPages.includes(page)),
+    dropped: pages.filter((page) => !keptPages.includes(page)),
+  }
 }
+
+const REDUCED_VIEWPORTS = new Set(['phone', 'desktop'])
+const REDUCED_THEME = 'light'
 
 function uploadName(s: Shot, side: string): string {
   const slug = `${s.page}-${s.viewport}-${s.theme}`.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
   return `${slug || 'page'}-${side}.png`
 }
 
-function commentBody(pairs: Pair[], urls: Map<string, string>): string {
+function commentBody(pairs: Pair[], urls: Map<string, string>, reduced: string[], dropped: string[]): string {
   const cell = (side: 'before' | 'after', file: string | null) => {
     const url = file === null ? undefined : urls.get(`${side}/${file}`)
     return url ? `![${side}](${url})` : side === 'before' ? '(new page)' : '(removed page)'
@@ -165,6 +212,15 @@ function commentBody(pairs: Pair[], urls: Map<string, string>): string {
         `| \`${p.key.page}\` | ${p.key.viewport} | ${p.key.theme} | ${cell('before', p.before)} | ${cell('after', p.after)} |`,
     ),
   ]
-  lines.push('', SCREENSHOT_MARKER)
+  lines.push(...capNotes(reduced, dropped), '', SCREENSHOT_MARKER)
   return lines.join('\n')
+}
+
+export function capNotes(reduced: readonly string[], dropped: readonly string[]): string[] {
+  return [
+    ...(reduced.length
+      ? ['', 'Reduced to phone and desktop in light mode (image cap):', ...reduced.map((p) => `- \`${p}\``)]
+      : []),
+    ...(dropped.length ? ['', 'Left out (image cap):', ...dropped.map((p) => `- \`${p}\``)] : []),
+  ]
 }

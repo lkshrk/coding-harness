@@ -2,7 +2,7 @@ import { validateIssue } from '@nightshift/core'
 import type { IssueSnapshot } from '../../ports'
 import type { GateEventData } from '../gates/report'
 import { findingLabel, type ReviewFinding } from '../gates/review'
-import type { ScreenshotOutcome } from './screenshots'
+import { capNotes, type ScreenshotOutcome } from './screenshots'
 
 export type AttemptFinish = { summary?: string; concerns?: string[] } | null
 
@@ -86,7 +86,11 @@ export function pullRequestBody(i: PullRequestBodyInput): string {
       parts.push(
         `Draft: this change touches UI paths, but no screenshots were taken: ${i.screenshots.reason}.`,
       )
-    else parts.push(`Before and after: ${i.screenshots.url}`)
+    else
+      parts.push(
+        `Before and after: ${i.screenshots.url}`,
+        ...capNotes(i.screenshots.reduced, i.screenshots.dropped),
+      )
   }
   parts.push('', '## Trace', i.traceUrl ? `${i.traceUrl} (session \`${i.runId}\`)` : `Session \`${i.runId}\``)
   return `${parts.join('\n')}\n`
