@@ -55,8 +55,17 @@ uv cache at `/var/cache/nightshift/uv`, with h5py built from source against the 
 - name: backend-types
   run: cd backend && uv run --frozen --offline mypy app
 - name: backend-test
-  run: cd backend && uv run --frozen --offline pytest -q
+  run: cd backend && with-postgres uv run --frozen --offline pytest -q
 ```
+
+The image also carries PostgreSQL 18 from the PGDG repository, the major version Routivo's CI service
+runs. `with-postgres <command>` starts a throwaway cluster under `/tmp` (as the `postgres` user when the
+sandbox runs as root), sets `ROUTIVO_DATABASE_URL` to it, runs the command and removes the cluster, so
+the tests that skip without Postgres run offline in the gates as they do in CI.
+
+For `osm_build/` the image carries `osmium-tool` and the DuckDB CLI at the version Routivo's `mise.toml`
+pins, with the `spatial` extension preinstalled under `DUCKDB_EXTENSION_DIRECTORY`, so the build and diff
+tests run offline instead of skipping.
 
 ## nightshift-vault
 

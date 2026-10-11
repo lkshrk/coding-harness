@@ -53,5 +53,35 @@ RUN apt-get update \
        libhdf5-dev build-essential pkg-config \
   && rm -rf /var/lib/apt/lists/*
 ENV UV_NO_BINARY_PACKAGE=h5py
+# PGDG, because trixie ships only PostgreSQL 17 and Routivo's CI runs 18.
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main' >/etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql-18 \
+  && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 .devcontainer/with-postgres.sh /usr/local/bin/with-postgres
+# Same DuckDB as Routivo's mise.toml and CI image; osm_build/build.sh reads spatial from DUCKDB_EXTENSION_DIRECTORY.
+ARG DUCKDB_VERSION=1.5.6
+ARG DUCKDB_SHA256_AMD64=6e89deac1ebbc36eed0291caf8b567b030c7b86ac35998f71854e22b3c5d5e2f
+ARG DUCKDB_SHA256_ARM64=c544e92c9b7c31fc53c2139802cabd8e2d1b2b3e3f933117f31611239c1402db
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends osmium-tool unzip \
+  && rm -rf /var/lib/apt/lists/* \
+  && arch="$(dpkg --print-architecture)" \
+  && case "$arch" in \
+       amd64) sha="$DUCKDB_SHA256_AMD64" ;; \
+       arm64) sha="$DUCKDB_SHA256_ARM64" ;; \
+       *) echo "unsupported architecture $arch" >&2; exit 1 ;; \
+     esac \
+  && curl -fsSL -o /tmp/duckdb.zip "https://github.com/duckdb/duckdb/releases/download/v${DUCKDB_VERSION}/duckdb_cli-linux-${arch}.zip" \
+  && echo "${sha}  /tmp/duckdb.zip" | sha256sum -c - \
+  && unzip -q /tmp/duckdb.zip -d /usr/local/bin \
+  && rm /tmp/duckdb.zip \
+  && duckdb -c "SET extension_directory='/opt/duckdb/extensions'; INSTALL spatial;" \
+  && chmod -R a+rX /opt/duckdb
+ENV DUCKDB_EXTENSION_DIRECTORY=/opt/duckdb/extensions
 COPY --from=warm /var/cache/nightshift /var/cache/nightshift
 COPY --from=warm-backend /var/cache/nightshift/uv /var/cache/nightshift/uv
