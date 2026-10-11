@@ -1,3 +1,5 @@
+import { effectiveLimits } from '../policy/limits'
+import { issueSize, sizeData } from '../policy/size'
 import { viewIssue } from '../policy/stages'
 import type { SandboxHandle } from '../ports'
 import type { By } from '../ports/control'
@@ -6,6 +8,7 @@ import type { NoProgressInfo, Progress, SandboxCreatedInfo, WorkerStartedInfo } 
 import { type Event, EventValidationError } from '../state/events'
 import { isTerminal, type Run } from '../state/runs'
 import { activeRun } from '../state/targets'
+import { SIZE_EXPLORE } from './dispatch'
 import {
   type FinishLike,
   INGEST_AGENT,
@@ -121,6 +124,10 @@ export class RunLifecycle {
       await this.flow.ingestFinished(run, event, finish)
       return
     }
+    if ((finish.status === 'DONE' || finish.status === 'DONE_WITH_CONCERNS') && this.sizeExplore(run)) {
+      await this.explored(run, event, payload)
+      return
+    }
     if (finish.status === 'DONE' || finish.status === 'DONE_WITH_CONCERNS') {
       const gating = this.rt.runs.transition(runId, 'gating', event)
       await this.flow.enterVerification(run.issue)
@@ -136,6 +143,40 @@ export class RunLifecycle {
       return
     }
     await this.flow.remediate(this.rt.requireRun(runId), 'blocked', finish.blocker?.reason)
+  }
+
+  sizeExplore(run: Run): boolean {
+    const dispatched = this.rt.log.since(null, { run: run.id, types: ['DISPATCHED'] }).at(-1)
+    return dispatched?.data.reason === SIZE_EXPLORE
+  }
+
+  // The explorer only maps the code; its reading list feeds the implementer run that follows.
+  async explored(run: Run, event: Event, payload: unknown): Promise<void> {
+    this.rt.runs.transition(run.id, 'gating', event)
+    this.rt.runs.transition(run.id, 'reviewing', event)
+    await this.end(run.id, 'done', event)
+    await this.releaseSandbox(run.id)
+    this.flow.releaseLease(run.issue)
+    const estimate = (payload as { report?: { size_estimate?: unknown } }).report?.size_estimate
+    const issue = this.rt.cache.get(run.issue)
+    const view = issue && viewIssue(issue, this.rt.config(), this.flow.viewOptions(run.issue))
+    if (view) {
+      const size = issueSize(
+        view,
+        view.repository === null ? undefined : this.rt.config().repositories[view.repository],
+        effectiveLimits(this.rt.config(), run.profile),
+      )
+      this.rt.log.append({
+        type: 'SIZE_CHECKED',
+        issue: run.issue,
+        run: run.id,
+        data: {
+          ...sizeData(size, 'dispatch', run.profile),
+          ...(typeof estimate === 'number' ? { explorer_estimate: estimate } : {}),
+        },
+      })
+    }
+    await this.flow.applyIntent(run.issue, { kind: 'retryScheduled' })
   }
 
   async workerFailed(runId: string, reason: string, detail?: string): Promise<void> {

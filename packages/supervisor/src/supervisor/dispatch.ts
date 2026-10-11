@@ -1,8 +1,11 @@
 import { GatewayError, profileEntries } from '@nightshift/core'
+import { effectiveLimits } from '../policy/limits'
 import { prRef } from '../policy/naming'
+import { DECOMPOSITION } from '../policy/ready'
 import type { RetryQueue } from '../policy/retry'
 import { selectAgent } from '../policy/selection'
-import { INTEGRATION, type IssueView, viewIssue } from '../policy/stages'
+import { type IssueSize, issueSize, type SizeDecision, sizeData } from '../policy/size'
+import { IMPLEMENTATION, INTEGRATION, type IssueView, viewIssue } from '../policy/stages'
 import type { ExecutorStart } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
@@ -25,7 +28,11 @@ type DispatchOverride = {
   by?: By
   continueFrom?: Run
   continueRef?: PrHead
+  reason?: string
 }
+
+export const EXPLORER = 'explorer'
+export const SIZE_EXPLORE = 'size_explore'
 
 const STAGE_FAILURE_LIMIT = 3
 
@@ -78,7 +85,13 @@ export class Dispatcher {
         attempt,
         repository,
         base: this.rt.config().repositories[repository]?.base ?? 'main',
-        ...(o.by ? { reason: 'manual retry', by: o.by } : last?.failure ? { reason: last.failure } : {}),
+        ...(o.reason
+          ? { reason: o.reason }
+          : o.by
+            ? { reason: 'manual retry', by: o.by }
+            : last?.failure
+              ? { reason: last.failure }
+              : {}),
         ...(o.continueFrom ? { continues: o.continueFrom.id } : {}),
         ...(o.continueRef ? { continues_ref: o.continueRef.ref, continues_sha: o.continueRef.headSha } : {}),
       },
@@ -215,9 +228,78 @@ export class Dispatcher {
     return chosen ?? view.project.profile ?? this.rt.config().profiles.active
   }
 
+  sizeOf(view: IssueView, profile = this.profileFor(view)): IssueSize {
+    const config = this.rt.config()
+    const repo = view.repository === null ? undefined : config.repositories[view.repository]
+    return issueSize(view, repo, effectiveLimits(config, profile))
+  }
+
+  logSize(
+    view: IssueView,
+    size: IssueSize,
+    decision: SizeDecision,
+    extra: { explorer_estimate?: number } = {},
+  ) {
+    this.rt.log.append({
+      type: 'SIZE_CHECKED',
+      issue: view.snapshot.identifier,
+      data: { ...sizeData(size, decision, this.profileFor(view)), ...extra },
+    })
+  }
+
+  // Near the limit, a feature issue gets one explorer run before its first implementer run.
+  wantsExplorer(view: IssueView, size: IssueSize): boolean {
+    return (
+      size.near &&
+      view.pipeline.includes(DECOMPOSITION) &&
+      view.stage === IMPLEMENTATION &&
+      this.rt.runs.forIssue(view.snapshot.identifier).length === 0 &&
+      this.rt.deps.agentKind(EXPLORER) === 'worker'
+    )
+  }
+
+  async dispatchSized(view: IssueView, size: IssueSize | undefined): Promise<Run | undefined> {
+    const s = size ?? this.sizeOf(view)
+    const explore = this.wantsExplorer(view, s)
+    this.logSize(view, s, explore ? 'explore' : 'dispatch')
+    return this.dispatch(view, explore ? { agent: EXPLORER, reason: SIZE_EXPLORE } : {})
+  }
+
+  async tooLarge(view: IssueView, size: IssueSize, route: 'decomposition' | 'hold'): Promise<void> {
+    const id = view.snapshot.identifier
+    const stage = view.stage ?? IMPLEMENTATION
+    const signals = [
+      ...size.over,
+      ...(size.risk.length ? [`risk paths: ${size.risk.join(', ')}`] : []),
+      ...(size.designVerbs.length ? [`design verbs in the goal: ${size.designVerbs.join(', ')}`] : []),
+    ].join('; ')
+    const profile = this.profileFor(view)
+    this.logSize(view, size, route === 'decomposition' ? 'decomposition' : 'too_large')
+    if (route === 'decomposition') {
+      await this.rt.postOnce(
+        id,
+        `too-large-${stage}`,
+        `Too large for profile \`${profile}\` (${signals}); sent back to ${DECOMPOSITION} to be split.`,
+      )
+      await this.flow.applyIntent(id, { kind: 'stageEntered', stage: DECOMPOSITION, from: stage })
+      return
+    }
+    await this.rt.postOnce(
+      id,
+      `too-large-${stage}`,
+      `Too large for profile \`${profile}\` (${signals}). Split it into smaller issues, or \`ns retry --force-size ${id}\` to dispatch it once anyway.`,
+    )
+    await this.flow.holdForYou(id, { kind: 'too_large', stage, reason: size.over.join(', ') })
+    await this.rt.notify(`${id} is too large for profile ${profile}`, id, {
+      kind: 'blocked',
+      context: [signals],
+      action: `Split ${id}, or \`ns retry --force-size ${id}\``,
+    })
+  }
+
   async retryRun(
     target: string,
-    o: { agent?: string; profile?: string; continue?: boolean },
+    o: { agent?: string; profile?: string; continue?: boolean; forceSize?: boolean },
     by: By,
   ): Promise<Run> {
     const identifier = this.flow.resolveRun(target)?.issue ?? (isIssueRef(target) ? target : undefined)
@@ -263,8 +345,16 @@ export class Dispatcher {
     if (agent === undefined || this.rt.deps.agentKind(agent) !== 'worker') {
       throw new ControlError('refused', `${identifier}: no worker agent for stage ${stage}`)
     }
+    const size = this.sizeOf(view, o.profile ?? this.profileFor(view))
+    if (size.over.length && !o.forceSize) {
+      throw new ControlError(
+        'refused',
+        `${identifier} is too large (${size.over.join(', ')}); split it or retry with --force-size`,
+      )
+    }
     const active = this.rt.runs.active().find((r) => r.issue === identifier)
     if (active) await this.flow.stopRun(active.id, 'retry requested', { by })
+    this.logSize(view, size, size.over.length ? 'forced' : 'dispatch')
     this.flow.setAwaiting(identifier, null)
     const run = await this.dispatch(view, {
       agent,

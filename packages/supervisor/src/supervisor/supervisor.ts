@@ -223,7 +223,14 @@ export class Supervisor {
     }))
     await this.probeSecrets(candidates.length > 0 && running.length < this.cfg.limits.concurrency)
     const slots = this.paused ? 0 : Math.max(0, this.cfg.limits.concurrency - running.length)
-    const plan = planDispatch({ candidates, running, slots, config: this.cfg })
+    const plan = planDispatch({
+      candidates,
+      running,
+      slots,
+      config: this.cfg,
+      profileFor: (view) => this.m.dispatcher.profileFor(view),
+    })
+    for (const { view, size, route } of plan.tooLarge) await this.m.dispatcher.tooLarge(view, size, route)
     for (const { view, by } of plan.unblocked) {
       const id = view.snapshot.identifier
       if (by.length) this.log.append({ type: 'DEPENDENCY_UNBLOCKED', issue: id, data: { by } })
@@ -231,7 +238,8 @@ export class Supervisor {
       report.unblocked.push(id)
     }
     for (const view of plan.dispatch) {
-      if (await this.m.dispatcher.dispatch(view)) report.dispatched.push(view.snapshot.identifier)
+      const size = plan.sizes.get(view.snapshot.identifier)
+      if (await this.m.dispatcher.dispatchSized(view, size)) report.dispatched.push(view.snapshot.identifier)
     }
     const reason = (w: Waiting) =>
       this.paused && w.reason === 'concurrency limit reached' ? { ...w, reason: 'dispatch paused' } : w
@@ -375,7 +383,7 @@ export class Supervisor {
     this.m.lifecycle.stopForUser(target, reason, by)
   retryRun = (
     target: string,
-    o: { agent?: string; profile?: string; continue?: boolean },
+    o: { agent?: string; profile?: string; continue?: boolean; forceSize?: boolean },
     by: By,
   ): Promise<Run> => this.m.dispatcher.retryRun(target, o, by)
   retryIngest = (issue: string): Promise<Run> => this.m.ingest.retryIngest(issue)

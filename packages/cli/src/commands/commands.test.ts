@@ -431,9 +431,11 @@ describe('control commands', () => {
       control: rec.control,
     })
     await cli(['retry', 'XXX-42', '--continue'], { ...s.deps, control: rec.control })
+    await cli(['retry', 'XXX-42', '--force-size'], { ...s.deps, control: rec.control })
     expect(rec.calls).toEqual([
       ['POST', '/retry', { target: 'XXX-42', agent: 'fixer', profile: 'quality' }],
       ['POST', '/retry', { target: 'XXX-42', continue: true }],
+      ['POST', '/retry', { target: 'XXX-42', force_size: true }],
     ])
     const refused = recording(new ControlFailure(5, 'XXX-42: stage design has no automatic role', 'refused'))
     expect((await cli(['retry', 'XXX-42'], { ...s.deps, control: refused.control })).code).toBe(5)

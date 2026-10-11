@@ -178,6 +178,10 @@
       "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/coverage" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "SIZE_CHECKED" } } },
+      "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/size" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "MISMATCH_RESOLVED" } } },
       "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/mismatch" } } }
     }
@@ -240,7 +244,8 @@
         "NOTIFICATION_SENT",
         "MESSAGE_SENT",
         "COVERAGE_CHANGED",
-        "MISMATCH_RESOLVED"
+        "MISMATCH_RESOLVED",
+        "SIZE_CHECKED"
       ]
     },
     "failureClass": {
@@ -615,6 +620,26 @@
         "additionalProperties": false,
         "required": ["status", "stage"],
         "properties": { "status": { "type": "string" }, "stage": { "type": ["string", "null"] } }
+      },
+      "size": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["estimate", "files", "risk", "design_verbs", "over", "decision"],
+        "properties": {
+          "estimate": { "type": ["number", "null"] },
+          "files": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "## Files entries, a directory counting as 3"
+          },
+          "risk": { "type": "array", "items": { "type": "string" } },
+          "design_verbs": { "type": "array", "items": { "type": "string" } },
+          "over": { "type": "array", "items": { "type": "string" } },
+          "near": { "type": "boolean" },
+          "profile": { "type": "string" },
+          "explorer_estimate": { "type": "number", "description": "size estimate from the explorer report" },
+          "decision": { "enum": ["dispatch", "forced", "explore", "decomposition", "too_large"] }
+        }
       },
       "mismatch": {
         "type": "object",

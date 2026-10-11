@@ -11,6 +11,21 @@ export type IssueSize = {
   near: boolean
 }
 
+export type SizeDecision = 'dispatch' | 'forced' | 'explore' | 'decomposition' | 'too_large'
+
+export function sizeData(size: IssueSize, decision: SizeDecision, profile: string): Record<string, unknown> {
+  return {
+    estimate: size.estimate,
+    files: size.files,
+    risk: size.risk,
+    design_verbs: size.designVerbs,
+    over: size.over,
+    near: size.near,
+    profile,
+    decision,
+  }
+}
+
 type SizeLimits = Pick<EffectiveLimits, 'max_estimate' | 'max_files'>
 
 const DIRECTORY_WEIGHT = 3
