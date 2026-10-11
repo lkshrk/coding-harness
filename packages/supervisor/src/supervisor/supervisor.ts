@@ -32,6 +32,7 @@ import { PullRequestWatch } from './pr-watch'
 import { Questions } from './questions'
 import { Recovery } from './recovery'
 import { Remediation } from './remediation'
+import { Replan } from './replan'
 import { RunLifecycle } from './run-lifecycle'
 import { type RecoveryReport, type StopOptions, type SupervisorDeps, SupervisorRuntime } from './runtime'
 import { Verification } from './verification'
@@ -110,6 +111,7 @@ export class Supervisor {
       prWatch: new PullRequestWatch(rt, flow),
       dispatcher: new Dispatcher(rt, this.leases, this.retry, flow),
       remediation: new Remediation(rt, this.retry, flow),
+      replan: new Replan(rt, flow),
     }
   }
 
@@ -184,6 +186,7 @@ export class Supervisor {
     for (const lease of this.leases.expired(this.now())) await this.m.leasing.expireLease(lease)
     await this.m.linearSync.sync()
     await this.m.questions.checkQuestions()
+    await this.m.replan.resumeApproved()
     await this.m.prWatch.watchPullRequests()
     const views = [...this.cache.values()].flatMap(
       (i) => viewIssue(i, this.cfg, this.m.holds.viewOptions(i.identifier)) ?? [],

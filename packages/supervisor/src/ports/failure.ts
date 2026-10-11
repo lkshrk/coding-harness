@@ -1,3 +1,4 @@
+import type { IssueSnapshot } from './linear'
 import type { Run } from './records'
 
 export type FailureClass =
@@ -36,4 +37,25 @@ export interface Classifier {
 
 export interface RemediationHandler {
   handle(run: Run, c: Classification): Promise<'handled' | 'unhandled'>
+}
+
+export type ReplanIssue = { title: string; description: string }
+
+export type ReplanReport = {
+  action: 'split' | 'create_blocker' | 'escalate_lead'
+  sub_issues?: ReplanIssue[]
+  blocker?: ReplanIssue
+  reason: string
+}
+
+export type ReplanRequest = {
+  run: Run
+  issue: IssueSnapshot
+  classification: Classification
+  detail?: string
+}
+
+export interface Replanner {
+  /** Null when the call failed or its output did not match the schema. */
+  replan(r: ReplanRequest): Promise<ReplanReport | null>
 }

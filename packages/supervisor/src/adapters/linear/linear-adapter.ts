@@ -40,6 +40,10 @@ export function createLinearPort(opts: LinearPortOptions): LinearPort {
     async attachLink(identifier, url, title) {
       await writer.attachLink(identifier, url, title)
     },
+    createChild: (parent, issue) => writer.createChild(parent, issue),
+    async addBlocks(blocker, blocked) {
+      await writer.addBlocks(blocker, blocked)
+    },
   }
 }
 

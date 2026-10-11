@@ -8,6 +8,8 @@ const ENVIRONMENT_STREAK_PAUSE = 3
 const ENVIRONMENT_REASONS = ['sandbox_error', 'gateway_error', 'supervisor_restart']
 const CHECKED_REASONS = ['gate_failed', 'review_failed', 'ci_failed', 'review_comments']
 
+const REPLANNED = ['split', 'create_blocker', 'escalate_lead']
+
 const TASK_TOO_LARGE_CLASS: Classification = { class: 'task_too_large', action: 'split' }
 // Conflicts between a continued attempt and the moved base are resolved by the user, not retried.
 const baseConflictClass = (detail?: string): Classification => ({
@@ -85,6 +87,8 @@ export class Remediation {
       })
     } else if (action === 'escalate_user') {
       await this.escalateUser(run, c)
+    } else if (REPLANNED.includes(action) && (await this.flow.proposeReplan(run, { ...c, action }, detail))) {
+      return
     } else if ((await this.rt.deps.remediation?.handle(run, { ...c, action })) !== 'handled') {
       await this.escalateUser(run, c)
     }

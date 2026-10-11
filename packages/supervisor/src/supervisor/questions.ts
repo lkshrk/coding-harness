@@ -14,6 +14,7 @@ export type QuestionsPeers = {
   awaiting: (issue: string) => Awaiting | null
   applyIntent: (identifier: string, intent: Intent) => Promise<void>
   refresh: (identifier: string) => Promise<void>
+  replanAnswered: (issue: string, comment: string, answer: string) => Promise<boolean>
 }
 
 export class Questions {
@@ -98,6 +99,7 @@ export class Questions {
         data: { comment: q.comment, answer: reply.body, by: reply.by },
       })
       answered.push(q.issue)
+      if (await this.peers.replanAnswered(q.issue, q.comment, reply.body)) continue
       await this.resumeAnswered(q.issue)
     }
     return answered

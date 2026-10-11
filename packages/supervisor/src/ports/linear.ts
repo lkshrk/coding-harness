@@ -12,7 +12,11 @@ export type LifecycleState =
 
 export type MergeMode = 'manual' | 'auto' | 'feature-branch'
 
-export type Awaiting = { kind: 'before' | 'after' | 'escalated'; stage: string; reason?: string }
+export type Awaiting = {
+  kind: 'before' | 'after' | 'escalated' | 'split_proposed'
+  stage: string
+  reason?: string
+}
 
 export type BlockerRef = { identifier: string; team: string; status: string }
 
@@ -63,4 +67,8 @@ export interface LinearPort {
   update(identifier: string, change: IssueUpdate): Promise<void>
   comment(identifier: string, body: string, opts?: { parentId?: string }): Promise<LinearComment>
   attachLink(identifier: string, url: string, title: string): Promise<void>
+  /** Creates a child of `parent` in its team, project and milestone, reusing one with the same title and description. */
+  createChild(parent: string, issue: { title: string; description: string }): Promise<string>
+  /** Makes `blocker` block `blocked`; a no-op when the relation exists. */
+  addBlocks(blocker: string, blocked: string): Promise<void>
 }

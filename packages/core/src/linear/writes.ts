@@ -42,6 +42,26 @@ const CREATE_ATTACHMENT = `mutation nsAttachmentCreate($input: AttachmentCreateI
   attachmentCreate(input: $input) { success }
 }`
 
+const PARENT = `query nsIssueParent($id: String!) {
+  issue(id: $id) {
+    id team { id } project { id } projectMilestone { id }
+    children(first: 100) { nodes { identifier title description } }
+  }
+}`
+
+const RELATED = `query nsIssueRelated($blocker: String!, $blocked: String!) {
+  blocker: issue(id: $blocker) { id relations(first: 100) { nodes { type relatedIssue { id } } } }
+  blocked: issue(id: $blocked) { id }
+}`
+
+const CREATE_ISSUE = `mutation nsIssueCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { id identifier } }
+}`
+
+const CREATE_RELATION = `mutation nsIssueRelationCreate($input: IssueRelationCreateInput!) {
+  issueRelationCreate(input: $input) { success }
+}`
+
 class UnknownName extends Error {}
 
 export class LinearWriter {
@@ -109,6 +129,74 @@ export class LinearWriter {
     )
     if (!created.attachmentCreate.success)
       throw new Error(`linear: attachmentCreate ${identifier} not confirmed`)
+    return true
+  }
+
+  /** Creates a child in the parent's team, project and milestone; an existing child with the same title and description is reused. */
+  async createChild(parent: string, issue: { title: string; description: string }): Promise<string> {
+    type Data = {
+      issue: {
+        id: string
+        team: { id: string }
+        project: { id: string } | null
+        projectMilestone: { id: string } | null
+        children: { nodes: { identifier: string; title: string; description: string | null }[] }
+      }
+    }
+    let data: Data
+    try {
+      data = await this.request<Data, { id: string }>(PARENT, { id: parent })
+    } catch (e) {
+      if (notFound(e)) throw new Error(`linear: no issue ${parent}`)
+      throw e
+    }
+    const p = data.issue
+    // Only an exact copy is reused, so a retried creation never substitutes a different issue.
+    const existing = p.children.nodes.find(
+      (c) => c.title === issue.title && (c.description ?? '').trim() === issue.description.trim(),
+    )
+    if (existing) return existing.identifier
+    const input = {
+      teamId: p.team.id,
+      parentId: p.id,
+      title: issue.title,
+      description: issue.description,
+      ...(p.project ? { projectId: p.project.id } : {}),
+      ...(p.projectMilestone ? { projectMilestoneId: p.projectMilestone.id } : {}),
+    }
+    const created = await this.request<
+      { issueCreate: { success: boolean; issue: { id: string; identifier: string } | null } },
+      { input: typeof input }
+    >(CREATE_ISSUE, { input })
+    const child = created.issueCreate.issue
+    if (!created.issueCreate.success || !child)
+      throw new Error(`linear: issueCreate under ${parent} not confirmed`)
+    return child.identifier
+  }
+
+  /** Makes `blocker` block `blocked`; false when the relation already exists. */
+  async addBlocks(blocker: string, blocked: string): Promise<boolean> {
+    type Data = {
+      blocker: { id: string; relations: { nodes: { type: string; relatedIssue: { id: string } }[] } }
+      blocked: { id: string }
+    }
+    let data: Data
+    try {
+      data = await this.request<Data, { blocker: string; blocked: string }>(RELATED, { blocker, blocked })
+    } catch (e) {
+      if (notFound(e)) throw new Error(`linear: no issue ${blocker} or ${blocked}`)
+      throw e
+    }
+    const to = data.blocked.id
+    if (data.blocker.relations.nodes.some((r) => r.type === 'blocks' && r.relatedIssue.id === to))
+      return false
+    const relation = { issueId: data.blocker.id, relatedIssueId: to, type: 'blocks' }
+    const linked = await this.request<
+      { issueRelationCreate: { success: boolean } },
+      { input: typeof relation }
+    >(CREATE_RELATION, { input: relation })
+    if (!linked.issueRelationCreate.success)
+      throw new Error(`linear: issueRelationCreate ${blocker} blocks ${blocked} not confirmed`)
     return true
   }
 

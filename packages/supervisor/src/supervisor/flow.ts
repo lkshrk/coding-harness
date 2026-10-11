@@ -9,6 +9,7 @@ import type { PullRequestWatch } from './pr-watch'
 import type { Questions } from './questions'
 import type { Recovery } from './recovery'
 import type { Remediation } from './remediation'
+import type { Replan } from './replan'
 import type { RunLifecycle } from './run-lifecycle'
 import type { RunFlow } from './runtime'
 import type { Verification } from './verification'
@@ -25,6 +26,7 @@ export type Modules = {
   prWatch: PullRequestWatch
   dispatcher: Dispatcher
   remediation: Remediation
+  replan: Replan
 }
 
 export type FlowHost = {
@@ -61,6 +63,8 @@ export function runFlow(h: FlowHost): RunFlow {
     leaseEvent: (type, issue) => h.modules().leasing.leaseEvent(type, issue),
     askQuestion: (run, cause, blocker) => h.modules().questions.askQuestion(run, cause, blocker),
     checkQuestions: () => h.modules().questions.checkQuestions(),
+    replanAnswered: (issue, comment, answer) => h.modules().replan.answered(issue, comment, answer),
+    proposeReplan: (run, c, detail) => h.modules().replan.propose(run, c, detail),
     startIngest: (view) => h.modules().ingest.startIngest(view),
     ingestFinished: (run, event, finish) => h.modules().ingest.ingestFinished(run, event, finish),
     ingestRunFailed: (runId, reason, cause) => h.modules().ingest.ingestRunFailed(runId, reason, cause),
