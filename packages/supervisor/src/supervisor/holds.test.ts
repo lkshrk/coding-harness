@@ -70,6 +70,19 @@ describe('explicit coverage', () => {
   })
 })
 
+describe('escalated holds', () => {
+  test('releasing an escalated issue clears its hold', async () => {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Blocked', labels: ['ai-stage:implementation'] }))
+    await h.sup.start()
+    h.sup.cover('FOR-1')
+    await h.sup.holdStage('FOR-1', 'implementation', 'architectural_conflict', 'conflict')
+    expect(h.sup.awaiting('FOR-1')).toMatchObject({ kind: 'escalated' })
+    h.sup.uncover('FOR-1', 'cli')
+    expect(h.sup.awaiting('FOR-1')).toBeNull()
+  })
+})
+
 describe('holds', () => {
   test('a held issue is skipped', async () => {
     const h = harness()
