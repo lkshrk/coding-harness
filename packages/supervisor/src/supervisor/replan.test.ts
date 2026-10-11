@@ -75,6 +75,40 @@ describe('replan proposals', () => {
     expect([...h.linear.store.values()].filter((i) => i.parent === 'FOR-1').length).toBe(2)
   })
 
+  test('a failed creation keeps the proposal and completes on a later tick without duplicates', async () => {
+    const { h, proposal } = await proposed()
+    let failures = 2
+    const createChild = h.linear.createChild.bind(h.linear)
+    const addBlocks = h.linear.addBlocks.bind(h.linear)
+    h.linear.createChild = async (parent, issue) => {
+      if (issue.title === 'Part B' && failures-- > 0) throw new Error('linear: 503')
+      return createChild(parent, issue)
+    }
+    let linkFailures = 1
+    h.linear.addBlocks = async (blocker, blocked) => {
+      if (linkFailures-- > 0) throw new Error('linear: 502')
+      return addBlocks(blocker, blocked)
+    }
+    h.linear.reply('FOR-1', proposal.id, 'approve')
+    await h.sup.tick()
+    expect(h.sup.awaiting('FOR-1')?.kind).toBe('split_proposed')
+    await h.sup.tick()
+    expect(h.sup.awaiting('FOR-1')?.kind).toBe('split_proposed')
+    await h.sup.tick()
+    const children = [...h.linear.store.values()].filter((i) => i.parent === 'FOR-1')
+    expect(children.map((c) => c.title)).toEqual(['Part A', 'Part B'])
+    expect(
+      h.linear
+        .get('FOR-1')
+        .blockedBy.map((b) => b.identifier)
+        .sort(),
+    ).toEqual(children.map((c) => c.identifier).sort())
+    expect(h.sup.awaiting('FOR-1')?.kind).toBe('escalated')
+    await h.sup.tick()
+    expect([...h.linear.store.values()].filter((i) => i.parent === 'FOR-1').length).toBe(2)
+    expect((await h.linear.comments('FOR-1')).filter((c) => c.body.startsWith('Created ')).length).toBe(1)
+  })
+
   test('rejecting creates nothing and leaves the issue held', async () => {
     const { h, proposal } = await proposed()
     h.linear.reply('FOR-1', proposal.id, 'reject')

@@ -153,8 +153,10 @@ export class FakeLinear implements LinearPort {
     if (!list.some((a) => a.url === url)) this.attachments.set(identifier, [...list, { url, title }])
   }
 
-  async createBlockingChild(parent: string, issue: { title: string; description: string }): Promise<string> {
+  async createChild(parent: string, issue: { title: string; description: string }): Promise<string> {
     const p = this.get(parent)
+    const existing = [...this.store.values()].find((i) => i.parent === parent && i.title === issue.title)
+    if (existing) return existing.identifier
     const identifier = `${p.team}-${100 + this.store.size}`
     this.put({
       ...p,
@@ -168,10 +170,16 @@ export class FakeLinear implements LinearPort {
       parent,
       createdAt: this.now().toISOString(),
     })
-    this.patch(parent, {
-      blockedBy: [...p.blockedBy, { identifier, team: p.team, status: this.get(identifier).status }],
-    })
     return identifier
+  }
+
+  async addBlocks(blocker: string, blocked: string): Promise<void> {
+    const b = this.get(blocker)
+    const target = this.get(blocked)
+    if (target.blockedBy.some((r) => r.identifier === blocker)) return
+    this.patch(blocked, {
+      blockedBy: [...target.blockedBy, { identifier: blocker, team: b.team, status: b.status }],
+    })
   }
 
   reply(identifier: string, parentId: string, body: string, by = 'you'): void {

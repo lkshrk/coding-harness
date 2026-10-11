@@ -67,6 +67,8 @@ export interface LinearPort {
   update(identifier: string, change: IssueUpdate): Promise<void>
   comment(identifier: string, body: string, opts?: { parentId?: string }): Promise<LinearComment>
   attachLink(identifier: string, url: string, title: string): Promise<void>
-  /** Creates a child of `parent` in its team, project and milestone that blocks it; returns the identifier. */
-  createBlockingChild(parent: string, issue: { title: string; description: string }): Promise<string>
+  /** Creates a child of `parent` in its team, project and milestone, reusing one with the same title. */
+  createChild(parent: string, issue: { title: string; description: string }): Promise<string>
+  /** Makes `blocker` block `blocked`; a no-op when the relation exists. */
+  addBlocks(blocker: string, blocked: string): Promise<void>
 }

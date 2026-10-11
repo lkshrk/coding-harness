@@ -285,5 +285,7 @@ describe('failures and retries', () => {
     await h.sup.workerFailed(run.id, 'crash')
     expect(actions).toEqual(['escalate_lead'])
     expect(h.sup.awaiting('FOR-1')?.kind).toBe('escalated')
+    const bodies = (await h.linear.comments('FOR-1')).map((c) => c.body)
+    expect(bodies.filter((b) => b.startsWith('Replanner: escalate to the lead. design open')).length).toBe(1)
   })
 })

@@ -11,6 +11,11 @@ export type Proposal = {
   action: 'split' | 'create_blocker'
   stage: string
   issues: ReplanIssue[]
+  approved?: boolean
+  /** Identifiers of the children created so far, by index into `issues`. */
+  created?: string[]
+  /** Children whose `blocks` relation to the issue is confirmed. */
+  linked?: string[]
 }
 
 const PROPOSALS = 'proposals'
@@ -98,8 +103,16 @@ export class Replan {
       return false
     }
     if (!report) return false
+    if (report.action === 'escalate_lead') {
+      await this.rt.postOnce(
+        run.issue,
+        `replan:${run.id}`,
+        `Replanner: escalate to the lead. ${report.reason}`,
+      )
+      return false
+    }
     const errors = proposalErrors(issue.description, report)
-    if (errors.length || report.action === 'escalate_lead') {
+    if (errors.length) {
       console.error(`${run.issue}: replan not proposed: ${errors.join('; ')}`)
       return false
     }
@@ -125,13 +138,45 @@ export class Replan {
   async answered(issue: string, comment: string, answer: string): Promise<boolean> {
     const p = this.proposal(issue)
     if (!p || p.comment !== comment) return false
-    this.store(issue, null)
     if (!/^approve\b/i.test(answer.trim())) {
+      this.store(issue, null)
       await this.flow.holdForYou(issue, { kind: 'escalated', stage: p.stage, reason: 'replan rejected' })
       return true
     }
-    const created: string[] = []
-    for (const i of p.issues) created.push(await this.rt.deps.linear.createBlockingChild(issue, i))
+    this.store(issue, { ...p, approved: true, created: p.created ?? [], linked: p.linked ?? [] })
+    await this.complete(issue)
+    return true
+  }
+
+  /** Retries approved proposals whose children or relations are not all confirmed yet. */
+  async resumeApproved(): Promise<void> {
+    for (const [issue, p] of Object.entries(this.rt.metaMap<Proposal>(PROPOSALS)))
+      if (p.approved) await this.complete(issue)
+  }
+
+  // Progress is stored after every confirmed write so a failed request resumes without duplicates.
+  private async complete(issue: string): Promise<void> {
+    const p = this.proposal(issue)
+    if (!p?.approved) return
+    const created = [...(p.created ?? [])]
+    const linked = [...(p.linked ?? [])]
+    try {
+      for (const [n, i] of p.issues.entries()) {
+        if (!created[n]) {
+          created[n] = await this.rt.deps.linear.createChild(issue, i)
+          this.store(issue, { ...p, created, linked })
+        }
+        const child = created[n] as string
+        if (!linked.includes(child)) {
+          await this.rt.deps.linear.addBlocks(child, issue)
+          linked.push(child)
+          this.store(issue, { ...p, created, linked })
+        }
+      }
+    } catch (e) {
+      console.error(`${issue}: creating the approved replan failed, retrying: ${(e as Error).message}`)
+      return
+    }
     await this.rt.postOnce(
       issue,
       `replan-created:${p.run}`,
@@ -142,7 +187,7 @@ export class Replan {
       stage: p.stage,
       reason: `replanned into ${created.join(', ')}`,
     })
+    this.store(issue, null)
     await this.flow.refresh(issue)
-    return true
   }
 }

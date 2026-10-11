@@ -186,6 +186,7 @@ export class Supervisor {
     for (const lease of this.leases.expired(this.now())) await this.m.leasing.expireLease(lease)
     await this.m.linearSync.sync()
     await this.m.questions.checkQuestions()
+    await this.m.replan.resumeApproved()
     await this.m.prWatch.watchPullRequests()
     const views = [...this.cache.values()].flatMap(
       (i) => viewIssue(i, this.cfg, this.m.holds.viewOptions(i.identifier)) ?? [],
