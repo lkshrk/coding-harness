@@ -131,3 +131,37 @@ describe('planDispatch', () => {
     ])
   })
 })
+
+describe('planDispatch with shared files', () => {
+  const shared = testConfig()
+  const omni = shared.repositories.omni
+  if (!omni) throw new Error('no omni')
+  shared.repositories.omni = { ...omni, shared_files: ['ARCHITECTURE.md'] }
+
+  test('a shared file serialises two issues in one repository', () => {
+    const a = view({ identifier: 'FOR-1', description: files('src/a.ts') })
+    const b = view({ identifier: 'FOR-2', description: files('src/b.ts') })
+    const plan = planDispatch({ candidates: [a, b], running: [], slots: 3, config: shared })
+    expect(plan.dispatch.map((v) => v.snapshot.identifier)).toEqual(['FOR-1'])
+    expect(plan.waiting).toEqual([{ identifier: 'FOR-2', reason: 'shared file ARCHITECTURE.md' }])
+  })
+
+  test('a running issue in the repository holds the shared file', () => {
+    const a = view({ identifier: 'FOR-1', description: files('src/a.ts') })
+    const plan = planDispatch({
+      candidates: [a],
+      running: [{ identifier: 'FOR-7', repository: 'omni', files: ['src/b.ts'] }],
+      slots: 1,
+      config: shared,
+    })
+    expect(plan.waiting).toEqual([{ identifier: 'FOR-1', reason: 'shared file ARCHITECTURE.md' }])
+  })
+
+  test('without shared files both issues dispatch', () => {
+    const a = view({ identifier: 'FOR-1', description: files('src/a.ts') })
+    const b = view({ identifier: 'FOR-2', description: files('src/b.ts') })
+    const plan = planDispatch({ candidates: [a, b], running: [], slots: 3, config })
+    expect(plan.dispatch.map((v) => v.snapshot.identifier)).toEqual(['FOR-1', 'FOR-2'])
+    expect(plan.waiting).toEqual([])
+  })
+})

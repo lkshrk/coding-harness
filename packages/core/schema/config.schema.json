@@ -737,6 +737,15 @@
           "uniqueItems": true,
           "default": []
         },
+        "shared_files": {
+          "description": "paths every change may touch, such as a changelog; issues in this repository run one at a time",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/glob"
+          },
+          "uniqueItems": true,
+          "default": []
+        },
         "macos_only": {
           "type": "boolean",
           "default": false

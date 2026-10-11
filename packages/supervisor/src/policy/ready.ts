@@ -93,6 +93,11 @@ export function planDispatch(input: {
       })
       continue
     }
+    const shared = input.config.repositories[repository]?.shared_files ?? []
+    if (shared.length && taken.some((r) => r.repository === repository)) {
+      plan.waiting.push({ identifier: id, reason: `shared file ${shared.join(', ')}` })
+      continue
+    }
     const clash = taken.find((r) => r.repository === repository && filesOverlap(r.files, view.files))
     if (clash) {
       plan.waiting.push({ identifier: id, reason: `files overlap ${clash.identifier}` })

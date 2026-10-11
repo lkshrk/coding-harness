@@ -316,6 +316,10 @@ export interface Repository {
    */
   checks: Check[]
   risk_paths: Glob[]
+  /**
+   * paths every change may touch, such as a changelog; issues in this repository run one at a time
+   */
+  shared_files: Glob[]
   macos_only: boolean
   /**
    * GitHub account for this repository instead of github.default

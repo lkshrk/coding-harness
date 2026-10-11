@@ -26,6 +26,7 @@ export function ingestConfig(config: Config): Config {
           { name: 'wiki', run: 'obsidian-wiki lint "$PWD"', timeout: '5m' },
         ],
         risk_paths: [],
+        shared_files: [],
         macos_only: false,
       },
     },
