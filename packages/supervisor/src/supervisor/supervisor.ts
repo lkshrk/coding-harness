@@ -192,6 +192,7 @@ export class Supervisor {
       (i) => viewIssue(i, this.cfg, this.m.holds.viewOptions(i.identifier)) ?? [],
     )
     report.stopped = await this.m.linearSync.enforceLinear()
+    await this.m.linearSync.clearDoneStages()
     await this.m.dispatcher.launchQueued()
 
     const active = new Set(this.runs.active().map((r) => r.issue))

@@ -171,12 +171,25 @@ describe('stage label on Done', () => {
     expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
   })
 
-  test('a Done issue first seen at start is left as it is', async () => {
+  test('a Done issue first seen at start loses its stage label, other labels stay', async () => {
     const h = harness()
-    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['ai-stage:acceptance'] }))
+    h.linear.put(
+      snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['type:feature', 'ai-stage:acceptance'] }),
+    )
     await h.sup.start()
     await h.sup.tick()
-    expect(h.linear.updates).toEqual([])
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
+    expect(h.linear.updates).toEqual([{ identifier: 'FOR-1', change: { stage: null } }])
+  })
+
+  test('a Done issue already cached as Done loses a stage label added later', async () => {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['type:feature'] }))
+    await h.sup.start()
+    await h.sup.tick()
+    h.linear.patch('FOR-1', { labels: ['type:feature', 'ai-stage:acceptance'] })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toEqual(['type:feature'])
   })
 })
 

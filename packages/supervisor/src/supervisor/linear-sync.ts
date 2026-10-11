@@ -27,10 +27,8 @@ export class LinearSync {
       this.cursor === undefined ? {} : { updatedSince: this.cursor },
     )
     const seen = new Set<string>()
-    const finished: string[] = []
     for (const issue of issues) {
       seen.add(issue.identifier)
-      if (this.movedToDone(issue)) finished.push(issue.identifier)
       this.observeIssue(issue)
       if (this.cursor === undefined || issue.updatedAt > this.cursor) this.cursor = issue.updatedAt
     }
@@ -43,11 +41,8 @@ export class LinearSync {
     for (const id of new Set(watched)) {
       if (seen.has(id)) continue
       const issue = await this.rt.deps.linear.issue(id)
-      if (!issue) continue
-      if (this.movedToDone(issue)) finished.push(id)
-      this.observeIssue(issue)
+      if (issue) this.observeIssue(issue)
     }
-    for (const id of finished) await this.applyIntent(id, { kind: 'done' })
   }
 
   async refresh(identifier: string): Promise<void> {
@@ -55,16 +50,21 @@ export class LinearSync {
     if (issue) this.observeIssue(issue)
   }
 
-  // A move to Done seen by sync; a live run's move is left to enforceLinear, which judges the actor.
-  private movedToDone(issue: IssueSnapshot): boolean {
+  // Clears the stage label of Done issues. Issues with a live run or a tracked pull request are left
+  // to enforceLinear and the merge handling, which still need the stage.
+  async clearDoneStages(): Promise<void> {
     const cfg = this.rt.config()
-    const before = this.rt.cache.get(issue.identifier)
-    if (!before || lifecycleOf(cfg, before.team, before.status) === 'done') return false
-    if (this.rt.runs.active().some((r) => r.issue === issue.identifier)) return false
-    return (
-      lifecycleOf(cfg, issue.team, issue.status) === 'done' &&
-      labelValue(issue.labels, LABEL_GROUPS.stage) !== null
+    const busy = new Set([
+      ...this.rt.runs.active().map((r) => r.issue),
+      ...this.rt.pullRequests.all().map((p) => p.issue),
+    ])
+    const done = [...this.rt.cache.values()].filter(
+      (i) =>
+        !busy.has(i.identifier) &&
+        lifecycleOf(cfg, i.team, i.status) === 'done' &&
+        labelValue(i.labels, LABEL_GROUPS.stage) !== null,
     )
+    for (const issue of done) await this.applyIntent(issue.identifier, { kind: 'done' })
   }
 
   observeIssue(issue: IssueSnapshot): void {
