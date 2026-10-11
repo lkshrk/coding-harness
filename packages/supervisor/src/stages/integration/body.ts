@@ -3,10 +3,15 @@ import type { IssueSnapshot } from '../../ports'
 import type { GateEventData } from '../gates/report'
 import type { ReviewFinding } from '../gates/review'
 
+export type AttemptFinish = { summary?: string; concerns?: string[] } | null
+
+export type AttemptSummary = { attempt: number; headSha: string; finish: AttemptFinish }
+
 export type PullRequestBodyInput = {
   issue: IssueSnapshot
   runId: string
-  finish: { summary?: string; concerns?: string[] } | null
+  finish: AttemptFinish
+  attempts?: readonly AttemptSummary[]
   gates: readonly GateEventData[]
   review: { verdict: 'pass' | 'fail'; findings: ReviewFinding[] } | null
   unreviewed: string | null
@@ -18,13 +23,33 @@ export function pullRequestTitle(issue: Pick<IssueSnapshot, 'identifier' | 'titl
   return `${issue.identifier}: ${issue.title}`
 }
 
+function summarySection(i: PullRequestBodyInput): string[] {
+  const changed: AttemptSummary[] = []
+  for (const a of i.attempts ?? []) if (a.headSha !== changed.at(-1)?.headSha) changed.push(a)
+  const [first, ...repairs] = changed.length ? changed : [{ attempt: 0, headSha: '', finish: i.finish }]
+  const listed = [first, ...repairs].flatMap((a) => a?.finish?.concerns ?? [])
+  const concerns = repairs.length ? [...new Set(listed)] : listed
+  return [
+    first?.finish?.summary?.trim() || '(no summary)',
+    ...(repairs.length
+      ? [
+          '',
+          ...repairs.map(
+            (a) =>
+              `- Attempt ${a.attempt}: ${a.finish?.summary?.trim().replace(/\s+/g, ' ') || '(no summary)'}`,
+          ),
+        ]
+      : []),
+    ...(concerns.length ? ['', 'Concerns:', ...concerns.map((c) => `- ${c}`)] : []),
+  ]
+}
+
 export function pullRequestBody(i: PullRequestBodyInput): string {
   const parsed = validateIssue(i.issue.description, { allowNoDesign: true })
   const acceptance = parsed.ok ? parsed.issue.acceptance : []
   const parts: string[] = [
     '## Summary',
-    i.finish?.summary?.trim() || '(no summary)',
-    ...(i.finish?.concerns?.length ? ['', 'Concerns:', ...i.finish.concerns.map((c) => `- ${c}`)] : []),
+    ...summarySection(i),
     '',
     '## Acceptance criteria',
     ...(acceptance.length ? acceptance.map((a) => `- [ ] ${a}`) : ['(none listed)']),
