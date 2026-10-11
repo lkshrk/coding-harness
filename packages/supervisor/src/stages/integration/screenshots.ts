@@ -28,7 +28,13 @@ export type ScreenshotOutcome = { url: string; reduced: string[]; dropped: strin
 
 type Shot = { page: string; viewport: string; theme: string; file: string }
 
-type Pair = { key: Shot; before: string | null; after: string | null }
+type PageEntry = { route: string; path: string; new: boolean }
+
+type Capture = { pages: PageEntry[]; shots: Shot[] }
+
+type Status = 'pair' | 'new' | 'removed'
+
+type Pair = { key: Shot; status: Status; before: string | null; after: string | null }
 
 export const SCREENSHOT_MARKER = '<!-- nightshift:screenshots -->'
 
@@ -47,7 +53,13 @@ export async function captureScreenshots(d: ScreenshotDeps, i: ScreenshotInput):
           ? 'the screenshots command produced no images on the head commit'
           : 'the screenshots command produced no images',
       }
-    const { pairs, reduced, dropped } = capped(pairsOf(before.shots, after.shots), work, i.config)
+    const matched = pagesOf(before, after)
+    if ('reason' in matched) return matched
+    const { pairs, reduced, dropped } = capped(
+      pairsOf(before.shots, after.shots, matched.status),
+      work,
+      i.config,
+    )
     const urls = new Map<string, string>()
     for (const p of pairs)
       for (const [side, file] of [
@@ -76,7 +88,7 @@ async function shoot(
   side: 'before' | 'after',
   sha: string,
   into: string,
-): Promise<{ shots: Shot[] } | { reason: string }> {
+): Promise<Capture | { reason: string }> {
   mkdirSync(join(into, '..'), { recursive: true })
   const [result] = await d.gates.run(
     { name: i.repository, image: await d.image(i.repository), gitDir: i.gitDir },
@@ -98,19 +110,66 @@ async function shoot(
   } catch {
     return { reason: `${config.output}/manifest.json on ${where} is not valid JSON` }
   }
-  if (!Array.isArray(parsed)) return { reason: `${config.output}/manifest.json on ${where} is not a list` }
   const listed = `${config.output}/manifest.json on ${where}`
-  for (const [n, entry] of parsed.entries()) {
+  const m = parsed as { pages?: unknown; images?: unknown } | null
+  if (m === null || typeof m !== 'object' || !Array.isArray(m.pages) || !Array.isArray(m.images))
+    return { reason: `${listed} needs a pages list and an images list` }
+  const pages: PageEntry[] = []
+  for (const [n, entry] of m.pages.entries()) {
+    if (!isPage(entry)) return { reason: `${listed} has an invalid page ${n + 1} (needs route and path)` }
+    pages.push({ route: entry.route, path: entry.path, new: entry.new === true })
+  }
+  const routes = new Set(pages.map((p) => p.route))
+  for (const [n, entry] of m.images.entries()) {
     if (!isShot(entry))
       return {
-        reason: `${listed} has an invalid entry ${n + 1} (needs page, viewport, theme and a relative .png file)`,
+        reason: `${listed} has an invalid image ${n + 1} (needs page, viewport, theme and a relative .png file)`,
       }
+    if (!routes.has(entry.page))
+      return { reason: `${listed} has an image of \`${entry.page}\`, which its pages do not list` }
     if (!existsSync(join(into, entry.file)))
       return { reason: `${listed} lists ${entry.file}, which the command did not write` }
     if (!isPng(join(into, entry.file)))
       return { reason: `${listed} lists ${entry.file}, which is not a readable PNG image` }
   }
-  return { shots: parsed as Shot[] }
+  return { pages, shots: m.images as Shot[] }
+}
+
+function isPage(v: unknown): v is { route: string; path: string; new?: unknown } {
+  if (v === null || typeof v !== 'object') return false
+  const p = v as Record<string, unknown>
+  return (
+    typeof p.route === 'string' &&
+    p.route.length > 0 &&
+    typeof p.path === 'string' &&
+    p.path.length > 0 &&
+    (p.new === undefined || typeof p.new === 'boolean')
+  )
+}
+
+// Which pages exist is the command's report: an empty base is trusted only for head pages it marks new.
+function pagesOf(before: Capture, after: Capture): { status: Map<string, Status> } | { reason: string } {
+  const was = new Set(before.pages.map((p) => p.route))
+  const is = new Set(after.pages.map((p) => p.route))
+  if (was.size === 0) {
+    const existing = after.pages.filter((p) => !p.new).map((p) => `\`${p.route}\``)
+    if (existing.length)
+      return {
+        reason: `the screenshots command listed no pages on the base commit, but the head lists existing pages (${existing.join(', ')})`,
+      }
+  }
+  const shotOn = (c: Capture, route: string) => c.shots.some((s) => s.page === route)
+  const status = new Map<string, Status>()
+  const failed: string[] = []
+  for (const route of new Set([...is, ...was])) {
+    const s: Status = !was.has(route) ? 'new' : !is.has(route) ? 'removed' : 'pair'
+    if ((s !== 'new' && !shotOn(before, route)) || (s !== 'removed' && !shotOn(after, route)))
+      failed.push(`\`${route}\` on ${s === 'new' || shotOn(before, route) ? 'the head' : 'the base'} commit`)
+    status.set(route, s)
+  }
+  if (failed.length)
+    return { reason: `the screenshots command listed pages without images: ${failed.join(', ')}` }
+  return { status }
 }
 
 function isShot(v: unknown): v is Shot {
@@ -140,13 +199,15 @@ function isPng(path: string): boolean {
 
 const keyOf = (s: Shot) => `${s.page}\u0000${s.viewport}\u0000${s.theme}`
 
-function pairsOf(before: Shot[], after: Shot[]): Pair[] {
+function pairsOf(before: Shot[], after: Shot[], status: Map<string, Status>): Pair[] {
   const pairs = new Map<string, Pair>()
+  const statusOf = (s: Shot) => status.get(s.page) ?? 'pair'
   for (const s of after)
-    if (!pairs.has(keyOf(s))) pairs.set(keyOf(s), { key: s, before: null, after: s.file })
+    if (!pairs.has(keyOf(s)))
+      pairs.set(keyOf(s), { key: s, status: statusOf(s), before: null, after: s.file })
   for (const s of before) {
     const p = pairs.get(keyOf(s))
-    if (!p) pairs.set(keyOf(s), { key: s, before: s.file, after: null })
+    if (!p) pairs.set(keyOf(s), { key: s, status: statusOf(s), before: s.file, after: null })
     else if (p.before === null) p.before = s.file
   }
   return [...pairs.values()]
@@ -198,9 +259,11 @@ function uploadName(s: Shot, side: string): string {
 }
 
 function commentBody(pairs: Pair[], urls: Map<string, string>, reduced: string[], dropped: string[]): string {
-  const cell = (side: 'before' | 'after', file: string | null) => {
+  const cell = (p: Pair, side: 'before' | 'after') => {
+    const file = p[side]
     const url = file === null ? undefined : urls.get(`${side}/${file}`)
-    return url ? `![${side}](${url})` : side === 'before' ? '(new page)' : '(removed page)'
+    if (url) return `![${side}](${url})`
+    return p.status === 'new' ? '(new page)' : p.status === 'removed' ? '(removed page)' : '(not captured)'
   }
   const lines = [
     '## Screenshots',
@@ -209,7 +272,7 @@ function commentBody(pairs: Pair[], urls: Map<string, string>, reduced: string[]
     '| --- | --- | --- | --- | --- |',
     ...pairs.map(
       (p) =>
-        `| \`${p.key.page}\` | ${p.key.viewport} | ${p.key.theme} | ${cell('before', p.before)} | ${cell('after', p.after)} |`,
+        `| \`${p.key.page}\` | ${p.key.viewport} | ${p.key.theme} | ${cell(p, 'before')} | ${cell(p, 'after')} |`,
     ),
   ]
   lines.push(...capNotes(reduced, dropped), '', SCREENSHOT_MARKER)

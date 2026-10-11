@@ -359,9 +359,17 @@ const PNG_BASE64 =
 /** A shell command writing a 1x1 PNG to `shots/<file>`. */
 export const writePng = (file: string) => `mkdir -p shots && echo ${PNG_BASE64} | base64 -d > shots/${file}`
 
-/** A shell command writing `shots/manifest.json` with the given entries. */
-export const writeManifest = (entries: { page: string; viewport: string; theme?: string; file: string }[]) =>
-  `mkdir -p shots && printf '%s' '${JSON.stringify(entries.map((e) => ({ theme: 'dark', ...e })))}' > shots/manifest.json`
+/** A shell command writing `shots/manifest.json`; `pages` defaults to the pages of the images. */
+export const writeManifest = (
+  entries: { page: string; viewport: string; theme?: string; file: string }[],
+  pages: { route: string; new?: boolean }[] = [...new Set(entries.map((e) => e.page))].map((route) => ({
+    route,
+  })),
+) =>
+  `mkdir -p shots && printf '%s' '${JSON.stringify({
+    pages: pages.map((p) => ({ path: `routes${p.route}`, ...p })),
+    images: entries.map((e) => ({ theme: 'dark', ...e })),
+  })}' > shots/manifest.json`
 
 export const SHOTS_COMMAND = `${writePng('home-desktop-dark.png')} && ${writeManifest([
   { page: '/', viewport: 'desktop', file: 'home-desktop-dark.png' },

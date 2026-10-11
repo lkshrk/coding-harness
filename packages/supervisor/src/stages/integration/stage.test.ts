@@ -373,18 +373,30 @@ describe('integration stage (screenshots)', () => {
   })
 
   test('a command that yields no images opens a draft PR that says why', async () => {
-    const h = integrationHarness(
-      root,
-      withUi(['src/**'], "mkdir -p shots && echo '[]' > shots/manifest.json"),
-    )
+    const h = integrationHarness(root, withUi(['src/**'], writeManifest([])))
     await h.integrated()
     const [create] = h.gh.gh('create')
     expect(create?.cmd.at(-1)).toBe('--draft')
     expect(create?.stdin).toContain('no screenshots were taken: the screenshots command produced no images.')
   })
 
-  test('an empty base capture shows the head pages as new and opens a ready PR', async () => {
+  test('an empty base capture of existing pages opens a draft and never labels them new', async () => {
     const headOnly = `if [ -f src/b.ts ]; then ${SHOTS_COMMAND}; else ${writeManifest([])}; fi`
+    const h = integrationHarness(root, withUi(['src/**'], headOnly))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    expect(shotComments(h)).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      'no screenshots were taken: the screenshots command listed no pages on the base commit, but the head lists existing pages (`/`).',
+    )
+    expect(create?.stdin).not.toContain('new page')
+  })
+
+  test('an empty base capture with every head page reported new opens a ready PR', async () => {
+    const page = { page: '/', viewport: 'desktop', file: 'home.png' }
+    const headOnly = `if [ -f src/b.ts ]; then ${writePng('home.png')} && ${writeManifest([page], [{ route: '/', new: true }])}; else ${writeManifest([])}; fi`
     const h = integrationHarness(root, withUi(['src/**'], headOnly))
     await h.integrated()
     expect(h.linear.uploads.map((u) => u.name)).toEqual(['desktop-dark-after.png'])
@@ -392,6 +404,30 @@ describe('integration stage (screenshots)', () => {
       /\| `\/` \| desktop \| dark \| \(new page\) \| !\[after\]\(https:\/\/uploads\.linear\.test\/1\/[^)]*\) \|/,
     )
     expect(h.gh.gh('create')[0]?.cmd).not.toContain('--draft')
+  })
+
+  test('a page in the head pages and not the base pages is shown as new without a draft', async () => {
+    const home = { page: '/', viewport: 'desktop', file: 'home.png' }
+    const added = { page: '/new', viewport: 'desktop', file: 'new.png' }
+    const run = `${writePng('home.png')} && ${writePng('new.png')} && if [ -f src/b.ts ]; then ${writeManifest([home, added])}; else ${writeManifest([home])}; fi`
+    const h = integrationHarness(root, withUi(['src/**'], run))
+    await h.integrated()
+    expect(shotComments(h)[0]?.body).toMatch(/\| `\/new` \| desktop \| dark \| \(new page\) \| !\[after\]/)
+    expect(h.gh.gh('create')[0]?.cmd).not.toContain('--draft')
+  })
+
+  test('a page listed on the base without images there opens a draft and is not shown as new', async () => {
+    const home = { page: '/', viewport: 'desktop', file: 'home.png' }
+    const about = { page: '/about', viewport: 'desktop', file: 'about.png' }
+    const run = `${writePng('home.png')} && ${writePng('about.png')} && if [ -f src/b.ts ]; then ${writeManifest([home, about])}; else ${writeManifest([home], [{ route: '/' }, { route: '/about' }])}; fi`
+    const h = integrationHarness(root, withUi(['src/**'], run))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain(
+      'the screenshots command listed pages without images: `/about` on the base commit.',
+    )
   })
 
   test('a page only the base commit renders keeps its before image in the comment', async () => {
@@ -517,14 +553,14 @@ describe('integration stage (screenshots)', () => {
   })
 
   test('an invalid manifest entry uploads nothing and opens a draft that says why', async () => {
-    const invalid = `${writePng('home.png')} && mkdir -p shots && printf '%s' '[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/x","viewport":"desktop","file":"x.png"}]' > shots/manifest.json`
+    const invalid = `${writePng('home.png')} && mkdir -p shots && printf '%s' '{"pages":[{"route":"/","path":"a"},{"route":"/x","path":"x"}],"images":[{"page":"/","viewport":"desktop","theme":"dark","file":"home.png"},{"page":"/x","viewport":"desktop","file":"x.png"}]}' > shots/manifest.json`
     const h = integrationHarness(root, withUi(['src/**'], invalid))
     await h.integrated()
     expect(h.linear.uploads).toEqual([])
     const [create] = h.gh.gh('create')
     expect(create?.cmd.at(-1)).toBe('--draft')
     expect(create?.stdin).toContain(
-      'no screenshots were taken: shots/manifest.json on the base commit has an invalid entry 2 (needs page, viewport, theme and a relative .png file).',
+      'no screenshots were taken: shots/manifest.json on the base commit has an invalid image 2 (needs page, viewport, theme and a relative .png file).',
     )
   })
 
