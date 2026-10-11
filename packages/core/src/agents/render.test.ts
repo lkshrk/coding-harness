@@ -131,6 +131,7 @@ describe('renderContext', () => {
       worker: { wall_clock: '45m', tokens: '2M', steps: 120, no_diff_steps: 25, no_diff_tokens: '250k' },
       repair_rounds: 2,
       best_of: 2,
+      review_blocker_confidence: 0.7,
     },
   }
 

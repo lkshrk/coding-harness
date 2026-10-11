@@ -81,6 +81,7 @@ describe('contextInput', () => {
             lines: '3-4',
             message: 'drops the 3-row check',
             evidence: 'e',
+            category: 'other',
             confidence: 0.9,
           },
         ],

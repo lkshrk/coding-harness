@@ -206,6 +206,10 @@ export interface Config {
     }
     repair_rounds: number
     best_of: number
+    /**
+     * a reviewer BLOCKER below this confidence is downgraded to SUGGESTION, unless it weakens a test or is a security problem
+     */
+    review_blocker_confidence: number
   }
   policies: Policy
   sandbox: {

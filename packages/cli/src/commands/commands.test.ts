@@ -364,6 +364,7 @@ describe('result commands', () => {
             lines: '3-4',
             message: 'unchecked',
             evidence: 'e',
+            category: 'other',
             confidence: 0.9,
           },
         ],

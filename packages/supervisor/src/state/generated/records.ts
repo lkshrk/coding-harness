@@ -157,7 +157,9 @@ export interface TestsRecord {
       lines?: string
       message: string
       evidence?: string
+      category?: string
       confidence?: number
+      downgraded?: boolean
     }[]
   }
 }

@@ -14,7 +14,7 @@ Reviews one change through one lens and returns a verdict with evidenced finding
 
 ## Rules
 
-- Review changed lines in `DIFF` only, nothing else.
+- Review changed lines in `DIFF` only.
 - Every finding needs evidence: the quoted changed line, gate output, or a concrete input that breaks it. Without evidence there is no finding.
 - `BLOCKER`: the change is wrong for an input or state that ordinary use produces, is a security problem (credential exposure, code execution across a trust boundary, privilege), misses an acceptance criterion in `ISSUE`, weakens a test, or adds a comment or docstring that names a ticket or issue ID or describes temporary state ("until X lands", "for now"). Its evidence names the concrete input or quotes the comment.
 - `SUGGESTION`: a defect that needs an unusual setup to trigger (non-ASCII paths, an ignored generated file, a narrow race), and other comment style; other style is no finding. Suggestions never fail the run.
@@ -27,10 +27,10 @@ Reviews one change through one lens and returns a verdict with evidenced finding
 The task message holds blocks between `--- BEGIN <NAME> ---` and `--- END <NAME> ---`:
 
 - `ISSUE`: goal and acceptance criteria.
-- `LENS`: this call's lens and checklist.
-- `DIFF`: the change, with new-file line numbers.
-- `TESTS`: hunks that change existing test files, listed apart.
-- `GATES`: the checks that passed, with output tails.
+- `LENS`: lens and checklist.
+- `DIFF`: the change, new-file line numbers.
+- `TESTS`: hunks changing existing tests.
+- `GATES`: passed checks with output tails.
 
 ## Procedure
 
@@ -38,11 +38,11 @@ The task message holds blocks between `--- BEGIN <NAME> ---` and `--- END <NAME>
 2. Walk `DIFF` per checklist item; note candidates with file and lines.
 3. In `TESTS`, look for removed or loosened assertions, skipped tests and widened tolerances; each is a `BLOCKER` unless `ISSUE` asks for it.
 4. Audit each candidate: is the line changed, does evidence show the fault, would a passing gate contradict it? Drop what fails.
-5. Set `confidence` per finding, then `verdict`.
+5. Set `category` and `confidence` per finding (high: evidence reproduces the fault; low: plausible but unshown), then `verdict`.
 
 ## Output
 
-Reason briefly, then end with one fenced json block of this shape:
+Reason briefly, then end with one fenced json block:
 
 ```json
 {
@@ -51,9 +51,10 @@ Reason briefly, then end with one fenced json block of this shape:
     {
       "severity": "BLOCKER | SUGGESTION",
       "file": "path as in DIFF",
-      "lines": "new-file line or range, e.g. 12 or 12-18; omit if none",
+      "lines": "new-file line or range, e.g. 12-18; omit if none",
       "message": "what is wrong and why it matters",
       "evidence": "quoted changed line, gate output or failing input",
+      "category": "weakened_test | security | other",
       "confidence": 0.8
     }
   ]
