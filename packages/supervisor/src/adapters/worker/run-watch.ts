@@ -9,8 +9,6 @@ export const GRACE_MESSAGE = 'Limit reached: call finish now with your current s
 export const NO_DIFF_MESSAGE =
   'No change yet. Either commit the smallest first step now, or call finish with BLOCKED, needs: context, and your findings.'
 
-const SUMMARY_CHARS = 2_000
-
 export interface WorkerCallbacks {
   sandboxCreated?(runId: string, info: SandboxCreatedInfo): Promise<void>
   workerStarted(runId: string, info: WorkerStartedInfo): Promise<void>
@@ -168,11 +166,7 @@ export class RunWatch {
     if (lines !== undefined && lines > 0) return
     if (action.act === 'stop') {
       const counts = `no diff after ${action.steps} steps and ${action.tokens} tokens`
-      const summary =
-        a.lastText && a.lastText.length > SUMMARY_CHARS
-          ? `${a.lastText.slice(0, SUMMARY_CHARS)}…`
-          : a.lastText
-      await this.fail(a, 'task_too_large', summary ? `${counts}; last summary: ${summary}` : counts)
+      await this.fail(a, 'task_too_large', a.lastText ? `${counts}; last summary: ${a.lastText}` : counts)
       return
     }
     await this.d.worker.send(a.session, NO_DIFF_MESSAGE)

@@ -644,6 +644,27 @@ describe('WorkerExecutor watching', () => {
     expect(worker.sent).toEqual([NO_DIFF_MESSAGE, GRACE_MESSAGE])
   })
 
+  test('a no-diff stop keeps the whole last summary, however long', async () => {
+    config = {
+      ...config,
+      limits: { ...config.limits, worker: { ...config.limits.worker, no_diff_steps: 2 } },
+    }
+    await started()
+    worker.stream.push(read)
+    for (let i = 0; i < 4; i++) worker.stream.push(step)
+    await until(() => cb.of('no_progress').length === 1)
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => worker.sent.length === 2)
+    const summary = `${'Findings. '.repeat(400)}Next step: split the parser change.`
+    worker.stream.push(step)
+    worker.stream.push({ kind: 'text', chars: summary.length, text: summary })
+    worker.stream.push({ kind: 'idle', sinceMs: 0 })
+    await until(() => cb.of('failed').length === 1)
+    expect(cb.of('failed')[0]?.[3]).toBe(
+      `no diff after 5 steps and 55 tokens; last summary: ${summary.trim()}`,
+    )
+  })
+
   test('a diff found when the no-diff threshold passes sends no nudge', async () => {
     config = {
       ...config,
