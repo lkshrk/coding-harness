@@ -10,6 +10,7 @@ Line 6 skips archived orders before the batch is built, which meets the criterio
       "lines": "5",
       "message": "The added comment cites a ticket ID and describes temporary state instead of a lasting fact; remove it.",
       "evidence": "+5         # ABC-123: skip archived orders until the migration lands",
+      "category": "other",
       "confidence": 0.9
     }
   ]

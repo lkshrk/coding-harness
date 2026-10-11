@@ -264,6 +264,7 @@ export const SUGGESTION = {
   lines: '1',
   message: 'export a type',
   evidence: '+export const b = 2',
+  category: 'other' as const,
   confidence: 0.4,
 }
 

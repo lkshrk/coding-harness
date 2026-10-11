@@ -221,7 +221,9 @@
                       "lines": { "type": "string" },
                       "message": { "type": "string" },
                       "evidence": { "type": "string" },
-                      "confidence": { "type": "number" }
+                      "category": { "type": "string" },
+                      "confidence": { "type": "number" },
+                      "downgraded": { "type": "boolean" }
                     }
                   }
                 }

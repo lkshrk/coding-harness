@@ -17,7 +17,17 @@ import {
   snapshot,
   testConfig,
 } from '../../testing/testing'
-import { numberDiff, type ReviewOutput, reviewInput, reviewStep, type SingleCall, splitDiff } from './review'
+import { pullRequestBody } from '../integration/body'
+import {
+  downgradeBlockers,
+  numberDiff,
+  type ReviewFinding,
+  type ReviewOutput,
+  reviewInput,
+  reviewStep,
+  type SingleCall,
+  splitDiff,
+} from './review'
 
 const ROOT = join(import.meta.dir, '..', '..', '..', '..', '..')
 const agent = (name: string): AgentDef => {
@@ -60,8 +70,25 @@ const BLOCKER = {
   lines: '3',
   message: 'assertion loosened',
   evidence: '+expect(a).toBeDefined()',
+  category: 'weakened_test' as const,
   confidence: 0.9,
 }
+
+const THIN = {
+  severity: 'BLOCKER' as const,
+  file: 'src/a.ts',
+  lines: '2',
+  message: 'b may be read before it is set',
+  evidence: '+export const b = 2',
+  category: 'other' as const,
+  confidence: 0.6,
+}
+
+const fail = (findings: ReviewFinding[]): SingleCallResult<ReviewOutput> => ({
+  ok: true,
+  output: { verdict: 'fail', findings },
+  trace: { sessionId: 's', calls: [] },
+})
 
 const gate = (check: string): GateResult => ({
   check,
@@ -318,5 +345,80 @@ describe('review step', () => {
     await h.sup.reloadConfig({ ok: true, config: testConfig(), sources: [] })
     await h.sup.idle()
     expect(h.sup.runs.get(run.id)?.state).toBe('done')
+  })
+})
+
+describe('low-confidence blockers', () => {
+  test('a BLOCKER below the default threshold is downgraded, the review passes and the PR body marks it', async () => {
+    const h = harness([fail([THIN])])
+    const run = await h.reviewed()
+
+    expect(run.state).toBe('done')
+    const downgraded = { ...THIN, severity: 'SUGGESTION', downgraded: true }
+    expect(h.of('REVIEW_RECEIVED').map((e) => e.data)).toEqual([
+      { verdict: 'pass', model: 'glm', findings: [downgraded] },
+    ])
+    const comments = await h.linear.comments('FOR-1')
+    expect(comments.some((c) => c.body.includes('**SUGGESTION** (downgraded BLOCKER) `src/a.ts:2`'))).toBe(
+      true,
+    )
+    const body = pullRequestBody({
+      issue: snapshot({ identifier: 'FOR-1' }),
+      runId: run.id,
+      finish: null,
+      gates: [],
+      review: h.of('REVIEW_RECEIVED')[0]?.data as ReviewOutput,
+      unreviewed: null,
+      riskPaths: [],
+    })
+    expect(body).toContain(
+      'Verdict: pass\n- **SUGGESTION** (downgraded BLOCKER) `src/a.ts:2` (confidence 0.6): b may be read before it is set',
+    )
+  })
+
+  test('a BLOCKER at 0.8 still fails the run', async () => {
+    const h = harness([fail([{ ...THIN, confidence: 0.8 }])])
+    const run = await h.reviewed()
+    expect(run.state).toBe('failed')
+    expect(h.of('REVIEW_RECEIVED')[0]?.data).toMatchObject({
+      verdict: 'fail',
+      findings: [{ severity: 'BLOCKER', confidence: 0.8 }],
+    })
+  })
+
+  test.each(['weakened_test', 'security'] as const)('a %s BLOCKER fails at any confidence', (category) => {
+    const blocker = { ...THIN, category, confidence: 0.1 }
+    expect(downgradeBlockers({ verdict: 'fail', findings: [blocker] }, 0.7)).toEqual({
+      verdict: 'fail',
+      findings: [blocker],
+    })
+  })
+
+  test('a weakened-test BLOCKER at low confidence fails the run', async () => {
+    const h = harness([fail([{ ...BLOCKER, confidence: 0.3 }])])
+    expect((await h.reviewed()).state).toBe('failed')
+  })
+
+  test('the verdict is recomputed from the remaining BLOCKERs', () => {
+    const strong = { ...THIN, confidence: 0.9 }
+    expect(downgradeBlockers({ verdict: 'fail', findings: [THIN, strong] }, 0.7)).toEqual({
+      verdict: 'fail',
+      findings: [{ ...THIN, severity: 'SUGGESTION', downgraded: true }, strong],
+    })
+    expect(
+      downgradeBlockers({ verdict: 'fail', findings: [{ ...THIN, confidence: 0.7 }] }, 0.7).verdict,
+    ).toBe('fail')
+  })
+
+  test('limits.review_blocker_confidence overrides the threshold', async () => {
+    const base = testConfig()
+    const config = { ...base, limits: { ...base.limits, review_blocker_confidence: 0.9 } }
+    const h = harness([fail([{ ...THIN, confidence: 0.8 }])], config)
+    const run = await h.reviewed()
+    expect(run.state).toBe('done')
+    expect(h.of('REVIEW_RECEIVED')[0]?.data).toMatchObject({
+      verdict: 'pass',
+      findings: [{ severity: 'SUGGESTION', downgraded: true, confidence: 0.8 }],
+    })
   })
 })

@@ -10,6 +10,7 @@ The retry loop in src/upload.ts matches the first criterion. In TESTS, the hunk 
       "lines": "22",
       "message": "The assertion on the retry count was removed, so no test checks that a failed upload is retried at most three times.",
       "evidence": "-22   expect(send.calls).toBe(3)",
+      "category": "weakened_test",
       "confidence": 0.95
     }
   ]

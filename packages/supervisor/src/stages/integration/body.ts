@@ -1,7 +1,7 @@
 import { validateIssue } from '@nightshift/core'
 import type { IssueSnapshot } from '../../ports'
 import type { GateEventData } from '../gates/report'
-import type { ReviewFinding } from '../gates/review'
+import { findingLabel, type ReviewFinding } from '../gates/review'
 
 export type PullRequestBodyInput = {
   issue: IssueSnapshot
@@ -45,7 +45,8 @@ export function pullRequestBody(i: PullRequestBodyInput): string {
     parts.push(`Verdict: ${i.review.verdict}`)
     for (const f of i.review.findings) {
       const where = f.lines ? `${f.file}:${f.lines}` : f.file
-      parts.push(`- **${f.severity}** \`${where}\`: ${f.message}`)
+      const confidence = f.downgraded ? ` (confidence ${f.confidence})` : ''
+      parts.push(`- ${findingLabel(f)} \`${where}\`${confidence}: ${f.message}`)
     }
   }
   if (i.riskPaths.length) {
