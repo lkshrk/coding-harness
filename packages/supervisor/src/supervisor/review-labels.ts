@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { BRANCH_PREFIX } from '../policy/naming'
 import type { BaseCommit, LinearComment } from '../ports'
-import type { ReviewFinding } from '../stages/gates/review'
+import { REACTION_LEGEND, type ReviewFinding } from '../stages/gates/review'
 import type { Event } from '../state/events'
 import type { Run } from '../state/runs'
 import type { SupervisorRuntime } from './runtime'
@@ -35,6 +36,8 @@ const LABELLED_AT = 'review_labels_at'
 const LABEL_ERROR = 'review_labels_error'
 const IMPORTED = 'review_labels_xxx220'
 const FIX_SUBJECT = /^fix(\([^)]*\))?!?:/
+const ISSUE_ID = /\b[A-Z][A-Z0-9]*-\d+\b/g
+const QUARANTINE = 'reviewer-autolabel-quarantine'
 const XXX_220_LABELS = ['labels0.json', 'labels1.json', 'labels2.json', 'labels3.json']
 
 // Linear reports standard emojis by normalized name; the glyphs cover clients that send them raw.
@@ -212,6 +215,19 @@ export function isFixCommit(c: Pick<BaseCommit, 'subject'>): boolean {
   return FIX_SUBJECT.test(c.subject)
 }
 
+export function isRunCommit(c: Pick<BaseCommit, 'author' | 'branch'>): boolean {
+  return c.author === 'nightshift' || (c.branch?.startsWith(BRANCH_PREFIX) ?? false)
+}
+
+export function namesOtherIssue(c: Pick<BaseCommit, 'subject'>, issue: string): boolean {
+  return (c.subject.match(ISSUE_ID) ?? []).some((id) => id !== issue)
+}
+
+// Could fix code reviewed on `issue`: a fix by someone other than a run, about no other issue.
+function fixCandidate(c: BaseCommit, issue: string): boolean {
+  return isFixCommit(c) && !isRunCommit(c) && !namesOtherIssue(c, issue)
+}
+
 function span(nums: number[]): string {
   const sorted = [...nums].sort((a, b) => a - b)
   const [lo, hi] = [sorted[0], sorted.at(-1)]
@@ -226,10 +242,18 @@ function fileSection(patch: string, file: string): string {
 }
 
 export class ReviewExamples {
-  constructor(readonly dir: string) {}
+  private readonly quarantine: string
+
+  constructor(readonly dir: string) {
+    this.quarantine = join(dir, '..', QUARANTINE)
+  }
+
+  private name(run: string, n: number | string): string {
+    return `${run}-${n}`.replace(/[^\w.-]/g, '_')
+  }
 
   path(run: string, n: number | string): string {
-    return join(this.dir, `${`${run}-${n}`.replace(/[^\w.-]/g, '_')}.json`)
+    return join(this.dir, `${this.name(run, n)}.json`)
   }
 
   read(run: string, n: number | string): ReviewExample | undefined {
@@ -240,6 +264,11 @@ export class ReviewExamples {
   write(n: number | string, example: ReviewExample): boolean {
     const existing = this.read(example.run, n)
     if (keepsExisting(existing, example.source)) return false
+    if (
+      example.source === 'fix-commit' &&
+      existsSync(join(this.quarantine, `${this.name(example.run, n)}.json`))
+    )
+      return false
     const clean: ReviewExample = {
       ...example,
       file: redact(example.file),
@@ -348,8 +377,9 @@ export class ReviewLabeller {
       if (!run) continue
       const findings = (event.data.findings ?? []) as ReviewFinding[]
       const issue = event.issue as string
+      const mergedAt = event.data.verdict === 'pass' ? this.mergedAt(issue, run.id) : undefined
       let thread = threads.get(issue)
-      if (!thread && findings.length) {
+      if (!thread && (findings.length || mergedAt)) {
         thread = await this.rt.deps.linear.comments(issue)
         threads.set(issue, thread)
       }
@@ -364,7 +394,7 @@ export class ReviewLabeller {
         const reacted = reaction && latestReaction(reaction, owner)
         let fixed = false
         if (f.severity === 'SUGGESTION')
-          for (const c of fixes) {
+          for (const c of fixes.filter((x) => fixCandidate(x, issue))) {
             const moved = await this.movedSince(run, c, between)
             if (moved !== undefined && changesLines(c.patch, f.file, f.lines, moved)) {
               fixed = true
@@ -391,21 +421,72 @@ export class ReviewLabeller {
         })
         if (ok) written++
       }
-      if (event.data.verdict === 'pass' && this.merged(issue))
-        written += this.missed(event, run, diff, findings.length, fixes)
+      if (mergedAt) {
+        const missed = await this.missed(event, run, diff, findings.length, fixes, mergedAt, between)
+        written += missed.written
+        for (const c of missed.possible) {
+          const post = await this.possibleMiss(issue, c, thread ?? [])
+          const reacted = post && latestReaction(post, owner)
+          if (!reacted || reacted === 'false') continue
+          const [file, theirs] = [...touchedLines(c.patch)].find(([f]) => touchedLines(diff).has(f)) ?? []
+          if (!file || !theirs) continue
+          const ok = this.examples.write(`m-${c.sha}`, {
+            ...this.base(event, run, diff),
+            file,
+            lines: theirs.old.size ? span([...theirs.old]) : '',
+            severity: 'BLOCKER',
+            category: 'other',
+            confidence: 0,
+            message: c.subject,
+            evidence: `${c.sha}\n${fileSection(c.patch, file)}`,
+            label: 'missed',
+            source: 'reaction',
+          })
+          if (ok) written++
+        }
+      }
     }
     return written
   }
 
-  private missed(event: Event, run: Run, diff: string, offset: number, fixes: BaseCommit[]): number {
+  // Posts a near-match once on the reviewed issue so the owner's reaction can label it.
+  private async possibleMiss(issue: string, c: BaseCommit, thread: LinearComment[]) {
+    const tag = `<!-- nightshift:possible-miss-${c.sha} -->`
+    const posted = thread.find((x) => x.body.includes(tag))
+    if (posted) return posted
+    const body = [`Possible missed bug: ${c.subject} (${c.sha})`, tag, REACTION_LEGEND].join('\n\n')
+    const created = await this.rt.deps.linear.comment(issue, body)
+    thread.push(created)
+    return created
+  }
+
+  // Confirmed misses are written; fixes that touch a reviewed file but fail a check come back as possible.
+  private async missed(
+    event: Event,
+    run: Run,
+    diff: string,
+    offset: number,
+    fixes: BaseCommit[],
+    mergedAt: string,
+    between: Map<string, string | undefined>,
+  ): Promise<{ written: number; possible: BaseCommit[] }> {
     const ours = touchedLines(diff)
+    const issue = event.issue as string
+    const possible: BaseCommit[] = []
     let written = 0
     let k = 0
     for (const c of fixes) {
-      for (const [file, theirs] of touchedLines(c.patch)) {
-        const added = ours.get(file)?.added
-        const hit = [...theirs.old].filter((line) => added?.has(line))
+      const files = [...touchedLines(c.patch)].filter(([file]) => ours.has(file))
+      if (!files.length) continue
+      const moved =
+        fixCandidate(c, issue) && c.at > mergedAt ? await this.movedSince(run, c, between) : undefined
+      let confirmed = false
+      for (const [file, theirs] of files) {
+        if (moved === undefined) break
+        const added = mapLines(moved, file, [...(ours.get(file)?.added ?? [])])
+        const hit = [...theirs.old].filter((line) => added.includes(line))
         if (!hit.length) continue
+        confirmed = true
         k++
         const ok = this.examples.write(offset + k, {
           ...this.base(event, run, diff),
@@ -421,8 +502,9 @@ export class ReviewLabeller {
         })
         if (ok) written++
       }
+      if (!confirmed) possible.push(c)
     }
-    return written
+    return { written, possible }
   }
 
   private base(event: Event, run: Run, diff: string) {
@@ -436,8 +518,8 @@ export class ReviewLabeller {
     }
   }
 
-  private merged(issue: string): boolean {
-    return this.rt.log.since(null, { issue, types: ['MERGED'] }).length > 0
+  private mergedAt(issue: string, run: string): string | undefined {
+    return this.rt.log.since(null, { issue, types: ['MERGED'] }).find((e) => e.run === run)?.ts
   }
 
   private async commitsFor(repository: string, since: string, cache: Map<string, BaseCommit[]>) {

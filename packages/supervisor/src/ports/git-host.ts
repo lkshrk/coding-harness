@@ -84,7 +84,15 @@ export interface GitHost {
   resolveThread(pr: PullRequest, threadId: string): Promise<void>
 }
 
-export type BaseCommit = { sha: string; at: string; subject: string; patch: string }
+// `author` is the author name; `branch` the head branch of the pull request that merged it, when known.
+export type BaseCommit = {
+  sha: string
+  at: string
+  subject: string
+  patch: string
+  author?: string
+  branch?: string
+}
 
 export interface RepoInspector {
   baseSha(repository: string): Promise<string>
