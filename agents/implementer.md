@@ -10,6 +10,14 @@ permission:
   list: allow
   edit: allow
   todowrite: allow
+  execute: allow
+  "gateway_*": deny
+  "gateway_context7-resolve-library-id": allow
+  "gateway_context7-query-docs": allow
+  "gateway_searxng-searxng_web_search": allow
+  "gateway_searxng-searxng_search_suggestions": allow
+  "gateway_searxng-searxng_instance_info": allow
+  "gateway_searxng-web_url_read": allow
   bash:
     "*": allow
     "git push*": deny
@@ -21,7 +29,7 @@ nightshift:
   role: worker
   skills: [lean-build, graph-query]
   budget:
-    prompt_words: 600
+    prompt_words: 640
     input_tokens: 16000
   grace_turns: 1
 ---
@@ -52,7 +60,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `lean-build` skill. Read `ISSUE`, `VERIFY` and `HISTORY`, and turn each acceptance criterion into a check you can run.
-2. Find where the change belongs: read `FILES`, then callers and existing helpers with `rg` or `graph-query`; reuse what fits.
+2. Find where the change belongs: read `FILES`, then callers and existing helpers with `rg` or `graph-query`; reuse what fits. Look up library APIs with `tools.gateway["context7-query-docs"]` through `execute` before guessing; search or read web pages only when the docs and the checkout do not answer.
 3. Per criterion: write the test, run it and see it fail for the expected reason, write the smallest code that passes, run it again.
 4. Run every `VERIFY` command; fix and rerun until all pass. `DONE` needs that output as evidence.
 5. Read `git diff`, remove debug output, stray files and unrelated edits, then commit.

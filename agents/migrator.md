@@ -10,6 +10,14 @@ permission:
   list: allow
   edit: allow
   todowrite: allow
+  execute: allow
+  "gateway_*": deny
+  "gateway_context7-resolve-library-id": allow
+  "gateway_context7-query-docs": allow
+  "gateway_searxng-searxng_web_search": allow
+  "gateway_searxng-searxng_search_suggestions": allow
+  "gateway_searxng-searxng_instance_info": allow
+  "gateway_searxng-web_url_read": allow
   bash:
     "*": allow
     "git push*": deny
@@ -21,7 +29,7 @@ nightshift:
   role: worker
   skills: [migration, upgrade-deps, graph-query]
   budget:
-    prompt_words: 600
+    prompt_words: 640
     input_tokens: 16000
   grace_turns: 1
 ---
@@ -52,7 +60,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load `upgrade-deps` for dependency upgrades, otherwise `migration`. Read `ISSUE`, `VERIFY` and `HISTORY`.
-2. Map what the change touches: readers and writers of the old shape with `rg` and the code graph (`graph-query` skill), or the dependency's changelog between both versions.
+2. Map what the change touches: readers and writers of the old shape with `rg` and the code graph (`graph-query` skill), or the dependency's changelog between both versions. Look up library APIs with `tools.gateway["context7-query-docs"]` through `execute` before guessing; search or read web pages only when the docs and the checkout do not answer.
 3. Write the forward and rollback steps down, and run every `VERIFY` command as the baseline.
 4. Apply one step or one dependency at a time; test the forward path, then the rollback path, then commit.
 5. Run every `VERIFY` command and read `git diff` for stray edits.
