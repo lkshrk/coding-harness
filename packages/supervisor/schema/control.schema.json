@@ -79,12 +79,25 @@
     "dependentsResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["issues"],
+      "required": ["issues", "other"],
       "properties": {
         "issues": {
           "type": "array",
           "items": { "$ref": "#/$defs/issue" },
           "description": "the issue first, then every open issue it blocks, transitively, in its team and project"
+        },
+        "other": {
+          "type": "array",
+          "description": "open dependents outside the issue's team or project; never covered",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["issue", "reason"],
+            "properties": {
+              "issue": { "$ref": "#/$defs/issue" },
+              "reason": { "enum": ["other project", "other team"] }
+            }
+          }
         }
       }
     },

@@ -57,6 +57,13 @@ export interface DependentsResponse {
    * the issue first, then every open issue it blocks, transitively, in its team and project
    */
   issues: Issue[]
+  /**
+   * open dependents outside the issue's team or project; never covered
+   */
+  other: {
+    issue: Issue
+    reason: 'other project' | 'other team'
+  }[]
 }
 export interface SendRequest {
   target: Target

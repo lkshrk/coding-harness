@@ -46,14 +46,17 @@ export async function cover(ctx: Ctx, args: string[], on: boolean): Promise<numb
     const res = await call(ctx, 'POST', '/cover', { issue, covered: false })
     return done(ctx, res, `${issue} is no longer covered`)
   }
-  const issues = bools.has('--with-dependents')
-    ? (await call<DependentsResponse>(ctx, 'POST', '/dependents', { issue })).issues
-    : [issue]
+  const { issues, other }: DependentsResponse = bools.has('--with-dependents')
+    ? await call<DependentsResponse>(ctx, 'POST', '/dependents', { issue })
+    : { issues: [issue], other: [] }
   const list = issues.join(', ')
-  const question =
+  const uncovered = other.map((o) => `not covered (${o.reason}): ${o.issue}`)
+  const question = [
+    ...uncovered,
     issues.length === 1
       ? `Let nightshift implement ${issue}? This changes its Linear state.`
-      : `Let nightshift implement ${list} (${issue} and the issues it blocks)? This changes their Linear state.`
+      : `Let nightshift implement ${list} (${issue} and the issues it blocks)? This changes their Linear state.`,
+  ].join('\n')
   if (!(await ctx.confirm(question))) {
     ctx.io.err('aborted')
     return EXIT.error
@@ -62,10 +65,13 @@ export async function cover(ctx: Ctx, args: string[], on: boolean): Promise<numb
   for (const each of issues) res = await call(ctx, 'POST', '/cover', { issue: each, covered: true })
   return done(
     ctx,
-    issues.length === 1 ? res : { ok: true, covered: issues },
-    issues.length === 1
-      ? `${issue} is covered; the supervisor picks it up on its next tick`
-      : `${list} are covered; the supervisor picks them up on its next tick`,
+    issues.length === 1 && other.length === 0 ? res : { ok: true, covered: issues, other },
+    [
+      issues.length === 1
+        ? `${issue} is covered; the supervisor picks it up on its next tick`
+        : `${list} are covered; the supervisor picks them up on its next tick`,
+      ...uncovered,
+    ].join('\n'),
   )
 }
 

@@ -111,7 +111,7 @@ export function controlHandler(
     },
     'POST /dependents': async (req): Promise<DependentsResponse> => {
       const { issue } = await body<DependentsRequest>(req, 'dependentsRequest')
-      return { issues: await sup.dependents(issue) }
+      return sup.dependents(issue)
     },
     'POST /send': async (req) => {
       const { target, message } = await body<SendRequest>(req, 'sendRequest')

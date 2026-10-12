@@ -1,4 +1,4 @@
-import type { ErrorCode } from './generated/control'
+import type { DependentsResponse, ErrorCode } from './generated/control'
 import type { Event, Run } from './records'
 
 export type { ErrorCode }
@@ -32,8 +32,8 @@ export interface InboxSupervisor {
 export interface ControlSupervisor extends InboxSupervisor {
   gateway(): 'ok' | 'unavailable'
   uncover(issue: string, by?: By): void
-  /** The issue and every open issue it blocks, transitively, in its team and project. */
-  dependents(issue: string): Promise<string[]>
+  /** The issue and every open issue it blocks, transitively, in its team and project, plus those outside it. */
+  dependents(issue: string): Promise<DependentsResponse>
   resolveRun(target: string): Run | undefined
   retryIngest(issue: string): Promise<Run>
   recordMiss(miss: MissReport): Promise<string>

@@ -1,6 +1,13 @@
 import type { Config, LinearWorkspace } from '@nightshift/core'
 import { optedIn } from '../policy/stages'
-import type { IssueSnapshot, IssueUpdate, LinearChange, LinearComment, LinearPort } from '../ports'
+import type {
+  DependentRef,
+  IssueSnapshot,
+  IssueUpdate,
+  LinearChange,
+  LinearComment,
+  LinearPort,
+} from '../ports'
 import { issueBody, testWorkspace } from './config'
 
 let seq = 0
@@ -93,6 +100,20 @@ export class FakeLinear implements LinearPort {
   async issue(identifier: string): Promise<IssueSnapshot | null> {
     const cur = (this.stale ?? this.store).get(identifier)
     return cur ? this.live(cur) : null
+  }
+
+  async blocks(identifier: string): Promise<DependentRef[] | null> {
+    const store = this.stale ?? this.store
+    if (!store.has(identifier)) return null
+    return [...store.values()]
+      .filter((i) => i.blockedBy.some((b) => b.identifier === identifier))
+      .map((i) => ({
+        identifier: i.identifier,
+        team: i.team,
+        status: i.status,
+        ...(i.stateType === undefined ? {} : { stateType: i.stateType }),
+        project: i.project?.id ?? null,
+      }))
   }
 
   async candidates(q: {

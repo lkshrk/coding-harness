@@ -431,7 +431,9 @@ describe('control commands', () => {
     const calls: unknown[][] = []
     const control = (async (_path: string, method: string, route: string, body?: unknown) => {
       calls.push([method, route, body])
-      return route === '/dependents' ? { issues: ['XXX-1', 'XXX-2', 'XXX-3'] } : { ok: true }
+      return route === '/dependents'
+        ? { issues: ['XXX-1', 'XXX-2', 'XXX-3'], other: [{ issue: 'XXX-4', reason: 'other project' }] }
+        : { ok: true }
     }) as ControlFn
     const prompts: string[] = []
     const confirm = async (q: string) => {
@@ -441,11 +443,13 @@ describe('control commands', () => {
     const r = await cli(['implement', 'XXX-1', '--with-dependents'], { ...s.deps, control, confirm })
     expect(r).toEqual({
       code: 0,
-      out: ['XXX-1, XXX-2, XXX-3 are covered; the supervisor picks them up on its next tick'],
+      out: [
+        'XXX-1, XXX-2, XXX-3 are covered; the supervisor picks them up on its next tick\nnot covered (other project): XXX-4',
+      ],
       err: [],
     })
     expect(prompts).toEqual([
-      'Let nightshift implement XXX-1, XXX-2, XXX-3 (XXX-1 and the issues it blocks)? This changes their Linear state.',
+      'not covered (other project): XXX-4\nLet nightshift implement XXX-1, XXX-2, XXX-3 (XXX-1 and the issues it blocks)? This changes their Linear state.',
     ])
     expect(calls).toEqual([
       ['POST', '/dependents', { issue: 'XXX-1' }],

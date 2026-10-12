@@ -177,7 +177,7 @@ describe('control socket', () => {
     )
     expect(await h.req('POST', '/dependents', { issue: 'FOR-7' })).toEqual({
       status: 200,
-      body: { issues: ['FOR-7', 'FOR-8'] },
+      body: { issues: ['FOR-7', 'FOR-8'], other: [] },
     })
     expect((await h.req('POST', '/dependents', { issue: 'FOR-9' })).status).toBe(404)
   })

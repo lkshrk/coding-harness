@@ -20,6 +20,8 @@ export type Awaiting = {
 
 export type BlockerRef = { identifier: string; team: string; status: string }
 
+export type DependentRef = BlockerRef & { stateType?: string; project: string | null }
+
 export type IssueSnapshot = {
   id: string
   identifier: string
@@ -65,6 +67,8 @@ export interface LinearPort {
   issues(q: { updatedSince?: string }): Promise<IssueSnapshot[]>
   candidates(q: { team: string; project: string | null; closedSince: string }): Promise<IssueSnapshot[]>
   issue(identifier: string): Promise<IssueSnapshot | null>
+  /** The issues `identifier` blocks directly, in any team or project; null when it does not exist. */
+  blocks(identifier: string): Promise<DependentRef[] | null>
   comments(identifier: string): Promise<LinearComment[]>
   lastChange(identifier: string): Promise<LinearChange | null>
   update(identifier: string, change: IssueUpdate): Promise<void>

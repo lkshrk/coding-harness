@@ -1,7 +1,8 @@
-import type { ViewOptions } from '../policy/stages'
+import { lifecycleOf, type ViewOptions } from '../policy/stages'
 import type { Intent } from '../policy/transition'
-import type { Awaiting } from '../ports'
+import type { Awaiting, DependentRef } from '../ports'
 import { type By, ControlError } from '../ports/control'
+import type { DependentsResponse as Dependents } from '../ports/generated/control'
 import { coveredIssues, heldIssues, setCovered, setHeld } from '../state/coverage'
 import type { SupervisorRuntime } from './runtime'
 
@@ -25,22 +26,33 @@ export class Holds {
     this.setCoverage(issue, false, by)
   }
 
-  async dependents(issue: string): Promise<string[]> {
+  /** Walks every open issue `issue` blocks, transitively; only those in its team and project are coverable. */
+  async dependents(issue: string): Promise<Dependents> {
     const root = await this.rt.deps.linear.issue(issue)
     if (!root) throw new ControlError('not_found', `unknown issue ${issue}`)
-    const open = await this.rt.deps.linear.candidates({
-      team: root.team,
-      project: root.project?.id ?? null,
-      closedSince: this.rt.now().toISOString(),
-    })
-    const found = [root.identifier]
-    for (let i = 0; i < found.length; i++) {
-      const blocker = found[i]
-      for (const c of open)
-        if (!found.includes(c.identifier) && c.blockedBy.some((b) => b.identifier === blocker))
-          found.push(c.identifier)
+    const project = root.project?.id ?? null
+    const issues = [root.identifier]
+    const other: Dependents['other'] = []
+    const seen = new Set(issues)
+    const queue = [root.identifier]
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      for (const d of (await this.rt.deps.linear.blocks(next)) ?? []) {
+        if (seen.has(d.identifier)) continue
+        seen.add(d.identifier)
+        if (this.closed(d)) continue
+        queue.push(d.identifier)
+        if (d.team !== root.team) other.push({ issue: d.identifier, reason: 'other team' })
+        else if (d.project !== project) other.push({ issue: d.identifier, reason: 'other project' })
+        else issues.push(d.identifier)
+      }
     }
-    return found
+    return { issues, other }
+  }
+
+  private closed(d: DependentRef): boolean {
+    if (d.stateType !== undefined) return d.stateType === 'completed' || d.stateType === 'canceled'
+    const state = lifecycleOf(this.rt.config(), d.team, d.status)
+    return state === 'done' || state === 'canceled'
   }
 
   private setCoverage(issue: string, covered: boolean, by: By): void {
