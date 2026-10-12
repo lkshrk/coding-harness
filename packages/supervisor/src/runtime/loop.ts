@@ -3,11 +3,15 @@ import type { AgentKind } from '../policy/stages'
 import type { Supervisor } from '../supervisor/supervisor'
 import { watchConfig } from './config-watch'
 
-type Loopable = Pick<Supervisor, 'start' | 'tick' | 'reloadConfig' | 'stop' | 'idle' | 'handOff'>
+type Loopable = Pick<Supervisor, 'start' | 'tick' | 'reloadConfig' | 'stop' | 'idle' | 'handOff'> & {
+  log: Pick<Supervisor['log'], 'append'>
+}
 
 export type LoopOptions = {
   intervalMs: number
   stepGraceMs?: number
+  stallMs?: number
+  now?: () => number
   setInterval?: (fn: () => void, ms: number) => () => void
   watch?: (onChange: (r: LoadResult) => void) => () => void
 }
@@ -15,6 +19,7 @@ export type LoopOptions = {
 const report = (what: string) => (e: unknown) => console.error(`supervisor ${what}: ${(e as Error).message}`)
 
 const STEP_GRACE_MS = 30_000
+const STALL_MS = 5 * 60_000
 
 export async function runSupervisor(
   sup: Loopable,
@@ -28,13 +33,38 @@ export async function runSupervisor(
     })
   const watch = opts.watch ?? ((onChange) => watchConfig(onChange))
   await sup.start()
+  const now = opts.now ?? Date.now
+  const stallMs = opts.stallMs ?? STALL_MS
   let ticking: Promise<unknown> | undefined
+  let started = 0
+  let stallReported = false
+  const reportStall = (force: boolean) => {
+    const elapsed = now() - started
+    if (stallReported || (!force && elapsed <= stallMs)) return
+    stallReported = true
+    const seconds = Math.round(elapsed / 1000)
+    console.error(`supervisor tick: still running after ${seconds} s`)
+    try {
+      sup.log.append({ type: 'TICK_STALLED', data: { elapsed_s: seconds } })
+    } catch (e) {
+      report('stall report')(e)
+    }
+  }
   const tick = () => {
-    if (ticking) return
+    if (ticking) {
+      reportStall(false)
+      return
+    }
+    started = now()
+    stallReported = false
+    const watchdog = setTimeout(() => reportStall(true), stallMs)
+    watchdog.unref?.()
     ticking = sup
       .tick()
       .catch(report('tick'))
       .finally(() => {
+        clearTimeout(watchdog)
+        reportStall(false)
         ticking = undefined
       })
   }

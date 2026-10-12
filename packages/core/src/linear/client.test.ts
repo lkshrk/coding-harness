@@ -99,6 +99,25 @@ describe('linearRequest', () => {
     await expect(request('query viewer { nope }')).rejects.toBeInstanceOf(LinearError)
     await expect(request('query viewer { nope }')).rejects.toThrow('Field does not exist')
   })
+
+  test('a request Linear never answers rejects after the timeout, naming the operation', async () => {
+    const fetch: FetchFn = () => new Promise<Response>(() => {})
+    const request = linearRequest({ auth: fakeAuth(['t']), fetch, timeoutMs: 20 })
+    await expect(request('query viewer { viewer { id } }')).rejects.toThrow(
+      'linear viewer: no response after',
+    )
+  })
+
+  test('each request carries an abort signal', async () => {
+    let signal: AbortSignal | null | undefined
+    const { fetch: inner } = fakeLinear({ viewer: () => ({ body: { data: { viewer: { id: 'u1' } } } }) })
+    const fetch: FetchFn = (url, init) => {
+      signal = init.signal
+      return inner(url, init)
+    }
+    await linearRequest({ auth: fakeAuth(['t']), fetch })('query viewer { viewer { id } }')
+    expect(signal).toBeInstanceOf(AbortSignal)
+  })
 })
 
 const team = (id: string, key: string, name: string) => ({ id, key, name, displayName: name })

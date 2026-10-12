@@ -5,10 +5,12 @@ import { agentResolver, runSupervisor } from './loop'
 
 function fakeSupervisor() {
   const calls: string[] = []
+  const appended: unknown[] = []
   let release: () => void = () => {}
   let slow = false
   return {
     calls,
+    appended,
     slowNextTick: () => {
       slow = true
     },
@@ -37,6 +39,12 @@ function fakeSupervisor() {
       },
       stop: async (reason?: string) => {
         calls.push(`stop:${reason}`)
+      },
+      log: {
+        append: (e: unknown) => {
+          appended.push(e)
+          return {} as never
+        },
       },
     },
   }
@@ -78,6 +86,110 @@ describe('runSupervisor', () => {
       'handOff:signal',
       'stop:signal',
     ])
+  })
+})
+
+describe('runSupervisor stalled tick', () => {
+  test('a tick past the stall limit is reported once and the next tick runs after it settles', async () => {
+    const f = fakeSupervisor()
+    const errors: string[] = []
+    const original = console.error
+    console.error = (msg: string) => errors.push(msg)
+    let fire: () => void = () => {}
+    let clock = 0
+    try {
+      const stop = await runSupervisor(f.sup, {
+        intervalMs: 30_000,
+        stallMs: 300_000,
+        now: () => clock,
+        setInterval: (fn) => {
+          fire = fn
+          return () => {}
+        },
+        watch: () => () => {},
+      })
+      f.slowNextTick()
+      fire()
+      clock = 200_000
+      fire()
+      clock = 301_000
+      fire()
+      clock = 400_000
+      fire()
+      expect(f.calls.filter((c) => c === 'tick').length).toBe(2)
+      expect(f.appended).toEqual([{ type: 'TICK_STALLED', data: { elapsed_s: 301 } }])
+      expect(errors).toEqual(['supervisor tick: still running after 301 s'])
+      f.finishTick()
+      await Bun.sleep(0)
+      fire()
+      await Bun.sleep(0)
+      expect(f.calls.filter((c) => c === 'tick').length).toBe(3)
+      expect(f.appended).toHaveLength(1)
+      await stop('signal')
+    } finally {
+      console.error = original
+    }
+  })
+
+  test('a long tick that settles before any interval fires is still reported once', async () => {
+    const f = fakeSupervisor()
+    const errors: string[] = []
+    const original = console.error
+    console.error = (msg: string) => errors.push(msg)
+    let fire: () => void = () => {}
+    let clock = 0
+    try {
+      const stop = await runSupervisor(f.sup, {
+        intervalMs: 30_000,
+        stallMs: 300_000,
+        now: () => clock,
+        setInterval: (fn) => {
+          fire = fn
+          return () => {}
+        },
+        watch: () => () => {},
+      })
+      f.slowNextTick()
+      fire()
+      clock = 450_000
+      f.finishTick()
+      await Bun.sleep(0)
+      expect(f.appended).toEqual([{ type: 'TICK_STALLED', data: { elapsed_s: 450 } }])
+      expect(errors).toEqual(['supervisor tick: still running after 450 s'])
+      await stop('signal')
+    } finally {
+      console.error = original
+    }
+  })
+
+  test('a watchdog reports a stalled tick without waiting for the interval', async () => {
+    const f = fakeSupervisor()
+    const errors: string[] = []
+    const original = console.error
+    console.error = (msg: string) => errors.push(msg)
+    let fire: () => void = () => {}
+    try {
+      const stop = await runSupervisor(f.sup, {
+        intervalMs: 30_000,
+        stallMs: 20,
+        setInterval: (fn) => {
+          fire = fn
+          return () => {}
+        },
+        watch: () => () => {},
+      })
+      f.slowNextTick()
+      fire()
+      await Bun.sleep(60)
+      expect(f.appended).toHaveLength(1)
+      expect(errors).toHaveLength(1)
+      f.finishTick()
+      await Bun.sleep(0)
+      expect(f.appended).toHaveLength(1)
+      await stop('signal')
+    } finally {
+      console.error = original
+    }
   })
 })
 

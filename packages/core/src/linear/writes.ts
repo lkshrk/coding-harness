@@ -1,5 +1,5 @@
 import type { LinearRequest } from '@linear/sdk'
-import type { FetchFn } from './auth'
+import { type FetchFn, fetchWithTimeout } from './auth'
 import {
   COMMENT_FIELDS,
   LABEL_FIELDS,
@@ -20,6 +20,8 @@ export type IssueChange = { status?: string; labels?: LabelChange[] }
 type Target = { id: string; team: string; stateId: string; labels: RawLabel[] }
 
 type IssueUpdateInput = { stateId?: string; addedLabelIds?: string[]; removedLabelIds?: string[] }
+
+const UPLOAD_TIMEOUT_MS = 120_000
 
 const MARKER = /<!-- nightshift:\S+? -->/
 
@@ -83,6 +85,7 @@ export class LinearWriter {
     private readonly reader: LinearIssueReader,
     private readonly loadWorkspace: () => Promise<LinearWorkspace>,
     private readonly upload: FetchFn = (url, init) => fetch(url, init),
+    private readonly uploadTimeoutMs = UPLOAD_TIMEOUT_MS,
   ) {}
 
   async update(identifier: string, change: (team: string) => IssueChange): Promise<boolean> {
@@ -144,7 +147,17 @@ export class LinearWriter {
       'Cache-Control': 'public, max-age=31536000',
     }
     for (const h of signed.headers) headers[h.key] = h.value
-    const res = await this.upload(signed.uploadUrl, { method: 'PUT', headers, body: bytes })
+    const res = await fetchWithTimeout(
+      this.upload,
+      `linear: upload of ${name}`,
+      this.uploadTimeoutMs,
+      signed.uploadUrl,
+      {
+        method: 'PUT',
+        headers,
+        body: bytes,
+      },
+    )
     if (!res.ok) throw new Error(`linear: upload of ${name} failed (HTTP ${res.status})`)
     return signed.assetUrl
   }

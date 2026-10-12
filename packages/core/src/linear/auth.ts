@@ -4,6 +4,26 @@ export class LinearAuthError extends Error {
 
 export type FetchFn = (url: string, init: RequestInit) => Promise<Response>
 
+export const REQUEST_TIMEOUT_MS = 30_000
+
+/** Rejects once `ms` pass even if `fetch` ignores the abort signal. */
+export function fetchWithTimeout(
+  fetch: FetchFn,
+  what: string,
+  ms: number,
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const signal = AbortSignal.timeout(ms)
+  return new Promise<Response>((resolve, reject) => {
+    const onAbort = () => reject(new Error(`${what}: no response after ${ms / 1000} s`))
+    signal.addEventListener('abort', onAbort, { once: true })
+    fetch(url, { ...init, signal })
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
 export type LinearAuthConfig =
   | { mode: 'app'; client_id: string; client_secret: string; scopes?: string[] }
   | { mode: 'api_key'; api_key: string }
@@ -27,6 +47,7 @@ export class ClientCredentialsProvider implements TokenProvider {
   private readonly fetch: FetchFn
   private readonly now: () => number
   private readonly tokenUrl: string
+  private readonly timeoutMs: number
   private cached: CachedToken | undefined
   private pending: Promise<CachedToken> | undefined
 
@@ -36,12 +57,14 @@ export class ClientCredentialsProvider implements TokenProvider {
     fetch?: FetchFn
     now?: () => number
     tokenUrl?: string
+    timeoutMs?: number
   }) {
     this.credentials = opts.credentials
     this.scopes = opts.scopes ?? DEFAULT_SCOPES
     this.fetch = opts.fetch ?? ((url, init) => fetch(url, init))
     this.now = opts.now ?? Date.now
     this.tokenUrl = opts.tokenUrl ?? TOKEN_URL
+    this.timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS
   }
 
   async authorization(): Promise<string> {
@@ -60,16 +83,22 @@ export class ClientCredentialsProvider implements TokenProvider {
 
   private async request(): Promise<CachedToken> {
     const { clientId, clientSecret } = await this.credentials()
-    const res = await this.fetch(this.tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: clientId,
-        client_secret: clientSecret,
-        scope: this.scopes.join(','),
-      }).toString(),
-    })
+    const res = await fetchWithTimeout(
+      this.fetch,
+      'linear.auth: token request',
+      this.timeoutMs,
+      this.tokenUrl,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: clientId,
+          client_secret: clientSecret,
+          scope: this.scopes.join(','),
+        }).toString(),
+      },
+    )
     const body = (await res.json().catch(() => ({}))) as {
       access_token?: unknown
       expires_in?: unknown

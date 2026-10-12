@@ -8,7 +8,13 @@ import {
   LinearSdk,
   parseLinearError,
 } from '@linear/sdk'
-import { type FetchFn, LinearAuthError, type TokenProvider } from './auth'
+import {
+  type FetchFn,
+  fetchWithTimeout,
+  LinearAuthError,
+  REQUEST_TIMEOUT_MS,
+  type TokenProvider,
+} from './auth'
 import type { BlockingRelations, LinearViewer, LinearWorkspace } from './workspace'
 
 export const LINEAR_API_URL = 'https://api.linear.app/graphql'
@@ -22,12 +28,15 @@ export function linearRequest(opts: {
   auth: TokenProvider
   fetch?: FetchFn
   apiUrl?: string
+  timeoutMs?: number
 }): LinearRequest {
   const doFetch = opts.fetch ?? ((url, init) => fetch(url, init))
   const url = opts.apiUrl ?? LINEAR_API_URL
+  const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS
   const trace = process.env.NIGHTSHIFT_LINEAR_TRACE === '1'
   const send = async (query: string, variables: Record<string, unknown> | undefined) => {
-    const res = await doFetch(url, {
+    const operation = /(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? query.slice(0, 40).replace(/\s+/g, ' ')
+    const res = await fetchWithTimeout(doFetch, `linear ${operation}`, timeoutMs, url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: await opts.auth.authorization() },
       body: JSON.stringify({ query, variables }),
@@ -35,7 +44,7 @@ export function linearRequest(opts: {
     const body = (await res.json().catch(() => ({}))) as GraphQLBody
     if (trace)
       console.error(
-        `linear ${/(?:query|mutation)\s+(\w+)/.exec(query)?.[1] ?? query.slice(0, 40).replace(/\s+/g, ' ')} complexity=${res.headers.get('x-complexity')} remaining=${res.headers.get('x-ratelimit-complexity-remaining')}`,
+        `linear ${operation} complexity=${res.headers.get('x-complexity')} remaining=${res.headers.get('x-ratelimit-complexity-remaining')}`,
       )
     return { res, body }
   }

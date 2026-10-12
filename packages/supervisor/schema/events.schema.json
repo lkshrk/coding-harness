@@ -176,6 +176,10 @@
       "then": { "properties": { "data": { "$ref": "#/$defs/data/system" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "TICK_STALLED" } } },
+      "then": { "properties": { "data": { "$ref": "#/$defs/data/tickStalled" } } }
+    },
+    {
       "if": { "properties": { "type": { "enum": ["LEASE_ACQUIRED", "LEASE_RELEASED", "LEASE_EXPIRED"] } } },
       "then": { "required": ["issue"], "properties": { "data": { "$ref": "#/$defs/data/lease" } } }
     },
@@ -228,6 +232,7 @@
         "DISPATCH_RESUMED",
         "GATEWAY_UNAVAILABLE",
         "GATEWAY_RECOVERED",
+        "TICK_STALLED",
         "STAGE_ENTERED",
         "STAGE_COMPLETED",
         "DEPENDENCY_UNBLOCKED",
@@ -614,6 +619,12 @@
           "version": { "type": "string" },
           "by": { "$ref": "#/$defs/by" }
         }
+      },
+      "tickStalled": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["elapsed_s"],
+        "properties": { "elapsed_s": { "type": "integer", "minimum": 0 } }
       },
       "lease": {
         "type": "object",
