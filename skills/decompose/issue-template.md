@@ -29,6 +29,7 @@ Interfaces this issue provides for later issues, with their exact shape, or none
 
 - `path/one.ts`
 - `path/two.test.ts`
+- `path/old.ts` (delete)
 
 ## Constraints
 
@@ -58,6 +59,6 @@ bun run check
 
 Rules:
 
-- `## Files` lists every path the worker will touch, as repository-relative paths or globs; it is the overlap set the supervisor schedules on.
+- `## Files` lists every path the worker will touch, as repository-relative paths or globs; it is the overlap set the supervisor schedules on. Mark a path the issue only deletes with the suffix ` (delete)`; it does not count toward the size limit.
 - Acceptance criteria come from the requirements and the design's risks; each one is checkable by someone who did not write it.
 - No AI attribution anywhere in the issue.

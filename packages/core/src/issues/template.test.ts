@@ -144,6 +144,13 @@ describe('validateIssue', () => {
     ])
   })
 
+  test('a (delete) suffix keeps the path in files and lists it as deleted', () => {
+    const r = validateIssue(body({ Files: '- `bun.lock`\n- `pnpm-lock.yaml` (delete)\n- old/ (delete)' }))
+    if (!r.ok) throw new Error(r.errors.map((e) => e.message).join('\n'))
+    expect(r.issue.files).toEqual(['bun.lock', 'pnpm-lock.yaml', 'old/'])
+    expect(r.issue.deleted).toEqual(['pnpm-lock.yaml', 'old/'])
+  })
+
   test('requires list items in files and tests', () => {
     expect(messages(body({ 'Tests expected': 'unit tests' }))).toEqual(['## Tests expected: no list items'])
   })
