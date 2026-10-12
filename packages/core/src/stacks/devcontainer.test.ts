@@ -37,3 +37,23 @@ test('the mise Feature is added and installed before every other nightshift Feat
     './.nightshift/stack-bun',
   ])
 })
+
+test('a go plan gets the mise Feature its install.sh needs, installed first', async () => {
+  const devDir = join(tmp, 'go', '.devcontainer')
+  mkdirSync(devDir, { recursive: true })
+  writeFileSync(join(devDir, 'devcontainer.json'), JSON.stringify(DEFAULT_DEVCONTAINER))
+  const plan = {
+    tree: memoryTree({ 'go.mod': 'module example.com/demo\n' }),
+    stacks: [stacks.get('go') as Stack],
+  } as unknown as Plan
+  const features = await stackFeatures(NIGHTSHIFT_ROOT, plan, devDir)
+  expect(Object.keys(features)).toEqual([
+    './.nightshift/mise',
+    './.nightshift/stack-go',
+    './.nightshift/agent-layer',
+  ])
+  orderAgentLayerLast(devDir, features, plan)
+  const config = JSON.parse(readFileSync(join(devDir, 'devcontainer.json'), 'utf8'))
+  expect(config.overrideFeatureInstallOrder[0]).toBe('./.nightshift/mise')
+  expect(config.overrideFeatureInstallOrder).toContain('./.nightshift/stack-go')
+})
