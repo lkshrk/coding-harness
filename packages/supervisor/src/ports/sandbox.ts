@@ -9,7 +9,9 @@ export type ExecResult = {
   timedOut: boolean
 }
 
-export type Mount = { hostPath: string; guestPath: string; readOnly: true }
+export type Mount =
+  | { hostPath: string; guestPath: string; readOnly: true }
+  | { hostPath: string; guestPath: string; readOnly: false; cache: true }
 
 export type SandboxSpec = {
   name: string

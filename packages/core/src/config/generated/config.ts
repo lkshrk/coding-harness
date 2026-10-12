@@ -25,6 +25,7 @@ export type FailureClass =
   | 'unknown'
 export type ModelAlias = string
 export type TokenCount = string
+export type Path = string
 
 /**
  * Validates the merged configuration (defaults < user < overrides).
@@ -222,6 +223,10 @@ export interface Config {
      * Worker harness. dsh (DeepSeek Harness) is experimental.
      */
     harness: 'opencode' | 'dsh'
+    /**
+     * host directory mounted read-write at /var/cache/nightshift-deps in every worker sandbox as the shared package download cache; null turns it off
+     */
+    dependency_cache: null | Path
     resources: {
       cpus?: number
       memory?: string

@@ -239,6 +239,11 @@
           "enum": ["opencode", "dsh"],
           "description": "Worker harness. dsh (DeepSeek Harness) is experimental."
         },
+        "dependency_cache": {
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/path" }],
+          "description": "host directory mounted read-write at /var/cache/nightshift-deps in every worker sandbox as the shared package download cache; null turns it off",
+          "errorMessage": "must be null or a path starting with ~ or /"
+        },
         "resources": {
           "type": "object",
           "additionalProperties": false,

@@ -276,7 +276,15 @@ describe('WorkerExecutor.start', () => {
         image: 'nightshift/omni:1',
         resources: { cpus: 4, memoryMb: 8192 },
         outbox: `/tmp/ns/cache/outbox/${run.id}`,
-        mounts: [{ hostPath: '/tmp/omni/.git', guestPath: '/mnt/repo.git', readOnly: true }],
+        mounts: [
+          { hostPath: '/tmp/omni/.git', guestPath: '/mnt/repo.git', readOnly: true },
+          {
+            hostPath: '/home/me/.cache/nightshift/deps',
+            guestPath: '/var/cache/nightshift-deps',
+            readOnly: false,
+            cache: true,
+          },
+        ],
         env: {},
         egress: { allow: ['gateway.test', 'registry.npmjs.org'] },
         workdir: '/work',
@@ -514,6 +522,14 @@ describe('WorkerExecutor.start', () => {
     })
     expect(sandbox.created[0]?.env).toEqual({})
     expect(worker.starts).toHaveLength(1)
+  })
+
+  test('mounts no dependency cache when it is turned off', async () => {
+    config = { ...config, sandbox: { ...config.sandbox, dependency_cache: null } }
+    await started()
+    expect(sandbox.created[0]?.mounts).toEqual([
+      { hostPath: '/tmp/omni/.git', guestPath: '/mnt/repo.git', readOnly: true },
+    ])
   })
 
   test('mounts the gateway CA bundle read-only when configured', async () => {
