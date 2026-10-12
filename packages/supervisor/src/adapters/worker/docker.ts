@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -107,11 +107,18 @@ export class DockerSandbox implements SandboxDriver {
   }
 
   async create(spec: SandboxSpec): Promise<SandboxHandle> {
-    if (spec.mounts.some((m) => m.readOnly !== true)) throw new Error('mounts must be read-only')
+    if (spec.mounts.some((m) => m.readOnly !== true && !('cache' in m && m.cache === true)))
+      throw new Error('mounts must be read-only')
     const name = `${this.prefix}${spec.name}`
     const existing = await this.cli.run(['inspect', '--format', '{{.Id}}', name])
     if (existing.exitCode === 0) return this.handle(existing.stdout, spec.name)
     mkdirSync(spec.outbox, { recursive: true })
+    for (const m of spec.mounts) {
+      if (m.readOnly || existsSync(m.hostPath)) continue
+      mkdirSync(m.hostPath, { recursive: true })
+      // The sandbox user's uid differs from the host user's, so the cache must be writable by anyone.
+      chmodSync(m.hostPath, 0o777)
+    }
     const labels = { ...spec.labels, nightshift: '1', [OUTBOX_LABEL]: spec.outbox }
     const args = [
       'run',
@@ -125,7 +132,7 @@ export class DockerSandbox implements SandboxDriver {
       `${spec.resources.memoryMb}m`,
       '--volume',
       `${spec.outbox}:${spec.outbox}`,
-      ...spec.mounts.flatMap((m) => ['--volume', `${m.hostPath}:${m.guestPath}:ro`]),
+      ...spec.mounts.flatMap((m) => ['--volume', `${m.hostPath}:${m.guestPath}${m.readOnly ? ':ro' : ''}`]),
       ...Object.entries(spec.env).flatMap(([k, v]) => ['--env', `${k}=${v}`]),
       '--workdir',
       spec.workdir,

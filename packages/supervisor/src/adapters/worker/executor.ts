@@ -49,6 +49,7 @@ export { failureReason, GRACE_MESSAGE, NO_DIFF_MESSAGE, type WorkerCallbacks } f
 export { REPO_MOUNT, shellJoin } from './workspace'
 
 export const CA_MOUNT = '/etc/nightshift/ca.pem'
+export const DEPS_CACHE_MOUNT = '/var/cache/nightshift-deps'
 export const KNOWLEDGE_SOURCE = '/mnt/knowledge-source.git'
 export const KNOWLEDGE_REPOS = '/tmp/knowledge-repos'
 const WIP_MARKER = 'nightshift-wip'
@@ -135,6 +136,7 @@ export class WorkerExecutor implements RunExecutor {
     const known = knowledgeRepo ? this.d.config.repositories[knowledgeRepo] : undefined
     const worker = await this.d.image(run)
     const image = worker.image
+    const depsCache = this.d.config.sandbox.dependency_cache
     const sandbox = await this.d.sandbox.create({
       name: run.id,
       image,
@@ -155,6 +157,16 @@ export class WorkerExecutor implements RunExecutor {
                 hostPath: join(expandHome(known.path, home), '.git'),
                 guestPath: KNOWLEDGE_SOURCE,
                 readOnly: true as const,
+              },
+            ]
+          : []),
+        ...(depsCache
+          ? [
+              {
+                hostPath: expandHome(depsCache, home),
+                guestPath: DEPS_CACHE_MOUNT,
+                readOnly: false as const,
+                cache: true as const,
               },
             ]
           : []),
