@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { clearScreenDown, createInterface, cursorTo, type Interface, moveCursor } from 'node:readline'
+import { createInterface } from 'node:readline'
 import {
   AgentConfigError,
   buildGuardPlugin,
@@ -20,11 +20,12 @@ import {
 import { hostSkills, OpenCodeClient, PROVIDER, skillFiles } from '@nightshift/supervisor'
 import { CliError, type Ctx, EXIT, paint, parseArgs } from '../cli'
 import { DETACH_HINT, withPlainKeys } from '../keys'
+import { Dock, type DockInput, type DockOutput, dockLines } from '../render/dock'
 import { SessionRenderer } from '../render/session'
 import type { Part } from '../render/status'
 import { duration } from './shared'
 import { statusRecord } from './status'
-import { startFooter, terminalWidth } from './tail'
+import { terminalWidth } from './tail'
 
 export const LEAD_USAGE = 'ns lead [--tui] [--full] | ns lead serve'
 export const LEAD_KEY_ENV = 'NIGHTSHIFT_LEAD_KEY'
@@ -171,50 +172,53 @@ export async function leadSession(client: OpenCodeClient): Promise<string> {
 export type Lines = (signal: AbortSignal) => AsyncIterable<string>
 export type ChatInput = { lines: Lines; around?: (write: () => void) => void }
 
-const PROMPT = '› '
+export type ChatTerminal = Required<ChatInput> & {
+  dock: Dock | null
+  print: (line: string) => void
+  close: () => void
+}
 
-type Output = NodeJS.WritableStream & { isTTY?: boolean; columns?: number }
-
-// On a terminal the typed line is lifted out of the way of streamed output and redrawn below it.
+// On a terminal the input line and the worker status line are pinned to the bottom two rows.
 export function terminalInput(
-  input: NodeJS.ReadableStream = process.stdin,
-  output: Output = process.stdout,
-): Required<ChatInput> {
-  const tty = Boolean(output.isTTY)
-  let rl: Interface | null = null
-  const lines = async function* (signal: AbortSignal): AsyncGenerator<string> {
-    const r = createInterface({ input, output, terminal: tty, prompt: PROMPT })
-    rl = r
-    const close = () => r.close()
-    r.on('SIGINT', close)
-    signal.addEventListener('abort', close, { once: true })
-    if (tty) r.prompt()
-    try {
-      for await (const line of r) {
-        yield line
-        if (tty) r.prompt()
+  input: DockInput = process.stdin,
+  output: DockOutput = process.stdout,
+  color = true,
+): ChatTerminal {
+  const tty = Boolean(output.isTTY && input.isTTY !== false && (output.rows ?? 0) >= 4)
+  if (!tty) {
+    const lines = async function* (signal: AbortSignal): AsyncGenerator<string> {
+      const r = createInterface({ input, terminal: false })
+      const close = () => r.close()
+      signal.addEventListener('abort', close, { once: true })
+      try {
+        for await (const line of r) yield line
+      } finally {
+        signal.removeEventListener('abort', close)
+        r.close()
       }
-    } finally {
-      signal.removeEventListener('abort', close)
-      rl = null
-      r.close()
+    }
+    return {
+      dock: null,
+      lines,
+      around: (write) => write(),
+      print: (line) => output.write(`${line}\n`),
+      close: () => {},
     }
   }
-  const around = (write: () => void) => {
-    const r = rl
-    if (!tty || !r) return write()
-    const cols = output.columns || 80
-    const at = r.getCursorPos()
-    if (at.rows) moveCursor(output, 0, -at.rows)
-    cursorTo(output, 0)
-    clearScreenDown(output)
-    write()
-    output.write(`${PROMPT}${r.line}`)
-    const end = Math.floor((PROMPT.length + r.line.length) / cols)
-    if (end > at.rows) moveCursor(output, 0, at.rows - end)
-    cursorTo(output, at.cols)
+  const dock = new Dock(output, color)
+  const onResize = () => dock.layout()
+  output.on('resize', onResize)
+  dock.start()
+  return {
+    dock,
+    lines: (signal) => dockLines(input, dock, signal),
+    around: (write) => write(),
+    print: (line) => dock.print(line),
+    close: () => {
+      output.off('resize', onResize)
+      dock.stop()
+    },
   }
-  return { lines, around }
 }
 
 // Leaving the view only drops this client; the session keeps running on the lead service.
@@ -222,12 +226,13 @@ export async function chatView(
   ctx: Ctx,
   client: OpenCodeClient,
   session: string,
-  input: Lines | ChatInput,
+  input: Lines | ChatInput | ChatTerminal,
 ): Promise<number> {
   const { lines, around = (write: () => void) => write() } =
     typeof input === 'function' ? { lines: input } : input
-  const out = (line: string) => around(() => ctx.io.out(line))
-  const err = (line: string) => around(() => ctx.io.err(line))
+  const print = typeof input !== 'function' && 'print' in input ? input.print : undefined
+  const out = (line: string) => around(() => (print ? print(line) : ctx.io.out(line)))
+  const err = (line: string) => around(() => (print ? print(line) : ctx.io.err(line)))
   const stop = new AbortController()
   const signal = AbortSignal.any(ctx.signal ? [ctx.signal, stop.signal] : [stop.signal])
   const renderer = new SessionRenderer(session, paint(ctx.color), terminalWidth())
@@ -266,14 +271,19 @@ async function chat(ctx: Ctx, client: OpenCodeClient): Promise<number> {
   const onInt = () => interrupt.abort()
   process.once('SIGINT', onInt)
   const signal = AbortSignal.any(ctx.signal ? [ctx.signal, interrupt.signal] : [interrupt.signal])
-  const stopFooter = startFooter(ctx, async () => ({
-    left: workersParts(await statusRecord(ctx)),
-    right: [],
-  }))
+  const term = terminalInput(process.stdin, process.stdout, ctx.color)
+  const refresh = async () => {
+    try {
+      term.dock?.setFooter(workersParts(await statusRecord(ctx)))
+    } catch {}
+  }
+  void refresh()
+  const timer = term.dock ? setInterval(refresh, 2000) : undefined
   try {
-    return await chatView({ ...ctx, signal }, client, session, terminalInput())
+    return await chatView({ ...ctx, signal }, client, session, term)
   } finally {
-    stopFooter()
+    if (timer) clearInterval(timer)
+    term.close()
     process.off('SIGINT', onInt)
   }
 }

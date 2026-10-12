@@ -86,16 +86,26 @@ test('a typed line is posted as a prompt to the lead session, and leaving does n
   ])
 })
 
-test('output arriving while a line is typed is printed above the input line, which is redrawn intact', async () => {
-  const input = new PassThrough()
-  const output = new PassThrough() as PassThrough & { isTTY: boolean; columns: number }
+function ttyPair(rows = 24, columns = 80) {
+  const input = new PassThrough() as PassThrough & { isTTY: boolean; setRawMode: (on: boolean) => void }
+  input.isTTY = true
+  input.setRawMode = () => {}
+  const output = new PassThrough() as PassThrough & { isTTY: boolean; columns: number; rows: number }
   output.isTTY = true
-  output.columns = 80
-  let written = ''
-  output.on('data', (b: Buffer) => {
-    written += b.toString()
-  })
-  const term = terminalInput(input, output)
+  output.columns = columns
+  output.rows = rows
+  const writes: string[] = []
+  output.on('data', (b: Buffer) => writes.push(b.toString()))
+  return { input, output, writes }
+}
+
+test('the input line and the footer are pinned to the bottom two rows; output scrolls above them', async () => {
+  const { input, output, writes } = ttyPair(24, 80)
+  const term = terminalInput(input, output, false)
+  const all = () => writes.join('')
+  expect(all()).toContain('\x1b[1;22r')
+  term.dock?.setFooter([['dim', 'no running workers']])
+  expect(all()).toContain('\x1b[24;1H')
   const stop = new AbortController()
   const seen: string[] = []
   const reading = (async () => {
@@ -103,17 +113,59 @@ test('output arriving while a line is typed is printed above the input line, whi
   })()
   input.write('what is go')
   await Bun.sleep(10)
-  written = ''
-  term.around(() => output.write('reply line\n'))
-  await Bun.sleep(10)
-  const plain = stripEscapes(written)
-  expect(plain.startsWith('reply line\n')).toBe(true)
-  expect(plain.endsWith('› what is go')).toBe(true)
+  writes.length = 0
+  term.print('reply line')
+  const printed = all()
+  expect(printed.startsWith('\x1b[22;1H\nreply line')).toBe(true)
+  expect(printed.endsWith('\x1b[23;1H\x1b[2K› what is go')).toBe(true)
   input.write('ing on?\r')
   await Bun.sleep(10)
   expect(seen).toEqual(['what is going on?'])
+  expect(all().endsWith('\x1b[23;1H\x1b[2K› ')).toBe(true)
   stop.abort()
   await reading
+  writes.length = 0
+  term.close()
+  expect(all()).toContain('\x1b[r')
+})
+
+test('the dock input handles backspace, ctrl+u and ignores arrow keys', async () => {
+  const { input, output } = ttyPair()
+  const term = terminalInput(input, output, false)
+  const stop = new AbortController()
+  const seen: string[] = []
+  const reading = (async () => {
+    for await (const line of term.lines(stop.signal)) seen.push(line)
+  })()
+  input.write('helloo\x7f\x1b[D world\r')
+  input.write('drop me\x15kept\r')
+  await Bun.sleep(10)
+  expect(seen).toEqual(['hello world', 'kept'])
+  input.write('\x03')
+  await reading
+  term.close()
+})
+
+test('without a terminal the chat input reads plain lines and prints without escapes', async () => {
+  const input = new PassThrough()
+  const output = new PassThrough()
+  let written = ''
+  output.on('data', (b: Buffer) => {
+    written += b.toString()
+  })
+  const term = terminalInput(input, output, false)
+  expect(term.dock).toBeNull()
+  term.print('plain')
+  expect(written).toBe('plain\n')
+  const stop = new AbortController()
+  const seen: string[] = []
+  const reading = (async () => {
+    for await (const line of term.lines(stop.signal)) seen.push(line)
+  })()
+  input.write('one\ntwo\n')
+  input.end()
+  await reading
+  expect(seen).toEqual(['one', 'two'])
 })
 
 test('the chat view routes its output through the input so the typed line survives', async () => {
