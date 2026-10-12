@@ -31,6 +31,7 @@ export function createLinearPort(opts: LinearPortOptions): LinearPort {
     issues: (q) => issues.issues({ ...q, actOn: config().linear.act_on }),
     candidates: (q) => issues.candidates(q),
     issue: (identifier) => issues.issue(identifier),
+    blocks: (identifier) => issues.blocks(identifier),
     comments: (identifier) => issues.comments(identifier),
     lastChange: (identifier) => issues.lastChange(identifier),
     async update(identifier, change) {

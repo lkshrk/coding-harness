@@ -13,6 +13,8 @@ import type {
   AnswerRequest,
   AttachInfo,
   CoverRequest,
+  DependentsRequest,
+  DependentsResponse,
   Health,
   IngestRequest,
   PauseRequest,
@@ -106,6 +108,10 @@ export function controlHandler(
       if (covered) sup.cover(issue, by)
       else sup.uncover(issue, by)
       return { ok: true }
+    },
+    'POST /dependents': async (req): Promise<DependentsResponse> => {
+      const { issue } = await body<DependentsRequest>(req, 'dependentsRequest')
+      return sup.dependents(issue)
     },
     'POST /send': async (req) => {
       const { target, message } = await body<SendRequest>(req, 'sendRequest')

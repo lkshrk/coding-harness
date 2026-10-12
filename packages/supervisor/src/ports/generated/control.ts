@@ -15,6 +15,8 @@ export interface ControlApi {
   ok?: Ok
   pause?: PauseRequest
   cover?: CoverRequest
+  dependents?: DependentsRequest
+  dependentsResult?: DependentsResponse
   send?: SendRequest
   answer?: AnswerRequest
   stop?: StopRequest
@@ -46,6 +48,22 @@ export interface PauseRequest {
 export interface CoverRequest {
   issue: Issue
   covered: boolean
+}
+export interface DependentsRequest {
+  issue: Issue
+}
+export interface DependentsResponse {
+  /**
+   * the issue first, then every open issue it blocks, transitively, in its team and project
+   */
+  issues: Issue[]
+  /**
+   * open dependents outside the issue's team or project; never covered
+   */
+  other: {
+    issue: Issue
+    reason: 'other project' | 'other team'
+  }[]
 }
 export interface SendRequest {
   target: Target

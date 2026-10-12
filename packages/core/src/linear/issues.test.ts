@@ -334,6 +334,48 @@ describe('LinearIssueReader.candidates', () => {
   })
 })
 
+describe('LinearIssueReader.blocks', () => {
+  const related = (identifier: string, type = 'blocks', project: string | null = null) => ({
+    type,
+    relatedIssue: {
+      identifier,
+      team: { key: identifier.split('-')[0] },
+      state: { name: 'Todo', type: 'unstarted' },
+      project: project === null ? null : { id: project },
+    },
+  })
+
+  test('lists the issues it blocks in any team or project, across pages', async () => {
+    const { reader, calls } = fakeLinear({
+      nsIssueBlocks: (v) => ({
+        issue: {
+          relations:
+            v.after === null
+              ? conn([related('FOR-2'), related('FOR-3', 'related')], 'next')
+              : conn([related('CIV-4', 'blocks', 'p-web')]),
+        },
+      }),
+    })
+    expect(await reader.blocks('FOR-1')).toEqual([
+      { identifier: 'FOR-2', team: 'FOR', status: 'Todo', stateType: 'unstarted', project: null },
+      { identifier: 'CIV-4', team: 'CIV', status: 'Todo', stateType: 'unstarted', project: 'p-web' },
+    ])
+    expect(calls.map((c) => c.variables)).toEqual([
+      { id: 'FOR-1', after: null },
+      { id: 'FOR-1', after: 'next' },
+    ])
+  })
+
+  test('an unknown issue is null', async () => {
+    const { reader } = fakeLinear({
+      nsIssueBlocks: () => {
+        throw new Error('Entity not found: Issue')
+      },
+    })
+    expect(await reader.blocks('FOR-99')).toBeNull()
+  })
+})
+
 describe('LinearIssueReader.issue', () => {
   test('reads one issue by identifier', async () => {
     const { reader, calls } = fakeLinear({ nsIssue: () => ({ issue: rawIssue('FOR-1') }) })

@@ -1,4 +1,4 @@
-import type { RunResponse } from '@nightshift/supervisor'
+import type { DependentsResponse, RunResponse } from '@nightshift/supervisor'
 import { CliError, type Ctx, EXIT, parseArgs, printJson, requireArg } from '../cli'
 import { call } from './shared'
 
@@ -7,7 +7,7 @@ const ISSUE = /^[A-Z][A-Z0-9]{1,6}-[1-9][0-9]*$/
 export const CONTROL_USAGE = {
   pause: 'ns pause [<issue>]',
   resume: 'ns resume [<issue>]',
-  implement: 'ns implement <issue>',
+  implement: 'ns implement <issue> [--with-dependents]',
   release: 'ns release <issue>',
   send: 'ns send <target> <message>',
   answer: 'ns answer <issue> <text>',
@@ -40,16 +40,38 @@ export async function pause(ctx: Ctx, args: string[], on: boolean): Promise<numb
 
 export async function cover(ctx: Ctx, args: string[], on: boolean): Promise<number> {
   const usage = CONTROL_USAGE[on ? 'implement' : 'release']
-  const issue = issueArg(parseArgs(args, {}, usage).positionals[0], usage)
-  if (on && !(await ctx.confirm(`Let nightshift implement ${issue}? This changes its Linear state.`))) {
+  const { positionals, bools } = parseArgs(args, on ? { bools: ['--with-dependents'] } : {}, usage)
+  const issue = issueArg(positionals[0], usage)
+  if (!on) {
+    const res = await call(ctx, 'POST', '/cover', { issue, covered: false })
+    return done(ctx, res, `${issue} is no longer covered`)
+  }
+  const { issues, other }: DependentsResponse = bools.has('--with-dependents')
+    ? await call<DependentsResponse>(ctx, 'POST', '/dependents', { issue })
+    : { issues: [issue], other: [] }
+  const list = issues.join(', ')
+  const uncovered = other.map((o) => `not covered (${o.reason}): ${o.issue}`)
+  const question = [
+    ...uncovered,
+    issues.length === 1
+      ? `Let nightshift implement ${issue}? This changes its Linear state.`
+      : `Let nightshift implement ${list} (${issue} and the issues it blocks)? This changes their Linear state.`,
+  ].join('\n')
+  if (!(await ctx.confirm(question))) {
     ctx.io.err('aborted')
     return EXIT.error
   }
-  const res = await call(ctx, 'POST', '/cover', { issue, covered: on })
+  let res: unknown
+  for (const each of issues) res = await call(ctx, 'POST', '/cover', { issue: each, covered: true })
   return done(
     ctx,
-    res,
-    on ? `${issue} is covered; the supervisor picks it up on its next tick` : `${issue} is no longer covered`,
+    issues.length === 1 && other.length === 0 ? res : { ok: true, covered: issues, other },
+    [
+      issues.length === 1
+        ? `${issue} is covered; the supervisor picks it up on its next tick`
+        : `${list} are covered; the supervisor picks them up on its next tick`,
+      ...uncovered,
+    ].join('\n'),
   )
 }
 

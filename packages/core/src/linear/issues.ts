@@ -5,6 +5,7 @@ import {
   HISTORY,
   ISSUE,
   ISSUE_BLOCKERS,
+  ISSUE_BLOCKS,
   ISSUE_LABELS,
   ISSUE_PAGE,
   ISSUES,
@@ -17,6 +18,7 @@ import {
   PROJECT_TTL_MS,
   PROJECTS,
   type RawComment,
+  type RawDependent,
   type RawHistory,
   type RawIssue,
   type RawLabel,
@@ -29,6 +31,8 @@ import {
 export * from './issue-queries'
 
 export type LinearBlocker = { identifier: string; team: string; status: string }
+
+export type LinearDependent = LinearBlocker & { stateType?: string; project: string | null }
 
 export type LinearIssueProject = { id: string; name: string; initiatives: string[]; labels: string[] }
 
@@ -158,6 +162,30 @@ export class LinearIssueReader {
       throw e
     }
     return (await this.complete([data.issue]))[0] ?? null
+  }
+
+  /** The issues `identifier` blocks directly, in any team or project; null when it does not exist. */
+  async blocks(identifier: string): Promise<LinearDependent[] | null> {
+    type Data = { issue: { relations: Page<RawDependent> } }
+    const page = (after: string | null) =>
+      this.request<Data, { id: string; after: string | null }>(ISSUE_BLOCKS, { id: identifier, after })
+    let data: Data
+    try {
+      data = await page(null)
+    } catch (e) {
+      if (notFound(e)) return null
+      throw e
+    }
+    const raw = await rest(data.issue.relations, async (after) => (await page(after)).issue.relations)
+    return raw
+      .filter((r) => r.type === 'blocks')
+      .map(({ relatedIssue: i }) => ({
+        identifier: i.identifier,
+        team: i.team.key,
+        status: i.state.name,
+        ...(i.state.type === undefined ? {} : { stateType: i.state.type }),
+        project: i.project?.id ?? null,
+      }))
   }
 
   async comments(identifier: string): Promise<LinearIssueComment[]> {

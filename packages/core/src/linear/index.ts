@@ -6,6 +6,7 @@ export {
   type ActOn,
   type LinearBlocker,
   type LinearChange,
+  type LinearDependent,
   type LinearIssue,
   type LinearIssueComment,
   type LinearIssueProject,

@@ -117,7 +117,7 @@ describe('state commands', () => {
   test('implement without an issue is a usage error', async () => {
     const r = await capture(['implement'])
     expect(r.code).toBe(2)
-    expect(r.err).toEqual(['usage: ns implement <issue>'])
+    expect(r.err).toEqual(['usage: ns implement <issue> [--with-dependents]'])
   })
 
   test('status with the supervisor down shows the last known state and exits 0', async () => {

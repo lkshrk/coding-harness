@@ -95,6 +95,25 @@ export const ISSUE_BLOCKERS = `query nsIssueBlockers($id: String!, $after: Strin
   issue(id: $id) { inverseRelations(first: ${NESTED_PAGE}, after: $after) { ${RELATION_FIELDS} } }
 }`
 
+export type RawDependent = {
+  type: string
+  relatedIssue: {
+    identifier: string
+    team: { key: string }
+    state: { name: string; type?: string }
+    project: { id: string } | null
+  }
+}
+
+export const ISSUE_BLOCKS = `query nsIssueBlocks($id: String!, $after: String) {
+  issue(id: $id) {
+    relations(first: ${NESTED_PAGE}, after: $after) {
+      nodes { type relatedIssue { identifier team { key } state { name type } project { id } } }
+      ${PAGE_INFO}
+    }
+  }
+}`
+
 export const PROJECTS = `query nsProjects($ids: [ID!], $first: Int!, $after: String) {
   projects(filter: { id: { in: $ids } }, first: $first, after: $after) {
     nodes {

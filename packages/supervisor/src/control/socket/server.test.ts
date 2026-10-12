@@ -169,6 +169,19 @@ describe('control socket', () => {
     ])
   })
 
+  test('POST /dependents lists the issue and the issues it blocks', async () => {
+    const h = harness()
+    h.linear.put(
+      snapshot({ identifier: 'FOR-7' }),
+      snapshot({ identifier: 'FOR-8', blockedBy: [{ identifier: 'FOR-7', team: 'FOR', status: 'Todo' }] }),
+    )
+    expect(await h.req('POST', '/dependents', { issue: 'FOR-7' })).toEqual({
+      status: 200,
+      body: { issues: ['FOR-7', 'FOR-8'], other: [] },
+    })
+    expect((await h.req('POST', '/dependents', { issue: 'FOR-9' })).status).toBe(404)
+  })
+
   test('errors use one shape with a code', async () => {
     const h = harness()
     expect(await h.req('POST', '/pause', '{nope')).toEqual({
