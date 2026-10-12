@@ -1,7 +1,7 @@
 {
   "name": "nightshift-agent-layer-tools",
   "private": true,
-  "packageManager": "pnpm@10.34.6",
+  "packageManager": "pnpm@10.34.7",
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.0-rc.2",
     "bash-language-server": "5.8.1",

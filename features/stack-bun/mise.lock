@@ -44,19 +44,39 @@ url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227626"
 provenance = "github-attestations"
 
 [[tools."aqua:pnpm/pnpm"]]
-version = "10.34.6"
+version = "10.34.7"
 backend = "aqua:pnpm/pnpm"
-specifiers = ["10.34.6"]
+specifiers = ["10.34.7"]
 
 [tools."aqua:pnpm/pnpm"."platforms.linux-arm64"]
-checksum = "sha256:5e18e460aec11c0d39b345a732fbbdee0811354f6f384e2da230c6438ae2137c"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-arm64"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100723"
+checksum = "sha256:c57bafc919110f5b942b7778bff0f2170a896d6dc0952c2ff042ca1e228655c3"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.7/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/631946121"
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-arm64-musl"]
+checksum = "sha256:c57bafc919110f5b942b7778bff0f2170a896d6dc0952c2ff042ca1e228655c3"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.7/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/631946121"
 
 [tools."aqua:pnpm/pnpm"."platforms.linux-x64"]
-checksum = "sha256:1bdfa04c3acbbf019befa4cf51f73f1de2729f4a513f737d1295905277f3b9cf"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-x64"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100726"
+checksum = "sha256:44af1568f2682877e43d8918c344d420e022c3d1cc88a11b0dba3e20f9261450"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.7/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/631946128"
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-x64-baseline"]
+checksum = "sha256:44af1568f2682877e43d8918c344d420e022c3d1cc88a11b0dba3e20f9261450"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.7/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/631946128"
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-x64-musl"]
+checksum = "sha256:44af1568f2682877e43d8918c344d420e022c3d1cc88a11b0dba3e20f9261450"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.7/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/631946128"
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:44af1568f2682877e43d8918c344d420e022c3d1cc88a11b0dba3e20f9261450"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.7/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/631946128"
 
 [[tools.bun]]
 version = "1.4.3"
