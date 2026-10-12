@@ -22,6 +22,7 @@ import { agentClassifier } from '../adapters/classifier/classifier'
 import { agentReplanner } from '../adapters/classifier/replanner'
 import { CodeGraphIndex } from '../adapters/codegraph'
 import { sqliteCodeGraph } from '../adapters/codegraph/query'
+import { probeGateway } from '../adapters/gateway/probe'
 import { GhGitHost } from '../adapters/github/gh'
 import { GitHubTokens, gitAuthEnv, githubOwner } from '../adapters/github/github-tokens'
 import { createLinearPort } from '../adapters/linear/linear-adapter'
@@ -353,6 +354,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       },
     }),
     ...(usesRbw ? { secretsLocked: () => secrets.locked() } : {}),
+    gatewayProbe: () => probeGateway(current().gateway, { fetch, home }),
     ...agentResolver(agents),
   })
   executor.bind(supervisor)

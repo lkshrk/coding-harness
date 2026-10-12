@@ -23,9 +23,11 @@ export async function statusRecord(ctx: Ctx): Promise<StatusRecord | { superviso
     const s = readStatus(db)
     const signal = signalConfigured(ctx) ? readSignalState(db) : null
     const limits = profileLimits(ctx, s.activeProfile)
+    const dispatch = up?.dispatch ?? s.dispatch
     return {
       supervisor: up ? 'running' : 'down',
-      dispatch: up?.dispatch ?? s.dispatch,
+      dispatch,
+      ...(dispatch === 'paused' && s.dispatch_reason ? { dispatch_reason: s.dispatch_reason } : {}),
       gateway: up?.gateway ?? null,
       ...(signal ? { signal } : {}),
       profile: s.activeProfile,
@@ -78,7 +80,10 @@ function render(ctx: Ctx, r: Awaited<ReturnType<typeof statusRecord>>): string[]
   const lines: string[] = []
   if (r.supervisor === 'down') lines.push(p('red', 'supervisor not running'))
   if (!('dispatch' in r)) return [...lines, 'no state yet']
-  const dispatch = r.dispatch === 'paused' ? p('yellow', 'paused') : p('green', 'running')
+  const dispatch =
+    r.dispatch === 'paused'
+      ? `${p('yellow', 'paused')}${r.dispatch_reason ? ` (${r.dispatch_reason})` : ''}`
+      : p('green', 'running')
   const gateway =
     r.gateway === null ? 'unknown' : r.gateway === 'ok' ? p('green', 'ok') : p('red', 'unavailable')
   const signal = !r.signal
