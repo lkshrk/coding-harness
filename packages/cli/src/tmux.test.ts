@@ -10,7 +10,7 @@ import { Tmux, type TmuxRunner } from './tmux'
 
 type Call = string[]
 
-function fakeTmux(panes: string[] = []) {
+function fakeTmux(panes: string[] = [], run = '') {
   const calls: Call[] = []
   let next = 10
   const listed = [...panes]
@@ -23,6 +23,10 @@ function fakeTmux(panes: string[] = []) {
       next += 1
       return { exitCode: 0, stdout: `%${next}\n`, stderr: '' }
     }
+    if (args[0] === 'show-options' && args.includes('prefix'))
+      return { exitCode: 0, stdout: 'C-a\n', stderr: '' }
+    if (args[0] === 'show-options' && args.includes('@ns-run'))
+      return { exitCode: 0, stdout: `${run}\n`, stderr: '' }
     if (args[0] === 'show-options') return { exitCode: 0, stdout: 'XXX-42\n', stderr: '' }
     return { exitCode: 0, stdout: '', stderr: '' }
   }
@@ -59,6 +63,23 @@ describe('tmux command builder', () => {
       'a',
       'run-shell',
       "ns watch --swap '#{pane_id}'",
+    ])
+  })
+
+  test('the status bar names the attach and leave keys with the server prefix', () => {
+    const t = fakeTmux()
+    new Tmux(t.runner).createSession(['ns', 'watch', '--manage'], ['ns', 'watch', '--swap'])
+    const right = t.calls.find((c) => c[5] === 'status-right')?.[6] ?? ''
+    expect(right).toContain('C-a a attach · C-a d leave')
+    expect(right).toContain('#(ns status-line --tmux)')
+  })
+
+  test('closes a pane by id and re-tiles its window', () => {
+    const t = fakeTmux()
+    new Tmux(t.runner).close({ id: '%11', window: '@2' })
+    expect(t.calls.map((c) => c.slice(3))).toEqual([
+      ['kill-pane', '-t', '%11'],
+      ['select-layout', '-t', '@2', 'tiled'],
     ])
   })
 
@@ -113,12 +134,12 @@ describe('ns watch', () => {
       const ctx = createCtx(
         { out: () => {}, err: () => {} },
         { json: false, noColor: false, yes: false },
-        { statePath: () => s.dbPath, self: ['ns'] },
+        { statePath: () => s.dbPath, self: ['ns'], now: () => new Date('2026-10-04T10:00:10.000Z') },
       )
       const tmux = new Tmux(t.runner)
       expect(syncPanes(ctx, tmux, { issues: [], maxPanes: 6 })).toEqual(['XXX-1'])
       expect(t.calls.find((c) => c[3] === 'new-window')?.at(-1)).toBe(
-        'ns --host local tail --no-footer XXX-1',
+        "trap '' INT; exec ns --host local tail --no-footer XXX-1",
       )
       t.listed.push(`%11\t@2\t${a.run.id}\tXXX-1\tXXX-1\t0`)
       const b = s.add('XXX-2')
@@ -180,26 +201,33 @@ describe('ns watch', () => {
   })
 
   test('the attach key swaps the pane to ns attach and back to ns tail', async () => {
-    const t = fakeTmux()
-    const code = await run(
-      ['watch', '--swap', '%11'],
-      { out: () => {}, err: () => {} },
-      {
-        which: () => '/usr/bin/tmux',
-        capture: t.runner,
-        self: ['ns'],
-      },
-    )
-    expect(code).toBe(0)
-    expect(t.calls.at(-1)).toEqual([
-      'tmux',
-      '-L',
-      'nightshift',
-      'respawn-pane',
-      '-k',
-      '-t',
-      '%11',
-      "sh -c 'ns --host local attach XXX-42; exec ns --host local tail --no-footer XXX-42'",
-    ])
+    const s = seeded()
+    try {
+      const live = s.add('XXX-42')
+      const t = fakeTmux([], live.run.id)
+      const code = await run(
+        ['watch', '--swap', '%11'],
+        { out: () => {}, err: () => {} },
+        {
+          statePath: () => s.dbPath,
+          which: () => '/usr/bin/tmux',
+          capture: t.runner,
+          self: ['ns'],
+        },
+      )
+      expect(code).toBe(0)
+      expect(t.calls.at(-1)).toEqual([
+        'tmux',
+        '-L',
+        'nightshift',
+        'respawn-pane',
+        '-k',
+        '-t',
+        '%11',
+        "trap : INT; ns --host local attach XXX-42; trap '' INT; exec ns --host local tail --no-footer XXX-42",
+      ])
+    } finally {
+      s.cleanup()
+    }
   })
 })

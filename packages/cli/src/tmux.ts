@@ -48,7 +48,13 @@ export class Tmux {
     this.ok(['set-option', '-g', 'pane-border-style', 'fg=#3b4261'])
     this.ok(['set-option', '-g', 'pane-active-border-style', 'fg=#7aa2f7'])
     this.ok(['set-option', '-g', 'status-right-length', '160'])
-    this.ok(['set-option', '-g', 'status-right', ' #(ns status-line --tmux) '])
+    const prefix = this.ok(['show-options', '-gv', 'prefix']).trim() || 'C-b'
+    this.ok([
+      'set-option',
+      '-g',
+      'status-right',
+      ` #(ns status-line --tmux) · ${prefix} ${ATTACH_KEY} attach · ${prefix} d leave `,
+    ])
     this.ok(['bind-key', ATTACH_KEY, 'run-shell', `${shellLine(swap)} '#{pane_id}'`])
   }
 
@@ -74,13 +80,14 @@ export class Tmux {
       })
   }
 
-  addPane(o: { run: string; issue: string; command: string[]; maxPanes: number }): string {
+  addPane(o: { run: string; issue: string; command: string[] | string; maxPanes: number }): string {
+    const line = typeof o.command === 'string' ? o.command : shellLine(o.command)
     const workers = this.panes().filter((p) => p.run !== '')
     const byWindow = new Map<string, number>()
     for (const p of workers) byWindow.set(p.window, (byWindow.get(p.window) ?? 0) + 1)
     const window = [...byWindow.entries()].find(([, n]) => n < o.maxPanes)?.[0]
     const id = window
-      ? this.ok(['split-window', '-d', '-t', window, '-P', '-F', '#{pane_id}', shellLine(o.command)]).trim()
+      ? this.ok(['split-window', '-d', '-t', window, '-P', '-F', '#{pane_id}', line]).trim()
       : this.ok([
           'new-window',
           '-d',
@@ -91,7 +98,7 @@ export class Tmux {
           '-P',
           '-F',
           '#{pane_id}',
-          shellLine(o.command),
+          line,
         ]).trim()
     this.ok(['set-option', '-p', '-t', id, '@ns-run', o.run])
     this.ok(['set-option', '-p', '-t', id, '@ns-issue', o.issue])
@@ -104,12 +111,26 @@ export class Tmux {
     this.ok(['select-pane', '-t', pane, '-T', title])
   }
 
+  close(pane: { id: string; window: string }): void {
+    this.ok(['kill-pane', '-t', pane.id])
+    // The window is gone when its last pane closed, so re-tiling may fail.
+    this.run(tmuxArgs('select-layout', '-t', pane.window, 'tiled'))
+  }
+
+  message(pane: string, text: string): void {
+    this.run(tmuxArgs('display-message', '-t', pane, text))
+  }
+
   issueOf(pane: string): string {
     return this.ok(['show-options', '-p', '-v', '-t', pane, '@ns-issue']).trim()
   }
 
-  respawn(pane: string, command: string[]): void {
-    this.ok(['respawn-pane', '-k', '-t', pane, shellLine(command)])
+  runOf(pane: string): string {
+    return this.ok(['show-options', '-p', '-v', '-t', pane, '@ns-run']).trim()
+  }
+
+  respawn(pane: string, command: string[] | string): void {
+    this.ok(['respawn-pane', '-k', '-t', pane, typeof command === 'string' ? command : shellLine(command)])
   }
 
   selectWorkers(): void {

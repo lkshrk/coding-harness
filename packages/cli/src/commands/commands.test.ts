@@ -12,8 +12,11 @@ import {
   RunStore,
   setCovered,
 } from '@nightshift/supervisor'
+import { createCtx } from '../cli'
 import { ControlFailure, type ControlFn } from '../client'
 import { type CliDeps, run } from '../run'
+import { Tmux, type TmuxRunner } from '../tmux'
+import { syncPanes } from './watch'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -694,5 +697,97 @@ describe('status-line', () => {
     expect(text.length).toBeLessThanOrEqual(60)
     expect(text.endsWith('…')).toBe(true)
     expect((await cli(['status-line', 'XXX-42', '--width', 'x'], s.deps)).code).toBe(2)
+  })
+})
+
+describe('watch panes', () => {
+  const fakeTmux = (panes: string[]) => {
+    const calls: string[][] = []
+    const runner: TmuxRunner = (argv) => {
+      const args = argv.slice(3)
+      calls.push(args)
+      if (args[0] === 'list-panes') return { exitCode: 0, stdout: panes.join('\n'), stderr: '' }
+      if (args[0] === 'split-window' || args[0] === 'new-window')
+        return { exitCode: 0, stdout: '%20\n', stderr: '' }
+      return { exitCode: 0, stdout: '', stderr: '' }
+    }
+    return { calls, tmux: new Tmux(runner) }
+  }
+  const ctxAt = (s: ReturnType<typeof seeded>, at: number) =>
+    createCtx(
+      { out: () => {}, err: () => {} },
+      { json: false, noColor: false, yes: false },
+      { statePath: () => s.dbPath, self: ['ns'], now: () => new Date(at) },
+    )
+  const pane = (id: string, run: string, issue: string, title = issue) =>
+    `${id}\t@2\t${run}\t${issue}\t${title}\t0`
+  const killed = (calls: string[][]) => calls.filter((c) => c[0] === 'kill-pane').map((c) => c[2])
+
+  test('syncPanes closes panes of runs ended more than 60 s ago and keeps recent ones', () => {
+    const s = seeded()
+    const old = addRun(s, 'XXX-1', 'done')
+    s.tick(30_000)
+    const recent = addRun(s, 'XXX-2', 'done')
+    const ended = Date.parse(s.runs.get(recent.id)?.endedAt ?? '')
+    const t = fakeTmux([pane('%11', old.id, 'XXX-1', 'XXX-1 [done]'), pane('%12', recent.id, 'XXX-2')])
+    expect(syncPanes(ctxAt(s, ended + 40_000), t.tmux, { issues: [], maxPanes: 6 })).toEqual([])
+    expect(killed(t.calls)).toEqual(['%11'])
+    expect(t.calls).toContainEqual(['select-layout', '-t', '@2', 'tiled'])
+    expect(t.calls).toContainEqual(['select-pane', '-t', '%12', '-T', 'XXX-2 [done]'])
+    t.calls.length = 0
+    syncPanes(ctxAt(s, ended + 61_000), t.tmux, { issues: [], maxPanes: 6 })
+    expect(killed(t.calls)).toEqual(['%11', '%12'])
+  })
+
+  test('a fresh watch removes panes of inactive runs and shows one pane per active run', () => {
+    const s = seeded()
+    const old = addRun(s, 'XXX-1', 'done')
+    const live = addRun(s, 'XXX-2')
+    const t = fakeTmux([pane('%11', old.id, 'XXX-1', 'XXX-1 [done]'), pane('%12', 'GONE', 'XXX-0')])
+    const at = Date.parse(s.runs.get(old.id)?.endedAt ?? '') + 1_000
+    expect(syncPanes(ctxAt(s, at), t.tmux, { issues: [], maxPanes: 6, fresh: true })).toEqual(['XXX-2'])
+    expect(killed(t.calls)).toEqual(['%11', '%12'])
+    expect(t.calls.filter((c) => c[0] === 'new-window' || c[0] === 'split-window')).toHaveLength(1)
+    expect(t.calls).toContainEqual(['set-option', '-p', '-t', '%20', '@ns-run', live.id])
+  })
+
+  test('ctrl+c in a stream pane does not end the tail', async () => {
+    const s = seeded()
+    addRun(s, 'XXX-1')
+    const t = fakeTmux([])
+    syncPanes(ctxAt(s, NOW), t.tmux, { issues: [], maxPanes: 6 })
+    const line = t.calls.find((c) => c[0] === 'new-window')?.at(-1) ?? ''
+    expect(line).toContain('ns --host local tail --no-footer XXX-1')
+    expect(line).toBe("trap '' INT; exec ns --host local tail --no-footer XXX-1")
+    const script = line.replace('ns --host local tail --no-footer XXX-1', 'sh -c "sleep 0.5; echo alive"')
+    const proc = Bun.spawn(['env', '--default-signal=INT', 'sh', '-c', script], { stdout: 'pipe' })
+    await Bun.sleep(150)
+    proc.kill('SIGINT')
+    expect(await proc.exited).toBe(0)
+    expect(await new Response(proc.stdout).text()).toBe('alive\n')
+  })
+
+  test('the attach key on a finished run says so and respawns nothing', async () => {
+    const s = seeded()
+    const done = addRun(s, 'XXX-1', 'done')
+    const calls: string[][] = []
+    const show: Record<string, string> = { '@ns-issue': 'XXX-1', '@ns-run': done.id }
+    const code = await run(
+      ['watch', '--swap', '%11'],
+      { out: () => {}, err: () => {} },
+      {
+        ...s.deps,
+        which: () => '/usr/bin/tmux',
+        self: ['ns'],
+        capture: (argv) => {
+          calls.push(argv.slice(3))
+          const v = argv[3] === 'show-options' ? (show[argv.at(-1) ?? ''] ?? '') : ''
+          return { exitCode: 0, stdout: `${v}\n`, stderr: '' }
+        },
+      },
+    )
+    expect(code).toBe(0)
+    expect(calls.some((c) => c[0] === 'respawn-pane')).toBe(false)
+    expect(calls.at(-1)).toEqual(['display-message', '-t', '%11', 'XXX-1 is not running'])
   })
 })

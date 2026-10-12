@@ -7,18 +7,41 @@ import { withDb } from './shared'
 export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--max-panes N]'
 const POLL_MS = 2_000
 const MAX_PANES = 6
+const CLOSE_AFTER_MS = 60_000
 
 function ns(ctx: Ctx, ...args: string[]): string[] {
   return [...ctx.self, '--host', LOCAL, ...(ctx.flags.config ? ['--config', ctx.flags.config] : []), ...args]
 }
 
-export function syncPanes(ctx: Ctx, tmux: Tmux, o: { issues: string[]; maxPanes: number }): string[] {
+// ctrl+c in a watch pane must not end its process and leave a dead pane; an ignored SIGINT survives exec.
+function stream(ctx: Ctx, issue: string): string {
+  return `trap '' INT; exec ${shellLine(ns(ctx, 'tail', '--no-footer', issue))}`
+}
+
+export function syncPanes(
+  ctx: Ctx,
+  tmux: Tmux,
+  o: { issues: string[]; maxPanes: number; fresh?: boolean },
+): string[] {
   const panes = tmux.panes()
   const runs = withDb(ctx, (db) => {
     const store = runStore(db)
-    const states = new Map(panes.filter((p) => p.run).map((p) => [p.run, store.get(p.run)?.state]))
+    const states = new Map(panes.filter((p) => p.run).map((p) => [p.run, store.get(p.run)]))
     return { active: store.active(), states }
   })
+  const now = ctx.now().getTime()
+  for (const pane of panes) {
+    if (!pane.run) continue
+    const run = runs.states.get(pane.run)
+    if (run && !isTerminal(run.state)) continue
+    const ended = run?.endedAt ? Date.parse(run.endedAt) : Number.NaN
+    if (o.fresh || !(now - ended < CLOSE_AFTER_MS)) {
+      tmux.close(pane)
+      continue
+    }
+    if (!pane.title.endsWith(']'))
+      tmux.title(pane.id, `${pane.issue} [${run?.state === 'done' ? 'done' : 'failed'}]`)
+  }
   const known = new Set(panes.map((p) => p.run))
   const added: string[] = []
   for (const run of runs.active) {
@@ -27,26 +50,24 @@ export function syncPanes(ctx: Ctx, tmux: Tmux, o: { issues: string[]; maxPanes:
     tmux.addPane({
       run: run.id,
       issue: run.issue,
-      command: ns(ctx, 'tail', '--no-footer', run.issue),
+      command: stream(ctx, run.issue),
       maxPanes: o.maxPanes,
     })
     added.push(run.issue)
-  }
-  for (const pane of panes) {
-    if (!pane.run || pane.title.endsWith(']')) continue
-    const state = runs.states.get(pane.run)
-    if (state && !isTerminal(state)) continue
-    tmux.title(pane.id, `${pane.issue} [${state === 'done' ? 'done' : 'failed'}]`)
   }
   return added
 }
 
 async function manage(ctx: Ctx, tmux: Tmux, issues: string[], maxPanes: number): Promise<number> {
   let first = true
-  ctx.io.out(`watching ${issues.length ? issues.join(', ') : 'all workers'}; prefix+a in a pane attaches`)
+  let fresh = true
+  ctx.io.out(
+    `watching ${issues.length ? issues.join(', ') : 'all workers'}; prefix a in a pane attaches, prefix d leaves`,
+  )
   while (!ctx.signal?.aborted) {
     try {
-      const added = syncPanes(ctx, tmux, { issues, maxPanes })
+      const added = syncPanes(ctx, tmux, { issues, maxPanes, fresh })
+      fresh = false
       if (first && added.length) {
         tmux.selectWorkers()
         first = false
@@ -75,20 +96,20 @@ export async function watch(ctx: Ctx, args: string[]): Promise<number> {
   if (swap !== undefined) {
     const issue = tmux.issueOf(swap)
     if (!issue) throw new CliError(EXIT.notFound, `pane ${swap} shows no worker`)
-    tmux.respawn(swap, [
-      'sh',
-      '-c',
-      `${shellLine(ns(ctx, 'attach', issue))}; exec ${shellLine(ns(ctx, 'tail', '--no-footer', issue))}`,
-    ])
+    const id = tmux.runOf(swap)
+    const state = withDb(ctx, (db) => runStore(db).get(id)?.state)
+    if (!state || isTerminal(state)) {
+      tmux.message(swap, `${issue} is not running`)
+      return EXIT.ok
+    }
+    tmux.respawn(swap, `trap : INT; ${shellLine(ns(ctx, 'attach', issue))}; ${stream(ctx, issue)}`)
     return EXIT.ok
   }
   if (bools.has('--all') && positionals.length) throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
   if (bools.has('--manage')) return manage(ctx, tmux, positionals, maxPanes)
   if (!tmux.hasSession()) {
-    tmux.createSession(
-      ns(ctx, 'watch', '--manage', '--max-panes', String(maxPanes), ...positionals),
-      ns(ctx, 'watch', '--swap'),
-    )
+    const manager = ns(ctx, 'watch', '--manage', '--max-panes', String(maxPanes), ...positionals)
+    tmux.createSession(manager, ns(ctx, 'watch', '--swap'))
   }
   return ctx.exec(tmux.attachCommand(), { env: { TMUX: undefined } })
 }
