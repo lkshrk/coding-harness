@@ -86,6 +86,16 @@ describe('probeGateway', () => {
     expect(f.calls[0]?.init.tls).toEqual({ ca: 'PEM-DATA' })
   })
 
+  test('an empty CA bundle is not ok, names the path and skips the request', async () => {
+    writeFileSync(join(home, 'empty.pem'), '')
+    const f = fake(async () => new Response('', { status: 200 }))
+    const r = await probeGateway(gw({ ca_bundle: '~/empty.pem' }), { fetch: f.fetch, home })
+    expect(r.ok).toBe(false)
+    expect(r.reason).toContain(join(home, 'empty.pem'))
+    expect(r.reason).toContain('empty')
+    expect(f.calls).toHaveLength(0)
+  })
+
   test('a missing CA bundle is not ok, names the path and skips the request', async () => {
     const f = fake(async () => new Response('', { status: 200 }))
     const r = await probeGateway(gw({ ca_bundle: '~/missing.pem' }), { fetch: f.fetch, home })

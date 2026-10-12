@@ -27,11 +27,16 @@ export async function probeGateway(
         reason: `ca_bundle ${bundle} unreadable (${e instanceof Error ? e.message : String(e)})`,
       }
     }
+    if (ca.trim() === '') return { ok: false, reason: `ca_bundle ${bundle} is empty` }
   }
   const timeoutMs = d.timeoutMs ?? TIMEOUT_MS
   const signal = AbortSignal.timeout(timeoutMs)
   try {
-    const res = await d.fetch(url, { method: 'GET', signal, ...(ca ? { tls: { ca } } : {}) } as RequestInit)
+    const res = await d.fetch(url, {
+      method: 'GET',
+      signal,
+      ...(ca !== undefined ? { tls: { ca } } : {}),
+    } as RequestInit)
     return { ok: res.ok, reason: `${url}: HTTP ${res.status}` }
   } catch (e) {
     if (signal.aborted) return { ok: false, reason: `${url}: timed out after ${timeoutMs}ms` }
