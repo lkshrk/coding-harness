@@ -32,13 +32,20 @@ export class OpenCodeClient {
     }
   }
 
-  async createSession(o: { agent: string; model: { providerID: string; id: string }; directory: string }) {
+  async createSession(
+    o: { agent?: string; model?: { providerID: string; id: string }; directory?: string } = {},
+  ) {
     const res = await this.call<{ data: OpenCodeSession }>('POST', '/api/session', {
-      agent: o.agent,
-      model: o.model,
-      location: { directory: o.directory },
+      ...(o.agent === undefined ? {} : { agent: o.agent }),
+      ...(o.model === undefined ? {} : { model: o.model }),
+      ...(o.directory === undefined ? {} : { location: { directory: o.directory } }),
     })
     return res.data
+  }
+
+  async sessions(limit: number): Promise<OpenCodeSession[]> {
+    const query = new URLSearchParams({ order: 'desc', limit: String(limit), parentID: 'null' })
+    return (await this.call<{ data: OpenCodeSession[] }>('GET', `/api/session?${query}`)).data
   }
 
   async session(id: string): Promise<OpenCodeSession> {

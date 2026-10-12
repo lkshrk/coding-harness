@@ -17,6 +17,7 @@ import {
   branchParts,
   footerFrame,
   idleParts,
+  type Part,
   RESET_REGION,
   scrollRegion,
   statusParts,
@@ -136,7 +137,7 @@ export async function tail(ctx: Ctx, args: string[]): Promise<number> {
   const run = withDb(ctx, (db) => newestRun(db, issue))
   if (!run && !followIssue) throw new CliError(EXIT.notFound, `no run for ${issue}`)
   const cursor: string | null = null
-  const stopFooter = bools.has('--no-footer') ? () => {} : startFooter(ctx, issue)
+  const stopFooter = bools.has('--no-footer') ? () => {} : startFooter(ctx, () => issueFooter(ctx, issue))
   try {
     return await tailLoop(ctx, issue, run, followIssue, cursor, bools.has('--reasoning'))
   } finally {
@@ -175,34 +176,42 @@ async function tailLoop(
   }
 }
 
-function terminalWidth(): number {
+export function terminalWidth(): number {
   const columns = process.stdout.columns
   return columns && columns > 20 ? columns - 2 : 100
 }
 
-function startFooter(ctx: Ctx, issue: string): () => void {
+export type FooterLine = { left: Part[]; right: Part[] }
+
+function issueFooter(ctx: Ctx, issue: string): FooterLine {
+  const now = ctx.now()
+  return withDb(ctx, (db) => {
+    const w = workerRecords(db, now).find((r) => r.issue === issue)
+    const stage = (issueRecords(db) ?? []).find((i) => i.identifier === issue)?.stage
+    return w ? { left: statusParts(w, stage), right: branchParts(w) } : { left: idleParts(issue), right: [] }
+  })
+}
+
+export function startFooter(ctx: Ctx, line: () => FooterLine | Promise<FooterLine>): () => void {
   const stdout = process.stdout
   if (!stdout.isTTY || ctx.flags.json || !stdout.rows || stdout.rows < 4) return () => {}
-  const draw = () => {
-    const rows = stdout.rows ?? 0
-    const now = ctx.now()
-    const line = withDb(ctx, (db) => {
-      const w = workerRecords(db, now).find((r) => r.issue === issue)
-      const stage = (issueRecords(db) ?? []).find((i) => i.identifier === issue)?.stage
-      return w
-        ? { left: statusParts(w, stage), right: branchParts(w) }
-        : { left: idleParts(issue), right: [] }
-    })
-    stdout.write(footerFrame(rows, line.left, stdout.columns ?? 100, ctx.color, line.right))
+  let stopped = false
+  const draw = async () => {
+    try {
+      const l = await line()
+      if (!stopped)
+        stdout.write(footerFrame(stdout.rows ?? 0, l.left, stdout.columns ?? 100, ctx.color, l.right))
+    } catch {}
   }
   const layout = () => {
     stdout.write(scrollRegion(stdout.rows ?? 24))
-    draw()
+    void draw()
   }
   layout()
   const timer = setInterval(draw, 2000)
   stdout.on('resize', layout)
   return () => {
+    stopped = true
     clearInterval(timer)
     stdout.off('resize', layout)
     stdout.write(RESET_REGION)

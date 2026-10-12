@@ -1149,6 +1149,45 @@ describe('watch panes', () => {
     expect(panes.err[0]).toContain('tmux is not installed')
   })
 
+  test('ns watch --snapshot prints running workers and the last 10 lifecycle events, then exits 0', async () => {
+    const s = seeded()
+    const old = addRun(s, 'XXX-1', 'done')
+    s.tick()
+    const live = addRun(s, 'XXX-2')
+    s.log.append({
+      type: 'WORKER_PROGRESS',
+      run: live.id,
+      data: { steps: 4, tool_calls: 3, tokens: 10, last_tool: 'shell' },
+    })
+    for (let i = 0; i < 9; i++) {
+      s.tick()
+      s.log.append({ type: 'WORKER_STALLED', run: old.id, data: { signal: 'idle', detail: `poll ${i}` } })
+    }
+    s.tick()
+    s.log.append({
+      type: 'QUESTION_ASKED',
+      issue: 'XXX-2',
+      data: { to: 'lead', question: 'which db?', comment: 'c1' },
+    })
+    const r = await cli(['watch', '--snapshot'], s.deps)
+    expect(r.code).toBe(0)
+    expect(r.err).toEqual([])
+    expect(r.out.slice(0, 3)).toEqual([
+      'workers:',
+      '  XXX-2  implementer  attempt 1  9m59s  last shell',
+      'recent events:',
+    ])
+    const events = r.out.slice(3)
+    expect(events).toHaveLength(10)
+    expect(events[0]).toBe('  10:00:02 XXX-1     WORKER_STALLED idle: poll 0')
+    expect(events.at(-1)).toBe('  10:00:11 XXX-2     QUESTION_ASKED to lead: which db?')
+    expect(events.join('\n')).not.toContain('WORKER_PROGRESS')
+
+    const empty = await cli(['watch', '--snapshot'], { ...s.deps, statePath: () => join(s.dir, 'none.db') })
+    expect(empty).toEqual({ code: 0, out: ['no state yet'], err: [] })
+    expect((await cli(['watch', '--snapshot', 'XXX-1'], s.deps)).code).toBe(2)
+  })
+
   test('the attach key in a pane without a worker says so and exits 0', async () => {
     const s = seeded()
     const calls: string[][] = []
@@ -1240,7 +1279,7 @@ describe('lead', () => {
     })
   })
 
-  test('ns lead opens the TUI on the running lead server with the password in its environment', async () => {
+  test('ns lead --tui opens the TUI on the running lead server with the password in its environment', async () => {
     const t = leadSetup()
     mkdirSync(t.leadDir, { recursive: true })
     writeFileSync(join(t.leadDir, 'server-password'), 'pw-1')
@@ -1256,7 +1295,7 @@ describe('lead', () => {
       { cmd: ['opencode', '--server', 'http://127.0.0.1:4321'], env: { OPENCODE_PASSWORD: 'pw-1' } },
     ])
     t.execs.length = 0
-    await cli(['lead'], { ...t.deps, httpFetch })
+    await cli(['lead', '--tui'], { ...t.deps, httpFetch })
     expect(t.execs[0]?.cmd).toEqual(['opencode', 'mini', '--server', 'http://127.0.0.1:4321'])
   })
 

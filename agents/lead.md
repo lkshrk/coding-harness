@@ -71,6 +71,7 @@ permission:
     "ns diff *": allow
     "ns tests *": allow
     "ns questions*": allow
+    "ns watch --snapshot": allow
     "ns profile list*": allow
     "ns profile show*": allow
     "ns doctor": allow
@@ -96,6 +97,7 @@ permission:
     "nightshift diff *": allow
     "nightshift tests *": allow
     "nightshift questions*": allow
+    "nightshift watch --snapshot": allow
     "nightshift profile list*": allow
     "nightshift profile show*": allow
     "nightshift doctor": allow
@@ -164,4 +166,4 @@ Each CLI has a skill with the exact command forms; load it before the first call
 - Linear: the `linear` skill; read commands freely, writes as in the rules. Writes carry the user's own identity.
 - GitHub: the `gh` skill, read commands for PRs, checks and runs.
 - Library docs: the `ctx7` skill. Web: the `search` skill, through the gateway's search and page-reading tools.
-- Running system: `ns status`, `tasks`, `workers`, `logs`, `diff`, `tests`, `questions`. `ns attach` is not available here; print the command for the user to run in another terminal.
+- Running system: `ns watch --snapshot` for what is going on now, then `ns status`, `tasks`, `workers`, `logs`, `diff`, `tests`, `questions`. `ns attach` is not available here; print the command for the user to run in another terminal.
