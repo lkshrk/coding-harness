@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ExecResult, GateResult } from '../ports'
+import { PermissionDeniedError } from '../ports/git-host'
 import { snapshot } from '../testing/testing'
 
 import { dispatchOne, harness } from './testing'
@@ -70,6 +71,31 @@ describe('stage engine', () => {
     expect(h.notifier.sent.map((n) => [n.title, n.context])).toEqual([
       ['intake failed 3 times in a row', ['gh pr create exited 1: No commits between main and ns/FOR-1']],
     ])
+  })
+
+  test('a stage that fails for a missing permission holds the issue on the first failure', async () => {
+    let calls = 0
+    const refusal =
+      'git push ns/FOR-1: refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission'
+    const h = harness({
+      stageHandler: {
+        run: async () => {
+          calls++
+          throw new PermissionDeniedError('git push ns/FOR-1', refusal)
+        },
+      },
+    })
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'In Review', labels: ['ai-stage:integration'] }))
+    await h.sup.start()
+    for (let i = 0; i < 3; i++) {
+      await h.sup.tick()
+      await Bun.sleep(0)
+    }
+    expect(calls).toBe(1)
+    expect(h.linear.get('FOR-1')).toMatchObject({ status: 'Blocked' })
+    expect(h.sup.awaiting('FOR-1')).toEqual({ kind: 'escalated', stage: 'integration', reason: refusal })
+    expect(h.notifier.sent).toHaveLength(1)
+    expect(h.notifier.sent[0]?.context).toEqual([refusal])
   })
 
   test('completing a stage enters the next one; a checkpoint after holds it for you', async () => {

@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { type Config, expandHome, githubAccount } from '@nightshift/core'
 import { BRANCH_PREFIX } from '../../policy/naming'
 import type { CiFailure, CiState, GitHost, PullRequest, PullRequestState, ReviewThread } from '../../ports'
-import { PushRejectedError } from '../../ports/git-host'
+import { PermissionDeniedError, PushRejectedError } from '../../ports/git-host'
 import { ACTIONS_URL, bucketOf, type GhRollupItem, logExcerpt, MAX_CI_LOG, MAX_JOB_LOG } from './ci-log'
 import { type GitHubTokens, GitHubUnauthorizedError, gitAuthEnv } from './github-tokens'
 
@@ -26,6 +26,8 @@ export type GhGitHostOptions = {
 
 const UNAUTHORIZED =
   /HTTP 401|Bad credentials|Authentication failed|could not read Username|invalid credentials/i
+
+const PERMISSION_DENIED = /without [`'"]?\w+[`'"]? permission|Permission to \S+ denied|error: 403|HTTP 403/i
 
 const SLUG =
   /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/(?:[^@/]+@)?github\.com(?::\d+)?\/|[^@/]+@github\.com:)([^/]+\/[^/]+?)(?:\.git)?\/?$/
@@ -171,7 +173,7 @@ export class GhGitHost implements GitHost {
         if (actual !== undefined && actual !== o.expected)
           throw new PushRejectedError(o.branch, o.expected, actual)
       }
-      this.check(r, `git push ${o.branch}`)
+      this.check(r, `git push ${o.branch}`, PERMISSION_DENIED)
       // The branch can move to headSha between the check above and the push; git then reports
       // it up to date ('=') without checking the lease, so confirm this push moved it.
       if (o.expected && o.expected !== headSha) {
@@ -513,10 +515,18 @@ export class GhGitHost implements GitHost {
     return slug
   }
 
-  private check(r: HostCommandResult, what: string): void {
+  private check(r: HostCommandResult, what: string, denied?: RegExp): void {
     if (r.exitCode === 0) return
     const detail = r.stderr.trim().split('\n').slice(-3).join(' ')
     if (UNAUTHORIZED.test(r.stderr)) throw new GitHubUnauthorizedError(`${what}: ${detail}`)
+    const refusal =
+      denied &&
+      r.stderr
+        .split('\n')
+        .find((l) => denied.test(l))
+        ?.trim()
+    if (refusal)
+      throw new PermissionDeniedError(what, `${what}: ${detail.includes(refusal) ? detail : refusal}`)
     throw new Error(`${what} exited ${r.exitCode}: ${detail}`)
   }
 }

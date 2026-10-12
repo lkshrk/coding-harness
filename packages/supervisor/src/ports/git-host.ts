@@ -48,6 +48,16 @@ export class PushRejectedError extends Error {
   }
 }
 
+// GitHub refused the operation for a token permission no retry can grant.
+export class PermissionDeniedError extends Error {
+  constructor(
+    readonly operation: string,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
 export interface GitHost {
   accountFor(repository: string): string
   push(o: {

@@ -9,7 +9,7 @@ import { IMPLEMENTATION, INTEGRATION, type IssueView, viewIssue } from '../polic
 import type { ExecutorStart } from '../ports'
 import type { By } from '../ports/control'
 import { ControlError } from '../ports/control'
-import type { PullRequestRecord } from '../ports/git-host'
+import { PermissionDeniedError, type PullRequestRecord } from '../ports/git-host'
 import { BaseConflictError } from '../ports/worker'
 import { TaskTooLargeError } from '../stages/context'
 import { BaseConflictStore } from '../stages/integration/records'
@@ -415,7 +415,7 @@ export class Dispatcher {
     handler
       .run({ issue: view.snapshot, stage, agent })
       .then(() => this.roleFailures.delete(key))
-      .catch((e) => this.roleFailed(id, stage, key, (e as Error).message))
+      .catch((e) => this.roleFailed(id, stage, key, (e as Error).message, e instanceof PermissionDeniedError))
       .finally(() => this.roleInFlight.delete(id))
   }
 
@@ -431,12 +431,27 @@ export class Dispatcher {
     })
   }
 
-  async roleFailed(id: string, stage: string, key: string, message: string): Promise<void> {
+  async roleFailed(
+    id: string,
+    stage: string,
+    key: string,
+    message: string,
+    permanent = false,
+  ): Promise<void> {
     console.error(`stage ${stage} on ${id}: ${message}`)
     const count = (this.roleFailures.get(key) ?? 0) + 1
     this.roleFailures.set(key, count)
-    if (count < STAGE_FAILURE_LIMIT) return
+    if (count < STAGE_FAILURE_LIMIT && !permanent) return
     this.roleFailures.delete(key)
+    if (permanent) {
+      await this.flow.holdForYou(id, { kind: 'escalated', stage, reason: message })
+      await this.rt.notify(`${stage} was refused a permission`, id, {
+        kind: 'blocked',
+        context: [message],
+        action: `Grant the missing permission or finish ${stage} by hand, then move ${id} to Todo`,
+      })
+      return
+    }
     await this.flow.holdForYou(id, { kind: 'escalated', stage })
     await this.rt.notify(`${stage} failed ${count} times in a row`, id, {
       kind: 'failed',
