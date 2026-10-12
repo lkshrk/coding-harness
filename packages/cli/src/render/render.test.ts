@@ -293,6 +293,25 @@ describe('wrapping to the live width', () => {
     }
   })
 
+  test('tabs in shell output and text are expanded to spaces before measuring', () => {
+    for (const p of [plain, color]) {
+      const r = new SessionRenderer('s1', p, () => 60)
+      r.feed(ev('session.tool.input.started', { name: 'shell' }))
+      r.feed(ev('session.tool.called', { input: { command: 'ls' } }))
+      const content = `${'a\t'.repeat(10)}\n${p('green', 'ab\tc')}\n`
+      const shell = r.feed(ev('session.tool.success', { content, metadata: { exit: 0 } }))
+      const text = [...r.feed(delta(`${'x\t'.repeat(10)}\n`)), ...r.feed(ended)]
+      const all = [...shell, ...text]
+      expect(all.join('')).not.toContain('\t')
+      for (const l of all) expect(visible(l)).toBeLessThanOrEqual(60)
+      expect(shell.slice(0, 3).map(stripEscapes)).toEqual([
+        `  │ ${'a       '.repeat(6)}a`,
+        `  │ ${'a       '.repeat(2)}a`,
+        '  │ ab      c',
+      ])
+    }
+  })
+
   test('a collapsed reasoning summary wraps instead of being clipped', () => {
     const r = new SessionRenderer('s1', plain, () => 30)
     r.feed(ev('session.reasoning.delta', { delta: `${words(8)}.` }))
@@ -332,6 +351,16 @@ describe('wrapping to the live width', () => {
     expect(lines).toHaveLength(4)
     expect(lines[3]).toBe(`    ${`+${words(20)}`.slice(0, 55)}…`)
     for (const l of lines) expect(visible(l)).toBeLessThanOrEqual(60)
+
+    r.feed(ev('session.tool.input.started', { name: 'edit' }))
+    r.feed(
+      ev('session.tool.called', {
+        input: { filePath: 'b.go', oldString: 'a\n', newString: `${'\t'.repeat(9)}x\n` },
+      }),
+    )
+    const tabbed = r.feed(ev('session.tool.success', { content: 'Edited b.go' }))
+    expect(tabbed[3]).toBe(`    +${' '.repeat(54)}…`)
+    for (const l of tabbed) expect(visible(l)).toBeLessThanOrEqual(60)
   })
 })
 

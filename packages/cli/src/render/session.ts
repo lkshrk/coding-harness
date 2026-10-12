@@ -77,6 +77,24 @@ function tokens(line: string): Token[] {
   return out
 }
 
+// A terminal advances a tab to its next stop, which a width count of zero would miss.
+function expandTabs(line: string, tab = 8): string {
+  if (!line.includes('\t')) return line
+  let out = ''
+  let col = 0
+  for (const t of tokens(line)) {
+    if (t.text === '\t') {
+      const n = tab - (col % tab)
+      out += ' '.repeat(n)
+      col += n
+    } else {
+      out += t.text
+      col += t.width
+    }
+  }
+  return out
+}
+
 // SGR reset codes and the opening codes each one ends.
 const CLOSES: Record<string, (code: number) => boolean> = {
   '0': () => true,
@@ -154,7 +172,7 @@ function hangOf(line: string): number {
 
 // Continuation lines start `indent` columns in, under the first line's content.
 export function wrap(text: string, width: number, indent = 0): string[] {
-  return text.split('\n').flatMap((line) => wrapLine(line, Math.max(1, width), indent))
+  return text.split('\n').flatMap((line) => wrapLine(expandTabs(line), Math.max(1, width), indent))
 }
 
 function clip(text: string, max: number): string {
@@ -370,7 +388,9 @@ export class SessionRenderer {
       if (path) this.files.set(path, input.content)
     }
     lines = lines.filter((l) => !/^(---|\+\+\+|Index:|=+$)/.test(l) && l !== '')
-    const shown = lines.slice(0, MAX_DIFF).map((l) => `    ${this.diffLine(clip(l, this.width() - 4))}`)
+    const shown = lines
+      .slice(0, MAX_DIFF)
+      .map((l) => `    ${this.diffLine(clip(expandTabs(l), this.width() - 4))}`)
     if (lines.length > MAX_DIFF) shown.push(`    ${this.p('dim', `… +${lines.length - MAX_DIFF} lines`)}`)
     return shown
   }
