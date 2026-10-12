@@ -963,4 +963,21 @@ describe('watch panes', () => {
     expect(calls.some((c) => c[0] === 'respawn-pane')).toBe(false)
     expect(calls.at(-1)).toEqual(['display-message', '-t', '%11', 'XXX-1 is not running'])
   })
+
+  test('the attach key in a pane without a worker says so and exits 0', async () => {
+    const s = seeded()
+    const calls: string[][] = []
+    const r = await cli(['watch', '--swap', '%0'], {
+      ...s.deps,
+      which: () => '/usr/bin/tmux',
+      self: ['ns'],
+      capture: (argv) => {
+        calls.push(argv.slice(3))
+        return { exitCode: 0, stdout: '\n', stderr: '' }
+      },
+    })
+    expect(r).toEqual({ code: 0, out: [], err: [] })
+    expect(calls.some((c) => c[0] === 'respawn-pane')).toBe(false)
+    expect(calls.at(-1)).toEqual(['display-message', '-t', '%0', 'no worker in this pane'])
+  })
 })
