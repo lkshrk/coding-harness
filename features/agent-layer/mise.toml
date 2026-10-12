@@ -8,7 +8,7 @@
 "aqua:rhysd/actionlint" = "1.7.12"
 python = "3.14.8"
 node = "24.21.0"
-"aqua:pnpm/pnpm" = "10.34.7"
+bun = "1.4.3"
 
 [tools."github:DeusData/codebase-memory-mcp"]
 version = "0.11.0"

@@ -33,7 +33,7 @@ apt_install() {
   rm -rf /var/lib/apt/lists/*
 }
 
-# uv, python and node stay off PATH: they serve semgrep and the npm tools, not the worker.
+# uv, python, node and bun stay off PATH: they serve semgrep and the npm tools, not the worker.
 locked() {
   (cd "$here" && MISE_DATA_DIR="$prefix/mise/data" MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config" \
     MISE_STATE_DIR="$tmp/mise-state" MISE_TRUSTED_CONFIG_PATHS="$here" MISE_LOCKED=1 \
@@ -60,7 +60,7 @@ EOS
   chmod 0755 "$bin/semgrep"
 }
 
-# pnpm's .bin entries are shell shims, so the entry comes from the package's own bin field.
+# The entry comes from the package's own bin field: the wrapper runs it with the private node, not its shebang.
 bin_entry() {
   local name="$1" package="$2" node="$3"
   "$node" -e 'const [dir, name] = process.argv.slice(1); const b = require(dir + "/package.json").bin;
@@ -90,14 +90,14 @@ native_opencode() {
 }
 
 install_npm_tools() {
-  local node pnpm bls dsh bats opencode
+  local node bun bls dsh bats opencode
   node="$(locked node)"
-  pnpm="$(locked pnpm)"
+  bun="$(locked bun)"
   mkdir -p "$prefix/npm"
-  cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$here/npm/.npmrc" "$prefix/npm/"
-  PATH="$(dirname "$node"):$PATH" "$pnpm" install --dir "$prefix/npm" --frozen-lockfile --prod \
-    --store-dir "$tmp/pnpm-store" --config.cache-dir="$tmp/pnpm-cache" --config.update-notifier=false \
-    --reporter=append-only
+  cp "$here/npm/package.json" "$here/npm/bun.lock" "$prefix/npm/"
+  # The hoisted linker keeps every package a real directory; OpenCode cannot watch a symlinked plugin.
+  (cd "$prefix/npm" && BUN_INSTALL_CACHE_DIR="$tmp/bun-cache" "$bun" install --frozen-lockfile --production \
+    --linker hoisted --no-progress)
   bls="$(bin_entry bash-language-server bash-language-server "$node")"
   dsh="$(bin_entry dsh @deepseek-ai/dsh "$node")"
   bats="$(readlink -f "$prefix/npm/node_modules/bats/bin/bats")"

@@ -193,7 +193,7 @@ export async function diffLines(
     .reduce((sum, [add, del]) => sum + (Number(add) || 0) + (Number(del) || 0), 0)
 }
 
-// A real directory: the agent layer installs with pnpm's hoisted linker, since OpenCode cannot watch symlinked plugin dirs.
+// A real directory: the agent layer installs with Bun's hoisted linker, since OpenCode cannot watch symlinked plugin dirs.
 export const DCP_PACKAGE = '/opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp'
 
 export const DCP_CONFIG = {
