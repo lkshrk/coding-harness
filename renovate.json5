@@ -80,11 +80,6 @@
       matchPackageNames: ['bun', 'oven-sh/bun', '@types/bun'],
     },
     {
-      description: 'pnpm: the Feature mise pins (aqua package pnpm/pnpm) and the npm tools packageManager move together',
-      groupName: 'pnpm',
-      matchPackageNames: ['pnpm', 'pnpm/pnpm'],
-    },
-    {
       description: 'Biome: Feature pin, workspace dependency and biome.json schema move together',
       groupName: 'biome',
       matchPackageNames: ['@biomejs/biome', 'biomejs/biome'],
