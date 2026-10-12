@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BaseCommit, LinearComment } from '../ports'
-import { findingComment, type ReviewFinding } from '../stages/gates/review'
+import { findingComment, REACTION_LEGEND, type ReviewFinding } from '../stages/gates/review'
 import {
   changesLines,
   keepsExisting,
@@ -332,6 +332,155 @@ describe('review labeller', () => {
       message: 'fix: b was wrong',
       label: 'missed',
       source: 'fix-commit',
+    })
+  })
+
+  describe('missed bugs', () => {
+    const merge = (s: ReturnType<typeof setup>) =>
+      s.h.sup.log.append({
+        type: 'MERGED',
+        issue: 'FOR-1',
+        run: s.run.id,
+        data: { url: 'https://github.test/pr/1', branch: 'ns/FOR-1-1' },
+      })
+    const possible = async (s: ReturnType<typeof setup>) =>
+      (await s.h.linear.comments('FOR-1')).filter((c) => c.body.startsWith('Possible missed bug'))
+    const after = (event: { ts: string }, ms = 1000) => new Date(Date.parse(event.ts) + ms).toISOString()
+
+    test('a nightshift attempt commit on the same issue is never labelled missed', async () => {
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
+      const { event } = await s.review([], 'pass')
+      merge(s)
+      s.commits.push({
+        sha: 'f1',
+        at: after(event),
+        subject: 'fix(supervisor): keep the commits of runs',
+        author: 'nightshift',
+        patch: PATCH('src/b.ts', 5, 1),
+      })
+      await s.h.sup.start()
+      await s.label()
+      expect(s.example(1)).toBeUndefined()
+      expect((await possible(s)).map((c) => c.body.split('\n')[0])).toEqual([
+        'Possible missed bug: fix(supervisor): keep the commits of runs (f1)',
+      ])
+    })
+
+    test('a fix commit naming another issue is never labelled missed', async () => {
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
+      const { event } = await s.review([], 'pass')
+      merge(s)
+      s.commits.push({
+        sha: 'f1',
+        at: after(event),
+        subject: 'fix(ROU-676): other work',
+        patch: PATCH('src/b.ts', 5, 1),
+      })
+      await s.h.sup.start()
+      await s.label()
+      expect(s.example(1)).toBeUndefined()
+      expect(await possible(s)).toHaveLength(1)
+    })
+
+    test('added lines are mapped through commits between the run head and the fix', async () => {
+      const shift = [
+        'diff --git a/src/b.ts b/src/b.ts',
+        '--- a/src/b.ts',
+        '+++ b/src/b.ts',
+        '@@ -1,0 +2,20 @@',
+        ...Array.from({ length: 20 }, () => '+ins'),
+        '',
+      ].join('\n')
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1), between: { 'f1^': shift } })
+      const { event } = await s.review([], 'pass')
+      merge(s)
+      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 25, 1) })
+      await s.h.sup.start()
+      await s.label()
+      expect(s.example(1)).toMatchObject({
+        file: 'src/b.ts',
+        lines: '25',
+        label: 'missed',
+        source: 'fix-commit',
+      })
+    })
+
+    test('a failed review never produces a missed example', async () => {
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
+      const { event } = await s.review([], 'fail')
+      merge(s)
+      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 5, 1) })
+      await s.h.sup.start()
+      await s.label()
+      expect(s.example(1)).toBeUndefined()
+      expect(await possible(s)).toEqual([])
+    })
+
+    test('a fix before the merge is not labelled missed', async () => {
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
+      const { event } = await s.review([], 'pass')
+      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 5, 1) })
+      s.h.advance(60_000)
+      merge(s)
+      await s.h.sup.start()
+      await s.label()
+      expect(s.example(1)).toBeUndefined()
+    })
+
+    test('a near-match is posted once and labelled only after an owner reaction', async () => {
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
+      const { event } = await s.review([], 'pass')
+      merge(s)
+      s.commits.push({
+        sha: 'f1',
+        at: after(event),
+        subject: 'fix: b elsewhere',
+        patch: PATCH('src/b.ts', 40, 1),
+      })
+      await s.h.sup.start()
+      await s.label()
+      await s.label()
+      const posts = await possible(s)
+      expect(posts).toHaveLength(1)
+      expect(posts[0]?.body.startsWith('Possible missed bug: fix: b elsewhere (f1)')).toBe(true)
+      expect(posts[0]?.body.endsWith(REACTION_LEGEND)).toBe(true)
+      expect(existsSync(join(dir, 'reviewer'))).toBe(false)
+
+      s.h.linear.react('FOR-1', posts[0]?.id as string, '+1', { user: 'u-other' })
+      await s.label()
+      expect(existsSync(join(dir, 'reviewer'))).toBe(false)
+
+      s.h.linear.react('FOR-1', posts[0]?.id as string, '-1')
+      await s.label()
+      expect(existsSync(join(dir, 'reviewer'))).toBe(false)
+
+      s.h.linear.react('FOR-1', posts[0]?.id as string, '+1')
+      await s.label()
+      const written = readdirSync(join(dir, 'reviewer')).map((f) =>
+        JSON.parse(readFileSync(join(dir, 'reviewer', f), 'utf8')),
+      )
+      expect(written).toEqual([
+        expect.objectContaining({
+          file: 'src/b.ts',
+          lines: '40',
+          message: 'fix: b elsewhere',
+          label: 'missed',
+          source: 'reaction',
+        }),
+      ])
+    })
+
+    test('an automatic example already quarantined is not written again', async () => {
+      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
+      const { event } = await s.review([], 'pass')
+      merge(s)
+      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 5, 1) })
+      const q = join(dir, 'reviewer-autolabel-quarantine')
+      mkdirSync(q, { recursive: true })
+      writeFileSync(join(q, `${s.run.id}-1.json`), '{}')
+      await s.h.sup.start()
+      await s.label()
+      expect(s.example(1)).toBeUndefined()
     })
   })
 

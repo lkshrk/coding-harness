@@ -40,19 +40,42 @@ export function gitRepos(
         '--reverse',
         '--no-merges',
         `--since=${since}`,
-        '--format=%x1e%H%x1f%cI%x1f%s%x1f',
+        '--format=%x1e%H%x1f%cI%x1f%s%x1f%an%x1f',
         '-p',
         '-U0',
         '--no-renames',
         '--no-color',
         `${repo.remote}/${repo.base}`,
       )
+      const branches = new Map<string, string>()
+      const merges = git(
+        'log',
+        '--merges',
+        `--since=${since}`,
+        '--format=%H%x1f%s',
+        `${repo.remote}/${repo.base}`,
+      )
+      for (const line of merges.split('\n').filter(Boolean)) {
+        const [merge = '', subject = ''] = line.split('\x1f')
+        const branch = /^Merge pull request #\d+ from [^/\s]+\/(\S+)/.exec(subject)?.[1]
+        if (!branch) continue
+        for (const sha of git('rev-list', `${merge}^1..${merge}^2`).split('\n').filter(Boolean))
+          branches.set(sha, branch)
+      }
       return log
         .split('\x1e')
         .filter(Boolean)
         .map((entry) => {
-          const [sha = '', at = '', subject = '', patch = ''] = entry.split('\x1f')
-          return { sha, at: new Date(at).toISOString(), subject, patch: patch.trim() }
+          const [sha = '', at = '', subject = '', author = '', patch = ''] = entry.split('\x1f')
+          const branch = branches.get(sha)
+          return {
+            sha,
+            at: new Date(at).toISOString(),
+            subject,
+            author,
+            ...(branch ? { branch } : {}),
+            patch: patch.trim(),
+          }
         })
     },
     async diff(repository, base, head) {
