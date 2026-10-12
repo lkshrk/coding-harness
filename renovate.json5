@@ -64,6 +64,12 @@
       matchDepNames: ['jdx/mise'],
     },
     {
+      description: 'Go stack: golangci-lint refuses code targeting a newer Go than it was built with, so go, golangci-lint and gopls move together',
+      groupName: 'go stack',
+      matchFileNames: ['features/stack-go/**'],
+      matchDepNames: ['go', 'golangci/golangci-lint', 'aqua:golangci/golangci-lint', 'golang.org/x/tools/gopls', 'go:golang.org/x/tools/gopls'],
+    },
+    {
       description: 'uv: Feature pins (github-releases) and environment base images (docker) move together',
       groupName: 'uv',
       matchPackageNames: ['astral-sh/uv', 'github:astral-sh/uv', 'ghcr.io/astral-sh/uv'],
