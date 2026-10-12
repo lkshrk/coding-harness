@@ -210,17 +210,17 @@ checksum = "sha256:bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9
 url = "https://github.com/bats-core/bats-core/archive/refs/tags/v1.14.0.tar.gz"
 
 [[tools."http:opencode"]]
-version = "2.0.26"
+version = "2.0.27"
 backend = "http:opencode"
-specifiers = ["2.0.26"]
+specifiers = ["2.0.27"]
 
 [tools."http:opencode"."platforms.linux-arm64"]
-checksum = "sha256:1508f9cc9a519b2aac93439d171a0be554ffe5a2cf433405010ec664663a7eae"
-url = "https://opencode.ai/files/bin/2.0.26/opencode-linux-arm64.tar.gz"
+checksum = "sha256:28db459fa99c3582b968e39ceccc44254c152492056d40cd2bc548669d68aab7"
+url = "https://opencode.ai/files/bin/2.0.27/opencode-linux-arm64.tar.gz"
 
 [tools."http:opencode"."platforms.linux-x64"]
-checksum = "sha256:0e682946fea509299f1515dfb6261aa5cf8d1d2e5ccdc833470523acb7222106"
-url = "https://opencode.ai/files/bin/2.0.26/opencode-linux-x64-baseline.tar.gz"
+checksum = "sha256:4bc0688d05941ede36afa12c94b814e3914dcc9159edf6d1953c98b103731bb9"
+url = "https://opencode.ai/files/bin/2.0.27/opencode-linux-x64-baseline.tar.gz"
 
 [[tools.node]]
 version = "24.21.0"
