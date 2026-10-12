@@ -150,22 +150,29 @@ export class RunLifecycle {
       return
     }
     pending?.resolve()
+    await this.handleFinish(run, event, finish)
+  }
+
+  // Also replayed by recovery for a finish recorded before a restart, so every step tolerates having run.
+  async handleFinish(run: Run, event: Event, finish: FinishLike): Promise<void> {
+    const runId = run.id
     if (run.agent === INGEST_AGENT) {
       await this.flow.ingestFinished(run, event, finish)
       return
     }
     if ((finish.status === 'DONE' || finish.status === 'DONE_WITH_CONCERNS') && this.sizeExplore(run)) {
-      await this.explored(run, event, payload)
+      await this.explored(run, event, finish)
       return
     }
     if (finish.status === 'DONE' || finish.status === 'DONE_WITH_CONCERNS') {
-      const gating = this.rt.runs.transition(runId, 'gating', event)
+      const current = this.rt.requireRun(runId)
+      const gating = current.state === 'gating' ? current : this.rt.runs.transition(runId, 'gating', event)
       await this.flow.enterVerification(run.issue)
       this.flow.schedule(gating)
       return
     }
     await this.preserveHead(runId, String(finish.status))
-    await this.end(runId, 'failed', event)
+    if (!isTerminal(this.rt.requireRun(runId).state)) await this.end(runId, 'failed', event)
     await this.releaseSandbox(runId)
     this.flow.releaseLease(run.issue)
     const needs = finish.blocker?.needs
@@ -183,9 +190,9 @@ export class RunLifecycle {
 
   // The explorer only maps the code; its reading list feeds the implementer run that follows.
   async explored(run: Run, event: Event, payload: unknown): Promise<void> {
-    this.rt.runs.transition(run.id, 'gating', event)
-    this.rt.runs.transition(run.id, 'reviewing', event)
-    await this.end(run.id, 'done', event)
+    if (this.rt.requireRun(run.id).state === 'running') this.rt.runs.transition(run.id, 'gating', event)
+    if (this.rt.requireRun(run.id).state === 'gating') this.rt.runs.transition(run.id, 'reviewing', event)
+    if (!isTerminal(this.rt.requireRun(run.id).state)) await this.end(run.id, 'done', event)
     await this.releaseSandbox(run.id)
     this.flow.releaseLease(run.issue)
     const estimate = (payload as { report?: { size_estimate?: unknown } }).report?.size_estimate

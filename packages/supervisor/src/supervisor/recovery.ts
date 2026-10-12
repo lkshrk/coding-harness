@@ -1,6 +1,24 @@
 import { decide, VERIFICATION, viewIssue } from '../policy/stages'
-import type { Run } from '../state/runs'
-import { INGEST_AGENT, type RecoveryReport, type RunFlow, type SupervisorRuntime } from './runtime'
+import type { EventType } from '../state/event-schema'
+import type { Event } from '../state/events'
+import { isTerminal, type Run } from '../state/runs'
+import {
+  type FinishLike,
+  INGEST_AGENT,
+  type RecoveryReport,
+  type RunFlow,
+  type SupervisorRuntime,
+} from './runtime'
+
+const FINISH_HANDLED: EventType[] = [
+  'QUESTION_ASKED',
+  'FAILURE_CLASSIFIED',
+  'STAGE_ENTERED',
+  'GATE_PASSED',
+  'GATE_FAILED',
+  'SIZE_CHECKED',
+  'DISPATCHED',
+]
 
 export class Recovery {
   constructor(
@@ -46,6 +64,13 @@ export class Recovery {
     }
 
     for (const issue of lost) {
+      const run = this.rt.runs.forIssue(issue.identifier).at(-1)
+      const finish = run && isTerminal(run.state) ? this.pendingFinish(run) : undefined
+      if (run && finish) {
+        await this.flow.handleFinish(run, finish, run.finish as FinishLike)
+        report.resumed.push(run.id)
+        continue
+      }
       await this.rt.postOnce(
         issue.identifier,
         `lost-${issue.updatedAt}`,
@@ -80,6 +105,13 @@ export class Recovery {
       report.resumed.push(run.id)
       return
     }
+    const finish = this.pendingFinish(run)
+    if (finish && (run.state === 'running' || run.state === 'gating')) {
+      this.flow.takeLease(run)
+      await this.flow.handleFinish(run, finish, run.finish as FinishLike)
+      report.resumed.push(run.id)
+      return
+    }
     if (run.state === 'gating' || run.state === 'reviewing') {
       this.flow.takeLease(run)
       this.flow.schedule(run)
@@ -94,6 +126,15 @@ export class Recovery {
     }
     await this.flow.workerFailed(run.id, 'supervisor_restart')
     report.failed.push(run.id)
+  }
+
+  // A finish recorded before a restart whose handling (question, remediation, verification) never happened.
+  pendingFinish(run: Run): Event | undefined {
+    if (run.agent === INGEST_AGENT || run.finish === null) return undefined
+    const finished = this.rt.log.since(null, { run: run.id, types: ['WORKER_FINISHED'] }).at(-1)
+    if (!finished) return undefined
+    const handled = this.rt.log.since(finished.id, { issue: run.issue, types: FINISH_HANDLED })
+    return handled.length ? undefined : finished
   }
 
   async alive(run: Run): Promise<boolean> {

@@ -68,6 +68,7 @@ export function runFlow(h: FlowHost): RunFlow {
     startIngest: (view) => h.modules().ingest.startIngest(view),
     ingestFinished: (run, event, finish) => h.modules().ingest.ingestFinished(run, event, finish),
     ingestRunFailed: (runId, reason, cause) => h.modules().ingest.ingestRunFailed(runId, reason, cause),
+    handleFinish: (run, event, finish) => h.modules().lifecycle.handleFinish(run, event, finish),
     workerFailed: (runId, reason, detail) => h.modules().lifecycle.workerFailed(runId, reason, detail),
     stopRun: (runId, reason, opts) => h.modules().lifecycle.stopRun(runId, reason, opts),
     end: (runId, to, cause) => h.modules().lifecycle.end(runId, to, cause),

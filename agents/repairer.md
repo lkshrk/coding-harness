@@ -10,6 +10,14 @@ permission:
   list: allow
   edit: allow
   todowrite: allow
+  execute: allow
+  "gateway_*": deny
+  "gateway_context7-resolve-library-id": allow
+  "gateway_context7-query-docs": allow
+  "gateway_searxng-searxng_web_search": allow
+  "gateway_searxng-searxng_search_suggestions": allow
+  "gateway_searxng-searxng_instance_info": allow
+  "gateway_searxng-web_url_read": allow
   bash:
     "*": allow
     "git push*": deny
@@ -22,7 +30,7 @@ nightshift:
   skills: [surgical-patch, graph-query]
   output: schemas/repairer.json
   budget:
-    prompt_words: 600
+    prompt_words: 640
     input_tokens: 16000
   grace_turns: 1
 ---
@@ -54,7 +62,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 
 1. Load the `surgical-patch` skill. From `HISTORY` list each failing gate, `BLOCKER` and thread with its first real error line.
 2. If `git log` lacks the previous diff after a rebase, reapply it first.
-3. Per failure: record the red reproducing run, rule out falsifiable hypotheses cheapest first, fix the cause, rerun until green.
+3. Per failure: record the red reproducing run, rule out falsifiable hypotheses cheapest first, fix the cause, rerun until green. Look up library APIs with `tools.gateway["context7-query-docs"]` through `execute` before guessing; search or read web pages only when the docs and the checkout do not answer.
 4. Run every `VERIFY` command, read `git diff`, remove debug output, then commit.
 5. Call `finish`; `evidence` lists each reproducing check failing before the repair and passing after.
 

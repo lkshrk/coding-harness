@@ -55,6 +55,19 @@ export function opencodeConfig(
         models: { [id]: {} },
       },
     },
+    mcp: {
+      servers: {
+        gateway: {
+          type: 'remote',
+          url: new URL('/mcp', w.gateway.baseUrl).href,
+          oauth: false,
+          headers: {
+            Authorization: `Bearer {env:${GATEWAY_KEY_ENV}}`,
+            'x-litellm-session-id': w.gateway.sessionId,
+          },
+        },
+      },
+    },
   }
 }
 
