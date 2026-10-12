@@ -68,6 +68,14 @@ export function wrap(text: string, width: number): string[] {
   return out
 }
 
+const ESCAPES =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences is the point
+  /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*\x1b\\|\x1b[@-Z\\-_]|[\x00-\x08\x0b-\x1f\x7f]/g
+
+export function stripEscapes(text: string): string {
+  return text.replace(ESCAPES, '')
+}
+
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text
 }
@@ -234,7 +242,7 @@ export class SessionRenderer {
   }
 
   private shell(text: string, metadata: Record<string, unknown>, took: string): string[] {
-    const body = text.replace(/\n+$/, '')
+    const body = (this.color ? text : stripEscapes(text)).replace(/\n+$/, '')
     const lines = body === '' ? [] : body.split('\n').map((l) => clip(l, this.width - 4))
     const shown =
       lines.length > SHELL_EDGE * 2 + 1

@@ -155,6 +155,20 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
     ])
   })
 
+  test('without colour, escape codes in shell output are stripped', () => {
+    const r = new SessionRenderer('s1', plain)
+    const ev = (type: string, data: Record<string, unknown>) => ({
+      type,
+      data: { sessionID: 's1', id: 'c', ...data },
+    })
+    r.feed(ev('session.tool.input.started', { name: 'shell' }))
+    r.feed(ev('session.tool.called', { input: { command: 'bun test' } }))
+    const content = '\x1b[32m✓ pass\x1b[0m\n\x1b]8;;http://x\x07link\x1b]8;;\x07\n\x1b[2K\x1b[1Gdone\r\n'
+    const lines = r.feed(ev('session.tool.success', { content, metadata: { exit: 0 } }))
+    expect(lines).toEqual(['  │ ✓ pass', '  │ link', '  │ done', '  ✓ exit 0 (0ms)'])
+    expect(lines.join('\n')).not.toContain('\x1b')
+  })
+
   test('ignores other sessions and streams text deltas line by line', () => {
     const r = new SessionRenderer('s1', plain)
     const delta = (d: string) => ({ type: 'session.text.delta', data: { sessionID: 's1', delta: d } })
