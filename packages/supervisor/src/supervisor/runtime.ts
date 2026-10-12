@@ -51,6 +51,7 @@ export type SupervisorDeps = {
   syncVault?: () => Promise<void>
   secretsLocked?: () => Promise<boolean>
   gatewayProbe?: () => Promise<{ ok: boolean; reason: string }>
+  evalDir?: string
   now?: () => Date
   instanceId?: string
   leaseTtlMs?: number

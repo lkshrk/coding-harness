@@ -244,6 +244,17 @@ export function reviewComment(review: ReviewOutput, model: string): string {
   return [head, '', ...lines].join('\n')
 }
 
+export const REACTION_LEGEND = 'React: 👍 real · 🤏 minor · 👎 wrong'
+
+export function findingComment(f: ReviewFinding, marker: string): string {
+  const where = f.lines ? `${f.file}:${f.lines}` : f.file
+  return [
+    `${findingLabel(f)} \`${where}\` (confidence ${f.confidence}): ${f.message}\nEvidence: ${f.evidence.replace(/\n/g, ' ')}`,
+    `<!-- nightshift:${marker} -->`,
+    REACTION_LEGEND,
+  ].join('\n\n')
+}
+
 export function blockerSummary(review: ReviewOutput): string {
   return review.findings
     .filter((f) => f.severity === 'BLOCKER')

@@ -21,6 +21,7 @@ import { pullRequestBody } from '../integration/body'
 import {
   downgradeBlockers,
   numberDiff,
+  REACTION_LEGEND,
   type ReviewFinding,
   type ReviewOutput,
   reviewInput,
@@ -249,6 +250,11 @@ describe('review step', () => {
     )
     expect(comments).toHaveLength(1)
     expect(comments[0]?.body).toContain('**SUGGESTION** `src/a.test.ts:3`')
+    const replies = (await h.linear.comments('FOR-1')).filter((c) => c.parentId === comments[0]?.id)
+    expect(replies.map((c) => c.body)).toEqual([
+      `**SUGGESTION** \`src/a.test.ts:3\` (confidence 0.9): name it better\nEvidence: +expect(a).toBeDefined()\n\n<!-- nightshift:${received[0]?.id}-1 -->\n\n${REACTION_LEGEND}`,
+    ])
+    expect(replies[0]?.body.endsWith('React: 👍 real · 🤏 minor · 👎 wrong')).toBe(true)
     expect(h.sup.leases.get('FOR-1')).toBeUndefined()
     expect(h.sup.forcedManual('FOR-1')).toBeNull()
   })

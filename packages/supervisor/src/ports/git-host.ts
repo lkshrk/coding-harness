@@ -84,10 +84,14 @@ export interface GitHost {
   resolveThread(pr: PullRequest, threadId: string): Promise<void>
 }
 
+export type BaseCommit = { sha: string; at: string; subject: string; patch: string }
+
 export interface RepoInspector {
   baseSha(repository: string): Promise<string>
   fetchPullRequest?(repository: string, pr: Pick<PullRequest, 'number' | 'branch'>): Promise<string>
   conflictingFiles?(repository: string, base: string, head: string): Promise<string[]>
+  baseCommits?(repository: string, since: string): Promise<BaseCommit[]>
+  diff?(repository: string, base: string, head: string): Promise<string>
 }
 
 // One repair round per base sha: `run` is the run the round continues from, `head` the PR head it saw.

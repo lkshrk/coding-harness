@@ -8,7 +8,13 @@ import {
 } from '../policy/stages'
 import type { GateResult } from '../ports'
 import { type GateEventData, gateComment, gateEventData } from '../stages/gates/report'
-import { blockerSummary, downgradeBlockers, type ReviewOutcome, reviewComment } from '../stages/gates/review'
+import {
+  blockerSummary,
+  downgradeBlockers,
+  findingComment,
+  type ReviewOutcome,
+  reviewComment,
+} from '../stages/gates/review'
 import type { Event } from '../state/events'
 import type { RunFlow, SupervisorRuntime } from './runtime'
 
@@ -132,7 +138,13 @@ export class Verification {
       run: run.id,
       data: { verdict: review.verdict, model, findings: review.findings },
     })
-    await this.rt.postOnce(run.issue, event.id, reviewComment(review, model))
+    const head = await this.rt.postOnce(run.issue, event.id, reviewComment(review, model))
+    const thread = await this.rt.deps.linear.comments(run.issue)
+    for (const [i, f] of review.findings.entries()) {
+      const marker = `${event.id}-${i + 1}`
+      if (thread.some((c) => c.body.includes(`<!-- nightshift:${marker} -->`))) continue
+      await this.rt.deps.linear.comment(run.issue, findingComment(f, marker), { parentId: head.id })
+    }
     if (review.verdict === 'pass') {
       await this.reviewPassed(runId, event)
       return

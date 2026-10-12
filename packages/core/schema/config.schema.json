@@ -151,6 +151,11 @@
             "labels": ["autopilot"]
           }
         },
+        "owner": {
+          "description": "Linear user id whose reactions label review findings; default: the user nightshift authenticates as",
+          "type": "string",
+          "minLength": 1
+        },
         "exclude_labels": {
           "type": "array",
           "items": {

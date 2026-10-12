@@ -48,6 +48,8 @@ export type LinearComment = {
   createdAt: string
   parentId: string | null
   by: string
+  // `user` is the reacting Linear user id; `me` marks reactions by the authenticated user.
+  reactions?: { emoji: string; at: string; user?: string; me?: true }[]
 }
 
 export type LinearChange = { actor: string; app: boolean; at: string; status?: string; labels?: string[] }
