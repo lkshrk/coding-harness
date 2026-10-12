@@ -38,27 +38,33 @@ export async function runSupervisor(
   let ticking: Promise<unknown> | undefined
   let started = 0
   let stallReported = false
+  const reportStall = (force: boolean) => {
+    const elapsed = now() - started
+    if (stallReported || (!force && elapsed <= stallMs)) return
+    stallReported = true
+    const seconds = Math.round(elapsed / 1000)
+    console.error(`supervisor tick: still running after ${seconds} s`)
+    try {
+      sup.log.append({ type: 'TICK_STALLED', data: { elapsed_s: seconds } })
+    } catch (e) {
+      report('stall report')(e)
+    }
+  }
   const tick = () => {
     if (ticking) {
-      const elapsed = now() - started
-      if (!stallReported && elapsed > stallMs) {
-        stallReported = true
-        const seconds = Math.round(elapsed / 1000)
-        console.error(`supervisor tick: still running after ${seconds} s`)
-        try {
-          sup.log.append({ type: 'TICK_STALLED', data: { elapsed_s: seconds } })
-        } catch (e) {
-          report('stall report')(e)
-        }
-      }
+      reportStall(false)
       return
     }
     started = now()
     stallReported = false
+    const watchdog = setTimeout(() => reportStall(true), stallMs)
+    watchdog.unref?.()
     ticking = sup
       .tick()
       .catch(report('tick'))
       .finally(() => {
+        clearTimeout(watchdog)
+        reportStall(false)
         ticking = undefined
       })
   }
