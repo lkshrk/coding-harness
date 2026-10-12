@@ -46,7 +46,13 @@ export const LIFECYCLE = [
 
 type Stream = { stop(): void; done: Promise<void> }
 
-function streamSession(ctx: Ctx, run: Run, out: (line: string) => void, reasoning: boolean): Stream | null {
+function streamSession(
+  ctx: Ctx,
+  run: Run,
+  out: (line: string) => void,
+  reasoning: boolean,
+  width: () => number,
+): Stream | null {
   const controller = new AbortController()
   const done = (async () => {
     let info: Awaited<ReturnType<typeof attachInfo>>
@@ -59,7 +65,7 @@ function streamSession(ctx: Ctx, run: Run, out: (line: string) => void, reasonin
       }
       throw e
     }
-    const renderer = new SessionRenderer(info.session, paint(ctx.color), terminalWidth(), { reasoning })
+    const renderer = new SessionRenderer(info.session, paint(ctx.color), width, { reasoning })
     const client = new OpenCodeClient(info.url, info.password, ctx.fetch)
     try {
       for await (const raw of client.events(controller.signal))
@@ -86,6 +92,7 @@ export async function tailRun(
   after: string | null,
   reasoning: boolean,
   out: (line: string) => void = (line) => ctx.io.out(line),
+  width: () => number = terminalWidth,
 ): Promise<string | null> {
   const p = paint(ctx.color)
   let session: Stream | null = null
@@ -110,7 +117,7 @@ export async function tailRun(
   }
   const startSession = (db: Db) => {
     const current = runStore(db).get(run.id)
-    if (!session && current?.state === 'running') session = streamSession(ctx, current, out, reasoning)
+    if (!session && current?.state === 'running') session = streamSession(ctx, current, out, reasoning, width)
   }
   const ended = (db: Db) => {
     startSession(db)
