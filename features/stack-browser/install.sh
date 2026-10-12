@@ -37,28 +37,27 @@ find_node() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# pnpm stays off PATH: it installs only the stack's own tools.
+# bun stays off PATH: it installs only the stack's own tools.
 mise() {
   (cd "$here" && MISE_DATA_DIR=/opt/nightshift/mise/data MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config" \
     MISE_STATE_DIR="$tmp/mise-state" MISE_TRUSTED_CONFIG_PATHS="$here" MISE_YES=1 MISE_LOCKED=1 \
     /opt/nightshift/mise/bin/mise "$@")
 }
 
-pnpm_run() {
-  PATH="$(dirname "$node"):$PATH" "$pnpm" "$@" --dir "$prefix" --store-dir "$tmp/pnpm-store" \
-    --config.cache-dir="$tmp/pnpm-cache" --config.update-notifier=false --reporter=append-only
+bun_run() {
+  (cd "$prefix" && BUN_INSTALL_CACHE_DIR="$tmp/bun-cache" "$bun" "$@" --linker hoisted --no-progress)
 }
 
 node="$(find_node)"
 mise install --locked
-pnpm="$(mise which pnpm)"
+bun="$(mise which bun)"
 mkdir -p "$prefix" "$browsers"
-cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$prefix/"
-pnpm_run install --frozen-lockfile --prod
+cp "$here/npm/package.json" "$here/npm/bun.lock" "$prefix/"
+bun_run install --frozen-lockfile --production
 locked_version="$("$node" -p 'require(process.argv[1]).dependencies.playwright' "$prefix/package.json")"
 # The browser build must match the repository's Playwright; playwright pins playwright-core exactly.
 if [ -n "$version" ] && [ "$version" != "$locked_version" ]; then
-  pnpm_run add --save-exact --prod "playwright@$version"
+  bun_run add --exact "playwright@$version"
 fi
 
 cat >"$bin/playwright" <<WRAP
