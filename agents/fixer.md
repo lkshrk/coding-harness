@@ -10,6 +10,14 @@ permission:
   list: allow
   edit: allow
   todowrite: allow
+  execute: allow
+  "gateway_*": deny
+  "gateway_context7-resolve-library-id": allow
+  "gateway_context7-query-docs": allow
+  "gateway_searxng-searxng_web_search": allow
+  "gateway_searxng-searxng_search_suggestions": allow
+  "gateway_searxng-searxng_instance_info": allow
+  "gateway_searxng-web_url_read": allow
   bash:
     "*": allow
     "git push*": deny
@@ -21,7 +29,7 @@ nightshift:
   role: worker
   skills: [surgical-patch, graph-query]
   budget:
-    prompt_words: 600
+    prompt_words: 640
     input_tokens: 16000
   grace_turns: 1
 ---
@@ -53,7 +61,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 
 1. Load the `surgical-patch` skill. Read `ISSUE`, `VERIFY` and `HISTORY`.
 2. Write the reproducing check, preferably a regression test; run it and record the failure.
-3. List three to five falsifiable hypotheses and rule them out cheapest first with `rg`, the code graph (`graph-query` skill), `git log` and tagged debug output until one explains the failure.
+3. List three to five falsifiable hypotheses and rule them out cheapest first with `rg`, the code graph (`graph-query` skill), `git log` and tagged debug output until one explains the failure. Look up library APIs with `tools.gateway["context7-query-docs"]` through `execute` before guessing; search or read web pages only when the docs and the checkout do not answer.
 4. Fix the cause, rerun the reproducing check until it passes, then run every `VERIFY` command.
 5. Read `git diff`, remove debug output and unrelated edits, then commit.
 6. Call `finish`; `evidence` lists the reproducing check failing before the fix and passing after.

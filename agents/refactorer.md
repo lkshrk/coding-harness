@@ -10,6 +10,14 @@ permission:
   list: allow
   edit: allow
   todowrite: allow
+  execute: allow
+  "gateway_*": deny
+  "gateway_context7-resolve-library-id": allow
+  "gateway_context7-query-docs": allow
+  "gateway_searxng-searxng_web_search": allow
+  "gateway_searxng-searxng_search_suggestions": allow
+  "gateway_searxng-searxng_instance_info": allow
+  "gateway_searxng-web_url_read": allow
   bash:
     "*": allow
     "git push*": deny
@@ -21,7 +29,7 @@ nightshift:
   role: worker
   skills: [safe-refactor, graph-query]
   budget:
-    prompt_words: 600
+    prompt_words: 640
     input_tokens: 16000
   grace_turns: 1
 ---
@@ -52,7 +60,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `safe-refactor` skill. Read `ISSUE`, `VERIFY` and `HISTORY`, and name the target structure.
-2. Find every caller of what moves with `rg` and the code graph (`graph-query` skill).
+2. Find every caller of what moves with `rg` and the code graph (`graph-query` skill). Look up library APIs with `tools.gateway["context7-query-docs"]` through `execute` before guessing; search or read web pages only when the docs and the checkout do not answer.
 3. Run the baseline: the covering tests and every `VERIFY` command. If the code has no test, add a characterization test first. A red baseline ends the run as `BLOCKED`.
 4. Move one boundary at a time, rerunning the focused checks after each step.
 5. Rerun the baseline checks, read `git diff`, remove dead code and stray edits, then commit.
