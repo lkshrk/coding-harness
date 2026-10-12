@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
 import { loadConfig } from '../config/loader'
@@ -29,6 +29,11 @@ const ctx: RenderContext = {
 
 const LEAD_SKILLS = ['discover', 'design', 'decompose', 'status', 'replan', 'intake']
 const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
+const GATEWAY_WEB_TOOLS = [
+  'gateway_searxng-searxng_web_search',
+  'gateway_searxng-searxng_search_suggestions',
+  'gateway_searxng-web_url_read',
+]
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,
   externalSkills: ['wiki-ingest'],
@@ -171,6 +176,15 @@ describe('lead writes', () => {
     )
     expect(writes).toEqual([])
   })
+
+  test('the lead reads the web only through the gateway MCP tools', () => {
+    const { permission } = rendered(agents.get('lead') as AgentDef).frontmatter
+    for (const tool of GATEWAY_WEB_TOOLS) expect(permission[tool]).toBe('allow')
+    expect(permission.webfetch).toBe('deny')
+    expect(permission.execute).toBe('allow')
+    expect(permission['gateway_*']).toBe('deny')
+    expect(Object.keys(permission.bash).filter((p) => p.includes('search.sh'))).toEqual([])
+  })
 })
 
 describe('CLI skills', () => {
@@ -196,10 +210,11 @@ describe('CLI skills', () => {
     expect(fm.compatibility).toContain('2.6.0')
   })
 
-  test('search reads the searxng URL from the environment', () => {
-    const script = readFileSync(join(ROOT, 'skills/search/scripts/search.sh'), 'utf8')
-    expect(script).toContain('SEARXNG_URL')
-    expect(script).not.toMatch(/https?:\/\//)
+  test('search uses the gateway MCP tools instead of a script', () => {
+    const text = readFileSync(join(ROOT, 'skills/search/SKILL.md'), 'utf8')
+    for (const tool of GATEWAY_WEB_TOOLS) expect(text).toContain(`\`${tool}\``)
+    expect(existsSync(join(ROOT, 'skills/search/scripts/search.sh'))).toBe(false)
+    expect(text).not.toMatch(/https?:\/\//)
   })
 })
 

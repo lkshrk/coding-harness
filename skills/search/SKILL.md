@@ -1,21 +1,19 @@
 ---
 name: search
-description: Search the web through the user's searxng instance (JSON API) and get titles, URLs and snippets. Use when a design question needs outside facts — release notes, known bugs, standards, comparisons of tools — that neither the checkout nor library docs answer. Not for library API details (use the `ctx7` skill first), not for this repository's code, and not for fetching or crawling whole pages beyond the few results you cite.
+description: Search the web and read result pages through the gateway's SearXNG and page-reading MCP tools. Use when a design question needs outside facts — release notes, known bugs, standards, comparisons of tools — that neither the checkout nor library docs answer. Not for library API details (use the `ctx7` skill first), not for this repository's code, and not for crawling whole sites beyond the few results you cite.
 license: MIT
-compatibility: "bash, curl and jq; a searxng instance with the JSON format enabled, its base URL in the SEARXNG_URL environment variable."
+compatibility: "OpenCode with the LiteLLM gateway MCP server configured; tools gateway_searxng-searxng_web_search, gateway_searxng-searxng_search_suggestions and gateway_searxng-web_url_read."
 ---
 
 # Web search
 
-```sh
-<skill base directory>/scripts/search.sh "<query>" [count=8] [category=general]
-```
+Three gateway MCP tools, called through `execute` as `tools.gateway["<name>"]` (name without the `gateway_` prefix); no script, no address to configure:
 
-Always call the script by its absolute path; the shell permission matches only that form. It calls `$SEARXNG_URL/search?format=json` and prints, per result, the title, the URL and up to 300 characters of snippet.
+- `gateway_searxng-searxng_web_search`: run a query; returns titles, URLs and snippets. Pass a category such as `it` for software questions, `news` or `science` when they fit.
+- `gateway_searxng-searxng_search_suggestions`: related query terms when a search returns nothing useful.
+- `gateway_searxng-web_url_read`: read one result page as text.
 
-- Categories: `general`, `it`, `news`, `science`. Use `it` for software questions.
-- `SEARXNG_URL` unset: the script stops with a message; ask the user for the address instead of guessing one. Never write the address into a skill, issue or document.
-- `curl` fails (exit 22 or 28): the instance is down or rejects JSON; tell the user and continue without web results.
+A tool missing or failing means the gateway or its MCP server is down; tell the user and continue without web results. Never ask for or write down the search instance's address.
 
 ## Queries
 
@@ -26,8 +24,8 @@ Always call the script by its absolute path; the shell permission matches only t
 
 ## Using results
 
-- Snippets are leads, not facts. Open a result only when a decision depends on it (`webfetch` asks the user), and prefer primary sources: official docs, release notes, the project's issue tracker.
-- Cite the URL next to every claim you carry into a design Document or issue.
+- Snippets are leads, not facts. Read a result with `gateway_searxng-web_url_read` only when a decision depends on it, and prefer primary sources: official docs, release notes, the project's issue tracker.
+- Cite the URL next to every claim you carry into a design comment or issue.
 - Results older than the version the repository uses may be wrong; check dates.
 
 ## Rules
