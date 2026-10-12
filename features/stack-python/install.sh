@@ -5,7 +5,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 prefix=/opt/nightshift/stack-python
 bin=/usr/local/bin
-cache=/var/cache/nightshift
+deps=/var/cache/nightshift-deps
 python="${PYTHONVERSION:-}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -51,9 +51,9 @@ install_python() {
 }
 
 prepare_cache() {
-  mkdir -p "$cache/uv"
-  chmod 1777 "$cache"
-  chmod -R a+rwX "$cache/uv"
+  mkdir -p "$deps/uv"
+  chmod 1777 "$deps"
+  chmod -R a+rwX "$deps/uv"
 }
 
 ensure_packages

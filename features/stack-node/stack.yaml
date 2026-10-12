@@ -27,9 +27,9 @@ env:
   COREPACK_HOME: /var/cache/nightshift/corepack
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
   COREPACK_ENABLE_AUTO_PIN: "0"
-  npm_config_cache: /var/cache/nightshift/npm
-  npm_config_store_dir: /var/cache/nightshift/pnpm-store
-  pnpm_config_store_dir: /var/cache/nightshift/pnpm-store
-  npm_config_cache_dir: /var/cache/nightshift/pnpm-cache
-  pnpm_config_cache_dir: /var/cache/nightshift/pnpm-cache
+  npm_config_cache: /var/cache/nightshift-deps/npm
+  npm_config_store_dir: /var/cache/nightshift-deps/pnpm-store
+  pnpm_config_store_dir: /var/cache/nightshift-deps/pnpm-store
+  npm_config_cache_dir: /var/cache/nightshift-deps/pnpm-cache
+  pnpm_config_cache_dir: /var/cache/nightshift-deps/pnpm-cache
 nested_docker: false
