@@ -33,7 +33,13 @@ describe('poll and dispatch', () => {
       attempt: 1,
       state: 'starting',
     })
-    expect(h.types()).toEqual(['SUPERVISOR_STARTED', 'DISPATCHED', 'LEASE_ACQUIRED', 'RUN_STARTING'])
+    expect(h.types()).toEqual([
+      'SUPERVISOR_STARTED',
+      'SIZE_CHECKED',
+      'DISPATCHED',
+      'LEASE_ACQUIRED',
+      'RUN_STARTING',
+    ])
     expect(h.sup.leases.get('FOR-1')?.run).toBe(run.id)
     expect(h.linear.get('FOR-1')).toMatchObject({
       status: 'In Progress',

@@ -20,3 +20,6 @@ models:
   claude-sonnet: { model: claude-sonnet, family: anthropic, size_gb: 0, phases: [planning, implementation] }
   gpt-astra: { model: gpt-astra, family: openai, size_gb: 0, phases: [planning, implementation] }
   gpt-sol: { model: gpt-sol, family: openai, size_gb: 0, phases: [planning, implementation] }
+limits:
+  max_estimate: 5
+  max_files: 8

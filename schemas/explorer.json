@@ -52,6 +52,11 @@
     "open_questions": {
       "type": "array",
       "items": { "type": "string", "minLength": 1, "maxLength": 600 }
+    },
+    "size_estimate": {
+      "type": "number",
+      "minimum": 0,
+      "description": "estimate of the issue's size in Linear points, from what the exploration found"
     }
   }
 }

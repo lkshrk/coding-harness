@@ -48,6 +48,7 @@ export type EventType =
   | 'MESSAGE_SENT'
   | 'COVERAGE_CHANGED'
   | 'MISMATCH_RESOLVED'
+  | 'SIZE_CHECKED'
 /**
  * Linear identifier, e.g. XXX-42
  */

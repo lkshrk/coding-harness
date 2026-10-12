@@ -12,7 +12,7 @@ export const CONTROL_USAGE = {
   send: 'ns send <target> <message>',
   answer: 'ns answer <issue> <text>',
   stop: 'ns stop <target> [--reason R] [--now] [--yes]',
-  retry: 'ns retry <target> [--agent A] [--profile P] [--continue]',
+  retry: 'ns retry <target> [--agent A] [--profile P] [--continue] [--force-size]',
   ingest: 'ns ingest <issue>',
 }
 
@@ -94,7 +94,7 @@ export async function retry(ctx: Ctx, args: string[]): Promise<number> {
   const usage = CONTROL_USAGE.retry
   const { positionals, values, bools } = parseArgs(
     args,
-    { values: ['--agent', '--profile'], bools: ['--continue'] },
+    { values: ['--agent', '--profile'], bools: ['--continue', '--force-size'] },
     usage,
   )
   const target = requireArg(positionals[0], usage)
@@ -105,6 +105,7 @@ export async function retry(ctx: Ctx, args: string[]): Promise<number> {
     ...(agent ? { agent } : {}),
     ...(profile ? { profile } : {}),
     ...(bools.has('--continue') ? { continue: true } : {}),
+    ...(bools.has('--force-size') ? { force_size: true } : {}),
   })
   return done(ctx, res, `dispatched run ${res.run} for ${target}`)
 }

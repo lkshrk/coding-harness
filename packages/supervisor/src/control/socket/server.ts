@@ -120,10 +120,21 @@ export function controlHandler(
       return { run: (await sup.stopForUser(target, reason, by, now ? { now } : {})).id }
     },
     'POST /retry': async (req) => {
-      const { target, agent, profile, continue: cont } = await body<RetryRequest>(req, 'retryRequest')
+      const {
+        target,
+        agent,
+        profile,
+        continue: cont,
+        force_size,
+      } = await body<RetryRequest>(req, 'retryRequest')
       const run = await sup.retryRun(
         target,
-        { ...(agent ? { agent } : {}), ...(profile ? { profile } : {}), ...(cont ? { continue: true } : {}) },
+        {
+          ...(agent ? { agent } : {}),
+          ...(profile ? { profile } : {}),
+          ...(cont ? { continue: true } : {}),
+          ...(force_size ? { forceSize: true } : {}),
+        },
         by,
       )
       return { run: run.id }

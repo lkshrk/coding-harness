@@ -69,6 +69,10 @@ export interface RetryRequest {
    * continue from the commit of the latest attempt that has one, whatever its failure class
    */
   continue?: boolean
+  /**
+   * dispatch once even though the issue is over its profile's size limits
+   */
+  force_size?: boolean
 }
 export interface IngestRequest {
   issue: Issue

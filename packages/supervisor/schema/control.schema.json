@@ -102,6 +102,10 @@
         "continue": {
           "type": "boolean",
           "description": "continue from the commit of the latest attempt that has one, whatever its failure class"
+        },
+        "force_size": {
+          "type": "boolean",
+          "description": "dispatch once even though the issue is over its profile's size limits"
         }
       }
     },

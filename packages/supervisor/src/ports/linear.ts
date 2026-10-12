@@ -13,7 +13,7 @@ export type LifecycleState =
 export type MergeMode = 'manual' | 'auto' | 'feature-branch'
 
 export type Awaiting = {
-  kind: 'before' | 'after' | 'escalated' | 'split_proposed'
+  kind: 'before' | 'after' | 'escalated' | 'split_proposed' | 'too_large'
   stage: string
   reason?: string
 }
