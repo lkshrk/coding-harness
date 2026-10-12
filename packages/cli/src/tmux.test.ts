@@ -176,11 +176,11 @@ describe('ns watch', () => {
       const out: string[] = []
       const deps: CliDeps = { statePath: () => s.dbPath, which: () => null }
       const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(l) }
-      expect(await run(['watch', '--all'], io, deps)).toBe(1)
+      expect(await run(['watch', '--panes', '--all'], io, deps)).toBe(1)
       expect(out[0]).toContain('tmux is not installed')
       const execs: string[][] = []
       const calls: string[][] = []
-      const code = await run(['watch'], io, {
+      const code = await run(['watch', '--panes'], io, {
         ...deps,
         which: () => '/usr/bin/tmux',
         capture: (argv) => {

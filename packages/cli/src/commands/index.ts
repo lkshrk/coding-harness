@@ -34,7 +34,7 @@ export const COMMAND_HELP: Record<string, { usage: string; description: string }
   diff: { usage: DIFF_USAGE, description: 'Show a run’s code changes.' },
   tests: { usage: TESTS_USAGE, description: 'Show gate and review results.' },
   tail: { usage: TAIL_USAGE, description: 'Follow a worker’s live output.' },
-  watch: { usage: WATCH_USAGE, description: 'Watch workers in tmux panes.' },
+  watch: { usage: WATCH_USAGE, description: 'Stream active workers, or tile them in tmux with --panes.' },
   attach: { usage: ATTACH_USAGE, description: 'Attach to a worker or its sandbox.' },
   send: { usage: CONTROL_USAGE.send, description: 'Send a message to a worker.' },
   answer: { usage: CONTROL_USAGE.answer, description: 'Answer an issue’s open question.' },

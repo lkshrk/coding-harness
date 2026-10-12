@@ -1,4 +1,11 @@
-import { type Event, eventsAfter, isTerminal, openStateReadOnly, runStore } from '@nightshift/supervisor'
+import {
+  type Event,
+  eventsAfter,
+  isTerminal,
+  openStateReadOnly,
+  type Run,
+  runStore,
+} from '@nightshift/supervisor'
 import { CliError, type Ctx, EXIT, paint, parseArgs } from '../cli'
 import { LOCAL } from '../remote'
 import { eventLine } from '../render/events'
@@ -6,8 +13,9 @@ import { shellLine, Tmux } from '../tmux'
 import { issueOf } from './logs'
 import { withDb } from './shared'
 import { renderStatus, statusRecord } from './status'
+import { LIFECYCLE, tailRun } from './tail'
 
-export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--max-panes N]'
+export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--panes [--max-panes N]]'
 const POLL_MS = 2_000
 const MAX_PANES = 6
 // One poll of lead plus one of slack keeps every close within 60 s of the run's end.
@@ -156,12 +164,128 @@ async function manage(ctx: Ctx, tmux: Tmux, issues: string[], maxPanes: number):
   return EXIT.ok
 }
 
+export type StreamDeps = {
+  runs(ids: string[]): { active: Run[]; known: Map<string, Run | undefined> }
+  stream(run: Run, out: (line: string) => void, signal: AbortSignal): Promise<unknown>
+}
+
+const ISSUE_COLORS = ['cyan', 'magenta', 'yellow', 'blue', 'green'] as const
+
+function tailDeps(ctx: Ctx): StreamDeps {
+  return {
+    runs: (ids) =>
+      withDb(ctx, (db) => {
+        const store = runStore(db)
+        return { active: store.active(), known: new Map(ids.map((id) => [id, store.get(id)])) }
+      }),
+    stream: (run, out, signal) => {
+      const any = AbortSignal.any(ctx.signal ? [ctx.signal, signal] : [signal])
+      return tailRun({ ...ctx, signal: any }, run.issue, run, null, false, out)
+    },
+  }
+}
+
+function newEvents(ctx: Ctx, after: string | null, limit?: number): Event[] {
+  const db = openStateReadOnly(ctx.statePath())
+  if (!db) return []
+  try {
+    const issue = issueOf(db, new Map())
+    return eventsAfter(db, after, { types: FEED_TYPES, ...(limit ? { limit } : {}) }).map((e) => {
+      const known = issue(e)
+      return known ? { ...e, issue: known } : e
+    })
+  } finally {
+    db.close()
+  }
+}
+
+export async function streamWatch(
+  ctx: Ctx,
+  issues: string[],
+  deps: StreamDeps = tailDeps(ctx),
+): Promise<number> {
+  const p = paint(ctx.color)
+  const interrupt = new AbortController()
+  const onInt = () => interrupt.abort()
+  process.once('SIGINT', onInt)
+  const signal = AbortSignal.any(ctx.signal ? [ctx.signal, interrupt.signal] : [interrupt.signal])
+  const live = new Map<string, { run: Run; stop: AbortController; done: Promise<unknown> }>()
+  const colors = new Map<string, (typeof ISSUE_COLORS)[number]>()
+  let width = Math.max(0, ...issues.map((i) => i.length))
+  const tag = (issue: string) => {
+    const color = colors.get(issue) ?? ISSUE_COLORS[colors.size % ISSUE_COLORS.length] ?? 'cyan'
+    colors.set(issue, color)
+    return p(color, issue.padEnd(width))
+  }
+  const start = (run: Run) => {
+    const stop = new AbortController()
+    ctx.io.out(`${tag(run.issue)} started (${run.agent})`)
+    // Each line is written whole, so streams of different runs never interleave mid-line.
+    const write = (text: string) => {
+      if (stop.signal.aborted) return
+      for (const line of text.split('\n')) ctx.io.out(`${tag(run.issue)} │ ${line}`)
+    }
+    const done = deps.stream(run, write, stop.signal).catch((e) => {
+      if (!stop.signal.aborted) ctx.io.err(`${tag(run.issue)} │ stream failed: ${(e as Error).message}`)
+    })
+    live.set(run.id, { run, stop, done })
+  }
+  let cursor: string | null = null
+  try {
+    try {
+      cursor = newEvents(ctx, null, 1).at(-1)?.id ?? null
+      for (const line of renderStatus(ctx, await statusRecord(ctx))) ctx.io.out(line)
+    } catch (e) {
+      ctx.io.err((e as Error).message)
+    }
+    while (!signal.aborted) {
+      try {
+        const { active, known } = deps.runs([...live.keys()])
+        for (const [id, s] of live) {
+          const run = known.get(id)
+          if (run && !isTerminal(run.state)) continue
+          s.stop.abort()
+          live.delete(id)
+          const state = run?.state ?? 'gone'
+          const end = state === 'done' ? 'done' : `failed: ${run?.failure ?? state}`
+          ctx.io.out(`${tag(s.run.issue)} ${end}`)
+        }
+        const fresh = active.filter((r) => !live.has(r.id) && (!issues.length || issues.includes(r.issue)))
+        width = Math.max(width, ...fresh.map((r) => r.issue.length))
+        for (const run of fresh) start(run)
+        for (const e of newEvents(ctx, cursor)) {
+          cursor = e.id
+          if (issues.length && !issues.includes(e.issue ?? '')) continue
+          // A run's own stream already prints its lifecycle events.
+          const streamed = e.run ? live.has(e.run) : [...live.values()].some((s) => s.run.issue === e.issue)
+          if (streamed && (LIFECYCLE as readonly string[]).includes(e.type)) continue
+          ctx.io.out(eventLine(e, p, e.issue ?? '-'))
+        }
+      } catch (e) {
+        ctx.io.err((e as Error).message)
+      }
+      await Promise.race([
+        ctx.sleep(POLL_MS),
+        new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true })),
+      ])
+    }
+    return EXIT.ok
+  } finally {
+    process.off('SIGINT', onInt)
+    for (const s of live.values()) s.stop.abort()
+    await Promise.all([...live.values()].map((s) => s.done))
+  }
+}
+
 export async function watch(ctx: Ctx, args: string[]): Promise<number> {
   const { positionals, bools, values } = parseArgs(
     args,
-    { bools: ['--all', '--manage'], values: ['--max-panes', '--swap'] },
+    { bools: ['--all', '--manage', '--panes'], values: ['--max-panes', '--swap'] },
     WATCH_USAGE,
   )
+  if (bools.has('--all') && positionals.length) throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
+  if (!bools.has('--panes') && !bools.has('--manage') && values['--swap'] === undefined)
+    return streamWatch(ctx, positionals)
   if (ctx.which('tmux') === null) {
     throw new CliError(EXIT.error, 'tmux is not installed; install it (brew install tmux, apt install tmux)')
   }
@@ -184,7 +308,6 @@ export async function watch(ctx: Ctx, args: string[]): Promise<number> {
     tmux.respawn(swap, `trap : INT; ${shellLine(ns(ctx, 'attach', issue))}; ${stream(ctx, issue)}`)
     return EXIT.ok
   }
-  if (bools.has('--all') && positionals.length) throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
   if (bools.has('--manage')) return manage(ctx, tmux, positionals, maxPanes)
   const manager = ns(ctx, 'watch', '--manage', '--max-panes', String(maxPanes), ...positionals)
   if (tmux.hasSession()) {
