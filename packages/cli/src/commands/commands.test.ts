@@ -933,7 +933,7 @@ describe('watch panes', () => {
     expect(line).toContain('ns --host local tail --no-footer XXX-1')
     expect(line).toBe("trap '' INT; exec ns --host local tail --no-footer XXX-1")
     const script = line.replace('ns --host local tail --no-footer XXX-1', 'sh -c "sleep 0.5; echo alive"')
-    const proc = Bun.spawn(['env', '--default-signal=INT', 'sh', '-c', script], { stdout: 'pipe' })
+    const proc = Bun.spawn(['sh', '-c', `trap - INT; ${script}`], { stdout: 'pipe' })
     await Bun.sleep(150)
     proc.kill('SIGINT')
     expect(await proc.exited).toBe(0)
