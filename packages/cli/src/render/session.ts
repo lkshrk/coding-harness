@@ -53,27 +53,126 @@ function seconds(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 
-export function wrap(text: string, width: number): string[] {
-  const out: string[] = []
-  for (const line of text.split('\n')) {
-    let rest = line
-    while (rest.length > width) {
-      const cut = rest.lastIndexOf(' ', width)
-      const at = cut > width / 2 ? cut : width
-      out.push(rest.slice(0, at))
-      rest = rest.slice(at).replace(/^ /, '')
-    }
-    out.push(rest)
-  }
-  return out
-}
-
 const ESCAPES =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences is the point
   /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*\x1b\\|\x1b[@-Z\\-_]|[\x00-\x08\x0b-\x1f\x7f]/g
 
 export function stripEscapes(text: string): string {
   return text.replace(ESCAPES, '')
+}
+
+const visibleWidth = (text: string) => Bun.stringWidth(stripEscapes(text))
+
+type Token = { text: string; width: number }
+
+function tokens(line: string): Token[] {
+  const out: Token[] = []
+  let at = 0
+  for (const m of line.matchAll(ESCAPES)) {
+    for (const ch of line.slice(at, m.index)) out.push({ text: ch, width: Bun.stringWidth(ch) })
+    out.push({ text: m[0], width: 0 })
+    at = m.index + m[0].length
+  }
+  for (const ch of line.slice(at)) out.push({ text: ch, width: Bun.stringWidth(ch) })
+  return out
+}
+
+// A terminal advances a tab to its next stop, which a width count of zero would miss.
+function expandTabs(line: string, tab = 8): string {
+  if (!line.includes('\t')) return line
+  let out = ''
+  let col = 0
+  for (const t of tokens(line)) {
+    if (t.text === '\t') {
+      const n = tab - (col % tab)
+      out += ' '.repeat(n)
+      col += n
+    } else {
+      out += t.text
+      col += t.width
+    }
+  }
+  return out
+}
+
+// SGR reset codes and the opening codes each one ends.
+const CLOSES: Record<string, (code: number) => boolean> = {
+  '0': () => true,
+  '22': (c) => c === 1 || c === 2,
+  '23': (c) => c === 3,
+  '24': (c) => c === 4,
+  '27': (c) => c === 7,
+  '29': (c) => c === 9,
+  '39': (c) => (c >= 30 && c <= 38) || (c >= 90 && c <= 97),
+  '49': (c) => (c >= 40 && c <= 48) || (c >= 100 && c <= 107),
+}
+
+// Breaks at spaces, hard-breaks words wider than the line, and carries open SGR styles across breaks.
+function wrapLine(line: string, width: number, indent: number): string[] {
+  if (visibleWidth(line) <= width) return [line]
+  const pad = ' '.repeat(Math.min(indent, width - 1))
+  const lines: string[] = []
+  let styles: { code: number; text: string }[] = []
+  let current = ''
+  let used = 0
+  let gap: Token[] = []
+  let word: Token[] = []
+  const room = () => (lines.length === 0 ? width : width - pad.length)
+  const track = (t: Token) => {
+    const body = t.text.slice(2, -1)
+    if (!t.text.startsWith('\x1b[') || !t.text.endsWith('m') || !/^[\d;]*$/.test(body)) return
+    const params = body.split(';').map((n) => (n === '' ? '0' : n))
+    if (!CLOSES[params[0] as string]) styles = [...styles, { code: Number(params[0]), text: t.text }]
+    else
+      for (const n of params) {
+        const ends = CLOSES[n]
+        if (ends) styles = styles.filter((s) => !ends(s.code))
+      }
+  }
+  const breakLine = () => {
+    lines.push(styles.length ? `${current}\x1b[0m` : current)
+    current = `${pad}${styles.map((s) => s.text).join('')}`
+    used = 0
+  }
+  const put = (t: Token) => {
+    if (t.width && used + t.width > room() && used > 0) breakLine()
+    current += t.text
+    used += t.width
+    track(t)
+  }
+  const flushWord = () => {
+    const w = word.reduce((n, t) => n + t.width, 0)
+    const g = gap.reduce((n, t) => n + t.width, 0)
+    if (used > 0 && used + g + w > room() && w > 0) {
+      for (const t of gap) if (!t.width) put(t)
+      breakLine()
+    } else for (const t of gap) put(t)
+    if (w > room() - used && used > 0) breakLine()
+    for (const t of word) put(t)
+    gap = []
+    word = []
+  }
+  for (const t of tokens(line)) {
+    if (t.text === ' ') {
+      if (word.length) flushWord()
+      gap.push(t)
+    } else if (!t.width && !word.length) gap.push(t)
+    else word.push(t)
+  }
+  if (word.length) flushWord()
+  for (const t of gap) if (!t.width) put(t)
+  lines.push(current)
+  return lines
+}
+
+// Where a line's content starts: after its indent and a list marker, if any.
+function hangOf(line: string): number {
+  return visibleWidth(/^\s*(?:(?:[-*+•]|\d+[.)]) )?/.exec(stripEscapes(line))?.[0] ?? '')
+}
+
+// Continuation lines start `indent` columns in, under the first line's content.
+export function wrap(text: string, width: number, indent = 0): string[] {
+  return text.split('\n').flatMap((line) => wrapLine(expandTabs(line), Math.max(1, width), indent))
 }
 
 function clip(text: string, max: number): string {
@@ -125,7 +224,7 @@ export class SessionRenderer {
   constructor(
     private readonly session: string,
     private readonly p: Paint,
-    private readonly width = 100,
+    private readonly width: () => number = () => 100,
     options: RendererOptions = {},
   ) {
     this.color = p('bold', 'x') !== 'x'
@@ -154,7 +253,7 @@ export class SessionRenderer {
         const args = shortArgs(data.input)
         return [
           ...this.flush(),
-          `${this.p('cyan', '▸')} ${this.p('bold', tool.name)}${args ? ` ${args}` : ''}`,
+          ...this.fit(`${this.p('cyan', '▸')} ${this.p('bold', tool.name)}${args ? ` ${args}` : ''}`, 2),
         ]
       }
       case 'session.tool.success':
@@ -165,12 +264,15 @@ export class SessionRenderer {
         if (type === 'session.tool.success') return [...this.flush(), ...this.success(tool, data, took)]
         const err = data.error as { message?: unknown } | undefined
         const message = typeof err?.message === 'string' ? err.message : 'failed'
-        return [...this.flush(), `  ${this.p('red', '✗')} ${shortResult(message)}${took}`]
+        return [...this.flush(), ...this.fit(`  ${this.p('red', '✗')} ${shortResult(message)}${took}`, 4)]
       }
       case 'session.inbox.enqueued': {
         const item = data.item as { type?: string; payload?: { text?: unknown } } | undefined
         if (item?.type !== 'user' || typeof item.payload?.text !== 'string') return []
-        return [...this.flush(), `${this.p('magenta', '›')} ${oneLine(item.payload.text, MAX_RESULT)}`]
+        return [
+          ...this.flush(),
+          ...this.fit(`${this.p('magenta', '›')} ${oneLine(item.payload.text, MAX_RESULT)}`, 2),
+        ]
       }
       case 'session.step.failed':
       case 'session.execution.failed': {
@@ -178,7 +280,10 @@ export class SessionRenderer {
         const message = typeof err?.message === 'string' ? err.message : 'error'
         return [
           ...this.flush(),
-          `${this.p('red', '✗')} ${type === 'session.step.failed' ? 'step' : 'session'} failed: ${oneLine(message, MAX_RESULT)}`,
+          ...this.fit(
+            `${this.p('red', '✗')} ${type === 'session.step.failed' ? 'step' : 'session'} failed: ${oneLine(message, MAX_RESULT)}`,
+            2,
+          ),
         ]
       }
       case 'session.execution.succeeded':
@@ -192,7 +297,7 @@ export class SessionRenderer {
     if (this.reasoning && !this.showReasoning) {
       const summary = firstSentence(this.thought)
       this.thought = ''
-      return summary ? [this.p('dim', clip(summary, this.width))] : []
+      return summary ? wrap(summary, this.width()).map((l) => this.p('dim', l)) : []
     }
     if (!this.stream) return []
     const rest = this.stream.finish()
@@ -210,7 +315,7 @@ export class SessionRenderer {
     this.stream ??= createMarkdownStreamer({
       render: (md) =>
         render(md, {
-          width: this.width,
+          width: this.width(),
           color: this.color && !reasoning,
           hyperlinks: false,
           ...(this.color && !reasoning ? { highlighter: highlight } : {}),
@@ -222,8 +327,15 @@ export class SessionRenderer {
 
   private paintText(text: string): string[] {
     if (text === '') return []
-    const lines = text.replace(/\n$/, '').split('\n')
+    const lines = text
+      .replace(/\n$/, '')
+      .split('\n')
+      .flatMap((l) => this.fit(l, hangOf(l)))
     return this.reasoning ? lines.map((l) => (l === '' ? l : this.p('dim', l))) : lines
+  }
+
+  private fit(line: string, indent: number): string[] {
+    return wrap(line, this.width(), indent)
   }
 
   private success(tool: Tool | undefined, data: Record<string, unknown>, took: string): string[] {
@@ -236,14 +348,14 @@ export class SessionRenderer {
       if (content !== undefined) this.files.set(path, content)
     }
     if (SHELL_TOOLS.has(name)) return this.shell(text, metadata, took)
-    const head = `  ${this.p('green', '✓')} ${shortResult(text)}${took}`
-    if (!EDIT_TOOLS.has(name)) return [head]
-    return [head, ...this.diff(tool?.input, metadata, path)]
+    const head = this.fit(`  ${this.p('green', '✓')} ${shortResult(text)}${took}`, 4)
+    if (!EDIT_TOOLS.has(name)) return head
+    return [...head, ...this.diff(tool?.input, metadata, path)]
   }
 
   private shell(text: string, metadata: Record<string, unknown>, took: string): string[] {
     const body = (this.color ? text : stripEscapes(text)).replace(/\n+$/, '')
-    const lines = body === '' ? [] : body.split('\n').map((l) => clip(l, this.width - 4))
+    const lines = body === '' ? [] : body.split('\n')
     const shown =
       lines.length > SHELL_EDGE * 2 + 1
         ? [
@@ -255,7 +367,10 @@ export class SessionRenderer {
     const exit = typeof metadata.exit === 'number' ? metadata.exit : undefined
     const mark = exit === undefined || exit === 0 ? this.p('green', '✓') : this.p('red', '✗')
     const status = exit === undefined ? 'done' : `exit ${exit}`
-    return [...shown.map((l) => `  ${this.p('dim', '│')} ${l}`), `  ${mark} ${status}${took}`]
+    return [
+      ...shown.flatMap((l) => wrap(l, this.width() - 4).map((w) => `  ${this.p('dim', '│')} ${w}`)),
+      `  ${mark} ${status}${took}`,
+    ]
   }
 
   private diff(
@@ -273,7 +388,9 @@ export class SessionRenderer {
       if (path) this.files.set(path, input.content)
     }
     lines = lines.filter((l) => !/^(---|\+\+\+|Index:|=+$)/.test(l) && l !== '')
-    const shown = lines.slice(0, MAX_DIFF).map((l) => `    ${this.diffLine(clip(l, this.width - 4))}`)
+    const shown = lines
+      .slice(0, MAX_DIFF)
+      .map((l) => `    ${this.diffLine(clip(expandTabs(l), this.width() - 4))}`)
     if (lines.length > MAX_DIFF) shown.push(`    ${this.p('dim', `… +${lines.length - MAX_DIFF} lines`)}`)
     return shown
   }

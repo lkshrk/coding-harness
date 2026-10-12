@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { Event } from '@nightshift/supervisor'
 import { paint } from '../cli'
 import { eventLine } from './events'
-import { SessionRenderer, shortArgs, wrap } from './session'
+import { SessionRenderer, shortArgs, stripEscapes, wrap } from './session'
 import {
   branchParts,
   clipParts,
@@ -52,9 +52,13 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
   })
 
   test('a real worker run renders writes as diffs, shell head and tail, and the Markdown answer', () => {
-    const r = new SessionRenderer(RICH, plain, 80)
+    const r = new SessionRenderer(RICH, plain, () => 80)
     const lines = rich.flatMap((e) => r.feed(e))
-    expect(lines.slice(5)).toEqual([
+    expect(lines.slice(0, 2)).toEqual([
+      '› "Work in this repository. 1) Create a file NOTES.md with a heading, a bullet',
+      '  list of three items an…',
+    ])
+    expect(lines.slice(6)).toEqual([
       '▸ write /tmp/tmp.unsuKoNlS5/NOTES.md',
       '▸ write /tmp/tmp.unsuKoNlS5/greet.py',
       "▸ shell seq 1 40 | sed 's/^/line /'",
@@ -107,7 +111,7 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
   })
 
   test('with colour the diff is red and green, the heading styled and code highlighted', () => {
-    const r = new SessionRenderer(RICH, color, 80)
+    const r = new SessionRenderer(RICH, color, () => 80)
     const lines = rich.flatMap((e) => r.feed(e))
     expect(lines).toContain(`    ${color('red', '-    return "hello " + name')}`)
     expect(lines).toContain(`    ${color('green', '+    return f"hello {name}"')}`)
@@ -201,13 +205,13 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
   })
 
   test('--reasoning streams reasoning in full, dimmed and apart from answer text', () => {
-    const r = new SessionRenderer('s1', color, 100, { reasoning: true })
+    const r = new SessionRenderer('s1', color, () => 100, { reasoning: true })
     expect(reasoningEvents.flatMap((e) => r.feed(e))).toEqual([
       color('dim', 'Checking the picker first. It'),
       color('dim', 'reads the config.'),
       'Done.',
     ])
-    const p = new SessionRenderer('s1', plain, 100, { reasoning: true })
+    const p = new SessionRenderer('s1', plain, () => 100, { reasoning: true })
     expect(reasoningEvents.flatMap((e) => p.feed(e))).toEqual([
       'Checking the picker first. It',
       'reads the config.',
@@ -228,6 +232,135 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
     expect(shortArgs({ description: 'd', command: 'bun test' })).toBe('bun test')
     expect(shortArgs({ filePath: '/work/a.ts', limit: 3 })).toBe('/work/a.ts')
     expect(wrap('aaa bbb ccc', 7)).toEqual(['aaa bbb', 'ccc'])
+    expect(wrap('- aaa bbb ccc', 9, 2)).toEqual(['- aaa bbb', '  ccc'])
+    expect(wrap(`${color('red', 'aaa bbb')} ccc`, 4)).toEqual([
+      '\x1b[31maaa\x1b[0m',
+      '\x1b[31mbbb\x1b[0m',
+      'ccc',
+    ])
+  })
+})
+
+describe('wrapping to the live width', () => {
+  const visible = (l: string) => Bun.stringWidth(stripEscapes(l))
+  const ev = (type: string, data: Record<string, unknown>) => ({
+    type,
+    data: { sessionID: 's1', id: 'c', ...data },
+  })
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ')
+  const delta = (d: string) => ev('session.text.delta', { delta: d })
+  const ended = ev('session.text.ended', {})
+
+  test('at 60 columns a reply, shell output and tool result wrap with hanging indents', () => {
+    for (const p of [plain, color]) {
+      const r = new SessionRenderer('s1', p, () => 60)
+      const reply = [
+        ...r.feed(delta(`${words(20)}\n\n- ${words(15)}\n\n${'x'.repeat(70)}\n`)),
+        ...r.feed(ended),
+      ].map(stripEscapes)
+      expect(reply[0]).toStartWith('word0 word1')
+      expect(reply.find((l) => l.startsWith('- '))).toBeDefined()
+      const bullet = reply.findIndex((l) => l.startsWith('- '))
+      expect(reply[bullet + 1]).toMatch(/^ {2}word/)
+      expect(reply.slice(-2)).toEqual(['x'.repeat(60), 'x'.repeat(10)])
+
+      r.feed(ev('session.tool.input.started', { name: 'shell' }))
+      const call = r.feed(ev('session.tool.called', { input: { command: `echo ${words(12)}` } }))
+      expect(call.map(stripEscapes)).toEqual([
+        '▸ shell echo word0 word1 word2 word3 word4 word5 word6 word7',
+        '  word8 word9 word10 word11',
+      ])
+      const shell = r
+        .feed(
+          ev('session.tool.success', { content: `${color('green', words(14))}\n`, metadata: { exit: 0 } }),
+        )
+        .map(stripEscapes)
+      expect(shell).toEqual([
+        '  │ word0 word1 word2 word3 word4 word5 word6 word7 word8',
+        '  │ word9 word10 word11 word12 word13',
+        '  ✓ exit 0 (0ms)',
+      ])
+
+      r.feed(ev('session.tool.input.started', { name: 'grep' }))
+      r.feed(ev('session.tool.called', { input: { pattern: 'x' } }))
+      const result = r.feed(ev('session.tool.success', { content: words(14) })).map(stripEscapes)
+      expect(result).toEqual([
+        '  ✓ word0 word1 word2 word3 word4 word5 word6 word7 word8',
+        '    word9 word10 word11 word12 word13 (0ms)',
+      ])
+      for (const l of [...reply, ...call, ...shell, ...result]) expect(visible(l)).toBeLessThanOrEqual(60)
+      if (p === plain) expect([...reply, ...shell].join('\n')).not.toContain(ESC)
+    }
+  })
+
+  test('tabs in shell output and text are expanded to spaces before measuring', () => {
+    for (const p of [plain, color]) {
+      const r = new SessionRenderer('s1', p, () => 60)
+      r.feed(ev('session.tool.input.started', { name: 'shell' }))
+      r.feed(ev('session.tool.called', { input: { command: 'ls' } }))
+      const content = `${'a\t'.repeat(10)}\n${p('green', 'ab\tc')}\n`
+      const shell = r.feed(ev('session.tool.success', { content, metadata: { exit: 0 } }))
+      const text = [...r.feed(delta(`${'x\t'.repeat(10)}\n`)), ...r.feed(ended)]
+      const all = [...shell, ...text]
+      expect(all.join('')).not.toContain('\t')
+      for (const l of all) expect(visible(l)).toBeLessThanOrEqual(60)
+      expect(shell.slice(0, 3).map(stripEscapes)).toEqual([
+        `  │ ${'a       '.repeat(6)}a`,
+        `  │ ${'a       '.repeat(2)}a`,
+        '  │ ab      c',
+      ])
+    }
+  })
+
+  test('a collapsed reasoning summary wraps instead of being clipped', () => {
+    const r = new SessionRenderer('s1', plain, () => 30)
+    r.feed(ev('session.reasoning.delta', { delta: `${words(8)}.` }))
+    expect(r.feed(ev('session.reasoning.ended', {}))).toEqual([
+      'word0 word1 word2 word3 word4',
+      'word5 word6 word7.',
+    ])
+  })
+
+  test('each render uses the current width of the provider', () => {
+    let width = 100
+    const r = new SessionRenderer('s1', plain, () => width)
+    expect(r.feed(delta(`${words(12)}\n`))).toHaveLength(1)
+    width = 40
+    const narrow = r.feed(delta(`${words(12)}\n`))
+    expect(narrow.length).toBeGreaterThan(1)
+    for (const l of narrow) expect(visible(l)).toBeLessThanOrEqual(40)
+  })
+
+  test('a width reduced by a prefix keeps prefixed lines within the terminal', () => {
+    const prefix = 'XXX-123 │ '
+    const r = new SessionRenderer('s1', plain, () => 60 - prefix.length)
+    const lines = [...r.feed(delta(`${words(30)}\n`)), ...r.feed(ended)]
+    expect(lines.length).toBeGreaterThan(1)
+    for (const l of lines) expect(visible(`${prefix}${l}`)).toBeLessThanOrEqual(60)
+  })
+
+  test('diff lines are clipped, not wrapped', () => {
+    const r = new SessionRenderer('s1', plain, () => 60)
+    r.feed(ev('session.tool.input.started', { name: 'edit' }))
+    r.feed(
+      ev('session.tool.called', {
+        input: { filePath: 'a.ts', oldString: 'a\n', newString: `${words(20)}\n` },
+      }),
+    )
+    const lines = r.feed(ev('session.tool.success', { content: 'Edited a.ts' }))
+    expect(lines).toHaveLength(4)
+    expect(lines[3]).toBe(`    ${`+${words(20)}`.slice(0, 55)}…`)
+    for (const l of lines) expect(visible(l)).toBeLessThanOrEqual(60)
+
+    r.feed(ev('session.tool.input.started', { name: 'edit' }))
+    r.feed(
+      ev('session.tool.called', {
+        input: { filePath: 'b.go', oldString: 'a\n', newString: `${'\t'.repeat(9)}x\n` },
+      }),
+    )
+    const tabbed = r.feed(ev('session.tool.success', { content: 'Edited b.go' }))
+    expect(tabbed[3]).toBe(`    +${' '.repeat(54)}…`)
+    for (const l of tabbed) expect(visible(l)).toBeLessThanOrEqual(60)
   })
 })
 

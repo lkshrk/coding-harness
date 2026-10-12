@@ -14,7 +14,7 @@ import { shellLine, Tmux } from '../tmux'
 import { issueOf } from './logs'
 import { duration, table, withDb } from './shared'
 import { renderStatus, statusRecord } from './status'
-import { LIFECYCLE, tailRun } from './tail'
+import { LIFECYCLE, tailRun, terminalWidth } from './tail'
 
 export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--panes [--max-panes N]] | ns watch --snapshot'
 const POLL_MS = 2_000
@@ -173,7 +173,7 @@ export type StreamDeps = {
 
 const ISSUE_COLORS = ['cyan', 'magenta', 'yellow', 'blue', 'green'] as const
 
-function tailDeps(ctx: Ctx): StreamDeps {
+function tailDeps(ctx: Ctx, prefix: () => number): StreamDeps {
   return {
     runs: (ids) =>
       withDb(ctx, (db) => {
@@ -182,7 +182,15 @@ function tailDeps(ctx: Ctx): StreamDeps {
       }),
     stream: (run, out, signal) => {
       const any = AbortSignal.any(ctx.signal ? [ctx.signal, signal] : [signal])
-      return tailRun({ ...ctx, signal: any }, run.issue, run, null, false, out)
+      return tailRun(
+        { ...ctx, signal: any },
+        run.issue,
+        run,
+        null,
+        false,
+        out,
+        () => terminalWidth() - prefix(),
+      )
     },
   }
 }
@@ -201,11 +209,7 @@ function newEvents(ctx: Ctx, after: string | null, limit?: number): Event[] {
   }
 }
 
-export async function streamWatch(
-  ctx: Ctx,
-  issues: string[],
-  deps: StreamDeps = tailDeps(ctx),
-): Promise<number> {
+export async function streamWatch(ctx: Ctx, issues: string[], deps?: StreamDeps): Promise<number> {
   const p = paint(ctx.color)
   const interrupt = new AbortController()
   const onInt = () => interrupt.abort()
@@ -219,6 +223,8 @@ export async function streamWatch(
     colors.set(issue, color)
     return p(color, issue.padEnd(width))
   }
+  // Each streamed line is written after its `<issue> │ ` prefix.
+  const streams = deps ?? tailDeps(ctx, () => width + ' │ '.length)
   const start = (run: Run) => {
     const stop = new AbortController()
     ctx.io.out(`${tag(run.issue)} started (${run.agent})`)
@@ -227,7 +233,7 @@ export async function streamWatch(
       if (stop.signal.aborted) return
       for (const line of text.split('\n')) ctx.io.out(`${tag(run.issue)} │ ${line}`)
     }
-    const done = deps.stream(run, write, stop.signal).catch((e) => {
+    const done = streams.stream(run, write, stop.signal).catch((e) => {
       if (!stop.signal.aborted) ctx.io.err(`${tag(run.issue)} │ stream failed: ${(e as Error).message}`)
     })
     live.set(run.id, { run, stop, done })
@@ -251,7 +257,7 @@ export async function streamWatch(
     while (!signal.aborted) {
       let changed = false
       try {
-        const { active, known } = deps.runs([...live.keys()])
+        const { active, known } = streams.runs([...live.keys()])
         for (const [id, s] of live) {
           const run = known.get(id)
           if (run && !isTerminal(run.state)) continue
