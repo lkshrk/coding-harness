@@ -61,7 +61,7 @@ test('the chat view renders the recorded lead session like ns tail, without colo
     await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
   }
   expect(await chatView(ctxWith(out, err, { NO_COLOR: '1' }), lead.client, RICH, never)).toBe(0)
-  const expected = new SessionRenderer(RICH, paint(false), terminalWidth())
+  const expected = new SessionRenderer(RICH, paint(false), terminalWidth)
   expect(out).toEqual([...fixture.flatMap((l) => expected.feed(JSON.parse(l))), ...expected.flush()])
   expect(out).toContain('▸ write /tmp/tmp.unsuKoNlS5/NOTES.md')
   expect(out).toContain('Summary')

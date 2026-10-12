@@ -235,7 +235,7 @@ export async function chatView(
   const err = (line: string) => around(() => (print ? print(line) : ctx.io.err(line)))
   const stop = new AbortController()
   const signal = AbortSignal.any(ctx.signal ? [ctx.signal, stop.signal] : [stop.signal])
-  const renderer = new SessionRenderer(session, paint(ctx.color), terminalWidth())
+  const renderer = new SessionRenderer(session, paint(ctx.color), terminalWidth)
   const stream = (async () => {
     try {
       for await (const raw of client.events(signal)) for (const line of renderer.feed(raw)) out(line)
