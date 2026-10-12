@@ -1,6 +1,11 @@
 import type { HarnessEvent, Ms, SandboxDriver, SandboxHandle, WorkerDriver, WorkerSession } from '../../ports'
 import type { Run } from '../../ports/records'
-import type { NoProgressInfo, SandboxCreatedInfo, WorkerStartedInfo } from '../../ports/worker'
+import type {
+  FinishRejectedInfo,
+  NoProgressInfo,
+  SandboxCreatedInfo,
+  WorkerStartedInfo,
+} from '../../ports/worker'
 import { Channel } from './channel'
 import { type CapReason, type Progress, type WatchAction, Watcher, type WatchThresholds } from './watch'
 import { diffLines } from './workspace'
@@ -19,6 +24,17 @@ export interface WorkerCallbacks {
   workerProgress?(runId: string, progress: Progress): Promise<void>
   workerNoProgress?(runId: string, info: NoProgressInfo): Promise<void>
   wipCommitted?(runId: string, info: { sha: string; lines: number }): Promise<void>
+  finishRejected?(runId: string, info: FinishRejectedInfo): Promise<void>
+}
+
+export const FINISH_ATTEMPTS = 3
+const FINISH_ERRORS_MAX = 2000
+
+/** The plugin's `- <error>` lines from a rejected finish, or the whole text when it has none. */
+export function finishErrors(text: string | undefined): string {
+  const t = (text ?? '').trim()
+  const lines = t.split('\n').filter((l) => l.startsWith('- '))
+  return (lines.length ? lines.join('\n') : t).slice(0, FINISH_ERRORS_MAX)
 }
 
 export type RunLimits = ConstructorParameters<typeof Watcher>[0] & { graceTurns: number }
@@ -133,7 +149,12 @@ export class RunWatch {
     }
     if (e.kind === 'tool_result' && e.tool === 'finish' && !e.ok) {
       a.invalidFinish += 1
-      if (a.invalidFinish >= 2) await this.fail(a, 'no_finish', 'finish payload invalid after one correction')
+      const errors = finishErrors(e.error)
+      await this.d.callbacks().finishRejected?.(a.run.id, { attempt: a.invalidFinish, errors })
+      if (a.invalidFinish >= FINISH_ATTEMPTS) {
+        const last = errors ? `; last errors:\n${errors}` : ''
+        await this.fail(a, 'no_finish', `finish payload invalid after ${a.invalidFinish} attempts${last}`)
+      }
       return
     }
     if (e.kind === 'error' && e.fatal) {

@@ -86,6 +86,7 @@ const DETACHED: WorkerCallbacks = {
   workerProgress: dropped('progress'),
   workerNoProgress: dropped('no progress'),
   wipCommitted: dropped('wip commit'),
+  finishRejected: dropped('finish rejected'),
 }
 
 export class WorkerExecutor implements RunExecutor {

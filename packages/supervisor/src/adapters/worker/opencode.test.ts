@@ -160,7 +160,7 @@ describe('EventMapper', () => {
       { kind: 'tool_call', tool: 'edit', argsDigest: argsDigest('edit', { b: 1, path: 'a' }) },
     ])
     expect(ev('session.tool.failed', { id: 'c1', error: { message: 'boom' } })).toEqual([
-      { kind: 'tool_result', tool: 'edit', ok: false },
+      { kind: 'tool_result', tool: 'edit', ok: false, error: 'boom' },
     ])
     expect(
       ev('session.step.ended', {
@@ -232,7 +232,7 @@ describe('OpenCodeDriver', () => {
     oc.emit('session.tool.failed', { id: 'c1', error: 'Invalid finish payload' })
     oc.emit('session.text.ended', { text: 'hi' })
     expect(await take(it, 2)).toEqual([
-      { kind: 'tool_result', tool: 'finish', ok: false },
+      { kind: 'tool_result', tool: 'finish', ok: false, error: 'Invalid finish payload' },
       { kind: 'text', chars: 2, text: 'hi' },
     ])
     await driver.stop(s, 'test')

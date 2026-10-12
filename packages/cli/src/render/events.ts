@@ -19,6 +19,8 @@ function summary(type: string, d: Data): string {
       return `${str(d.signal)}${d.detail ? `: ${str(d.detail)}` : ''}`
     case 'WORKER_FINISHED':
       return `${str(d.status)}${typeof d.summary === 'string' ? `: ${d.summary}` : ''}`
+    case 'FINISH_REJECTED':
+      return `attempt ${str(d.attempt)}${d.errors ? `:\n${str(d.errors)}` : ''}`
     case 'WORKER_FAILED':
     case 'WORKER_NO_FINISH':
       return `${str(d.reason)}${d.detail ? `: ${str(d.detail)}` : ''}`

@@ -22,7 +22,7 @@ export type WorkerSession = { id: string; attach: string[]; traceId?: string }
 export type HarnessEvent =
   | { kind: 'step'; step: number; tokensIn: number; tokensOut: number }
   | { kind: 'tool_call'; tool: string; argsDigest: string }
-  | { kind: 'tool_result'; tool: string; ok: boolean }
+  | { kind: 'tool_result'; tool: string; ok: boolean; error?: string }
   | { kind: 'text'; chars: number; text?: string }
   | { kind: 'finish'; payload: unknown }
   | { kind: 'idle'; sinceMs: Ms }
@@ -102,6 +102,8 @@ export type WorkerStartedInfo = { sandbox: string; session: string; attach?: str
 export type SandboxCreatedInfo = { driver: SandboxHandle['driver']; id: string; image: string }
 
 export type NoProgressInfo = { steps: number; tokens: number; nudge: string }
+
+export type FinishRejectedInfo = { attempt: number; errors: string }
 
 export type Progress = {
   steps: number
