@@ -79,6 +79,21 @@ checksum = "sha256:ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b
 url = "https://github.com/google/osv-scanner/releases/download/v2.6.0/osv-scanner_linux_amd64"
 url_api = "https://api.github.com/repos/google/osv-scanner/releases/assets/562414718"
 
+[[tools."aqua:pnpm/pnpm"]]
+version = "10.34.6"
+backend = "aqua:pnpm/pnpm"
+specifiers = ["10.34.6"]
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-arm64"]
+checksum = "sha256:5e18e460aec11c0d39b345a732fbbdee0811354f6f384e2da230c6438ae2137c"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100723"
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-x64"]
+checksum = "sha256:1bdfa04c3acbbf019befa4cf51f73f1de2729f4a513f737d1295905277f3b9cf"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100726"
+
 [[tools."aqua:rhysd/actionlint"]]
 version = "1.7.12"
 backend = "aqua:rhysd/actionlint"
@@ -192,35 +207,6 @@ asset_pattern = "shellcheck-v*.linux.x86_64.tar.gz"
 checksum = "sha256:b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6"
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.gz"
 url_api = "https://api.github.com/repos/koalaman/shellcheck/releases/assets/336391469"
-
-[[tools."http:bats"]]
-version = "1.14.0"
-backend = "http:bats"
-specifiers = ["1.14.0"]
-
-[tools."http:bats".options]
-strip_components = "1"
-
-[tools."http:bats"."platforms.linux-arm64"]
-checksum = "sha256:bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177"
-url = "https://github.com/bats-core/bats-core/archive/refs/tags/v1.14.0.tar.gz"
-
-[tools."http:bats"."platforms.linux-x64"]
-checksum = "sha256:bb537b70b15b732f6d8827dd6578e3d8ce166636ce1f18ea9a074184fcce9177"
-url = "https://github.com/bats-core/bats-core/archive/refs/tags/v1.14.0.tar.gz"
-
-[[tools."http:opencode"]]
-version = "2.0.27"
-backend = "http:opencode"
-specifiers = ["2.0.27"]
-
-[tools."http:opencode"."platforms.linux-arm64"]
-checksum = "sha256:28db459fa99c3582b968e39ceccc44254c152492056d40cd2bc548669d68aab7"
-url = "https://opencode.ai/files/bin/2.0.27/opencode-linux-arm64.tar.gz"
-
-[tools."http:opencode"."platforms.linux-x64"]
-checksum = "sha256:4bc0688d05941ede36afa12c94b814e3914dcc9159edf6d1953c98b103731bb9"
-url = "https://opencode.ai/files/bin/2.0.27/opencode-linux-x64-baseline.tar.gz"
 
 [[tools.node]]
 version = "24.21.0"
