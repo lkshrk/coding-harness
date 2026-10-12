@@ -72,9 +72,24 @@ const rawLabel = (id: string, name: string, groupName?: string) => ({
   parent: groupName ? { name: groupName } : null,
 })
 
-function fakeLinear(handlers: Record<string, Handler>, ws: () => LinearWorkspace = workspace) {
+type Put = { url: string; headers: Record<string, string>; bytes: Uint8Array }
+
+function fakeLinear(
+  handlers: Record<string, Handler>,
+  ws: () => LinearWorkspace = workspace,
+  putStatus = 200,
+) {
   const calls: Call[] = []
+  const puts: Put[] = []
   let reads = 0
+  const upload: FetchFn = async (url, init) => {
+    puts.push({
+      url,
+      headers: Object.fromEntries(new Headers(init.headers).entries()),
+      bytes: new Uint8Array(init.body as Uint8Array),
+    })
+    return new Response('', { status: putStatus })
+  }
   const fetch: FetchFn = async (_url, init) => {
     const { query, variables = {} } = JSON.parse(String(init.body)) as {
       query: string
@@ -91,11 +106,16 @@ function fakeLinear(handlers: Record<string, Handler>, ws: () => LinearWorkspace
     }
   }
   const request = linearRequest({ auth, fetch })
-  const writer = new LinearWriter(request, new LinearIssueReader(request), async () => {
-    reads++
-    return ws()
-  })
-  return { writer, calls, workspaceReads: () => reads }
+  const writer = new LinearWriter(
+    request,
+    new LinearIssueReader(request),
+    async () => {
+      reads++
+      return ws()
+    },
+    upload,
+  )
+  return { writer, calls, puts, workspaceReads: () => reads }
 }
 
 const target = (
@@ -281,6 +301,24 @@ describe('LinearWriter.comment', () => {
     expect(calls.some((x) => x.operation === 'nsCommentCreate')).toBe(false)
   })
 
+  test('with replace, a comment whose marker exists is updated in place', async () => {
+    const { writer, calls } = fakeLinear({
+      nsIssueComments: () => ({
+        issue: { id: 'id-FOR-1', comments: conn([stored('c2', 'old\n\n<!-- nightshift:shots -->')]) },
+      }),
+      nsCommentUpdate: (v) => ({
+        commentUpdate: { success: true, comment: stored(v.id as string, (v.input as { body: string }).body) },
+      }),
+    })
+    const c = await writer.comment('FOR-1', 'new\n\n<!-- nightshift:shots -->', { replace: true })
+    expect(c).toMatchObject({ id: 'c2', body: 'new\n\n<!-- nightshift:shots -->' })
+    expect(calls.find((x) => x.operation === 'nsCommentUpdate')?.variables).toEqual({
+      id: 'c2',
+      input: { body: 'new\n\n<!-- nightshift:shots -->' },
+    })
+    expect(calls.some((x) => x.operation === 'nsCommentCreate')).toBe(false)
+  })
+
   test('commenting on an unknown issue fails', async () => {
     const { writer } = fakeLinear({
       nsIssueComments: () => {
@@ -288,6 +326,50 @@ describe('LinearWriter.comment', () => {
       },
     })
     await expect(writer.comment('FOR-9', 'x')).rejects.toThrow('linear: no issue FOR-9')
+  })
+})
+
+describe('LinearWriter.uploadFile', () => {
+  const signed = (success = true) => ({
+    fileUpload: {
+      success,
+      uploadFile: {
+        uploadUrl: 'https://uploads.linear.test/put/abc',
+        assetUrl: 'https://uploads.linear.app/abc/home.png',
+        headers: [{ key: 'x-goog-meta-a', value: '1' }],
+      },
+    },
+  })
+
+  test('requests a signed upload URL, puts the bytes there and returns the asset URL', async () => {
+    const { writer, calls, puts } = fakeLinear({ nsFileUpload: () => signed() })
+    const bytes = new Uint8Array([137, 80, 78, 71])
+    const url = await writer.uploadFile('home.png', 'image/png', bytes)
+    expect(url).toBe('https://uploads.linear.app/abc/home.png')
+    expect(calls.find((c) => c.operation === 'nsFileUpload')?.variables).toEqual({
+      filename: 'home.png',
+      contentType: 'image/png',
+      size: 4,
+    })
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.url).toBe('https://uploads.linear.test/put/abc')
+    expect(puts[0]?.headers).toMatchObject({ 'content-type': 'image/png', 'x-goog-meta-a': '1' })
+    expect([...(puts[0]?.bytes ?? [])]).toEqual([137, 80, 78, 71])
+  })
+
+  test('an unconfirmed upload request fails without putting anything', async () => {
+    const { writer, puts } = fakeLinear({ nsFileUpload: () => signed(false) })
+    await expect(writer.uploadFile('a.png', 'image/png', new Uint8Array([1]))).rejects.toThrow(
+      'linear: fileUpload a.png not confirmed',
+    )
+    expect(puts).toEqual([])
+  })
+
+  test('a rejected put fails', async () => {
+    const { writer } = fakeLinear({ nsFileUpload: () => signed() }, workspace, 403)
+    await expect(writer.uploadFile('a.png', 'image/png', new Uint8Array([1]))).rejects.toThrow(
+      'linear: upload of a.png failed (HTTP 403)',
+    )
   })
 })
 

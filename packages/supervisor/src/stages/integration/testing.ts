@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
 import { importBundle } from '../../adapters/git/host'
@@ -9,7 +9,7 @@ import {
   spawnCommand,
 } from '../../adapters/github/gh'
 import { GitHubTokens } from '../../adapters/github/github-tokens'
-import type { GateResult, IssueSnapshot } from '../../ports'
+import type { Check, GateResult, GateRunner, IssueSnapshot } from '../../ports'
 import { openState } from '../../state/db'
 import type { EventType } from '../../state/event-schema'
 import type { Run } from '../../state/runs'
@@ -308,6 +308,73 @@ export const gate = (check: string): GateResult => ({
   result: { exitCode: 0, durationMs: 1500, stdoutTail: 'ok', stderrTail: '', artifact: '', timedOut: false },
 })
 
+// Runs each check with `sh` in a fresh clone at the commit, the way the sandbox gate runner does.
+export class LocalGateRunner implements GateRunner {
+  readonly runs: { sha: string; checks: string[] }[] = []
+  private n = 0
+
+  constructor(private readonly root: string) {}
+
+  async run(
+    repo: { gitDir: string },
+    _bundle: string,
+    headSha: string,
+    checks: Check[],
+    opts: { collect?: { dir: string; into: string } } = {},
+  ): Promise<GateResult[]> {
+    this.runs.push({ sha: headSha, checks: checks.map((c) => c.run) })
+    this.n += 1
+    const work = join(this.root, `local-gate-${this.n}`)
+    git(this.root, 'clone', '-q', '--shared', '--no-checkout', repo.gitDir, work)
+    git(work, '-c', 'advice.detachedHead=false', 'checkout', '-q', '--detach', headSha)
+    const results: GateResult[] = []
+    for (const c of checks) {
+      const r = Bun.spawnSync(['sh', '-c', c.run], { cwd: work, stdout: 'pipe', stderr: 'pipe' })
+      const passed = r.exitCode === 0
+      results.push({
+        check: c.name,
+        passed,
+        result: {
+          exitCode: r.exitCode ?? 1,
+          durationMs: 1,
+          stdoutTail: r.stdout.toString(),
+          stderrTail: r.stderr.toString(),
+          artifact: '',
+          timedOut: false,
+        },
+      })
+      if (!passed) break
+    }
+    const from = opts.collect && join(work, opts.collect.dir)
+    if (opts.collect && from && results.every((r) => r.passed) && existsSync(from))
+      cpSync(from, opts.collect.into, { recursive: true })
+    rmSync(work, { recursive: true, force: true })
+    return results
+  }
+}
+
+const PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+
+/** A shell command writing a 1x1 PNG to `shots/<file>`. */
+export const writePng = (file: string) => `mkdir -p shots && echo ${PNG_BASE64} | base64 -d > shots/${file}`
+
+/** A shell command writing `shots/manifest.json`; `pages` defaults to the pages of the images. */
+export const writeManifest = (
+  entries: { page: string; viewport: string; theme?: string; file: string }[],
+  pages: { route: string; new?: boolean }[] = [...new Set(entries.map((e) => e.page))].map((route) => ({
+    route,
+  })),
+) =>
+  `mkdir -p shots && printf '%s' '${JSON.stringify({
+    pages: pages.map((p) => ({ path: `routes${p.route}`, ...p })),
+    images: entries.map((e) => ({ theme: 'dark', ...e })),
+  })}' > shots/manifest.json`
+
+export const SHOTS_COMMAND = `${writePng('home-desktop-dark.png')} && ${writeManifest([
+  { page: '/', viewport: 'desktop', file: 'home-desktop-dark.png' },
+])}`
+
 export async function until(cond: () => boolean, what: string): Promise<void> {
   for (let i = 0; i < 400 && !cond(); i++) await Bun.sleep(5)
   if (!cond()) throw new Error(`timed out waiting for ${what}`)
@@ -341,10 +408,17 @@ export function integrationHarness(
   const host = fakeHost(() => config, gh, remote)
   let sup: Supervisor | undefined
   const out: string[] = []
+  const shots = new LocalGateRunner(root)
   const handler = new IntegrationHandler({
     config: () => config,
     host,
     callbacks: () => sup as Supervisor,
+    screenshots: {
+      gates: shots,
+      image: async () => 'nightshift/env-omni:test',
+      linear,
+      dir: join(root, 'screenshots'),
+    },
     out: (l) => out.push(l),
   })
   const db = openState(':memory:')
@@ -393,5 +467,5 @@ export function integrationHarness(
     return first.runs.get(run.id) as Run
   }
 
-  return { fx, config, db, linear, gh, remote, handler, first, make, of, out, executor, integrated }
+  return { fx, config, db, linear, gh, remote, handler, first, make, of, out, executor, integrated, shots }
 }

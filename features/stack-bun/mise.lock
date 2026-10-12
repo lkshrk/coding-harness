@@ -13,7 +13,31 @@ url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5
 url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227632"
 provenance = "github-attestations"
 
+[tools."aqua:biomejs/biome"."platforms.linux-arm64-musl"]
+checksum = "sha256:a56bcd73ddbfdb0f57a82bb67b7ea698eed4027aff602b95aa18fafe919d59e0"
+url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.15/biome-linux-arm64"
+url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227632"
+provenance = "github-attestations"
+
 [tools."aqua:biomejs/biome"."platforms.linux-x64"]
+checksum = "sha256:5d867a0b2ccea1755b7e508b01d836a8c64e31a1e4d11ec24b43b6b4eec8b3b6"
+url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.15/biome-linux-x64"
+url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227626"
+provenance = "github-attestations"
+
+[tools."aqua:biomejs/biome"."platforms.linux-x64-baseline"]
+checksum = "sha256:5d867a0b2ccea1755b7e508b01d836a8c64e31a1e4d11ec24b43b6b4eec8b3b6"
+url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.15/biome-linux-x64"
+url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227626"
+provenance = "github-attestations"
+
+[tools."aqua:biomejs/biome"."platforms.linux-x64-musl"]
+checksum = "sha256:5d867a0b2ccea1755b7e508b01d836a8c64e31a1e4d11ec24b43b6b4eec8b3b6"
+url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.15/biome-linux-x64"
+url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227626"
+provenance = "github-attestations"
+
+[tools."aqua:biomejs/biome"."platforms.linux-x64-musl-baseline"]
 checksum = "sha256:5d867a0b2ccea1755b7e508b01d836a8c64e31a1e4d11ec24b43b6b4eec8b3b6"
 url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5.15/biome-linux-x64"
 url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227626"
@@ -63,6 +87,24 @@ url = "https://github.com/oxc-project/oxc/releases/download/oxlint_v1.87.0/oxlin
 url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/612320692"
 provenance = "github-attestations"
 
+[tools."github:oxc-project/oxc"."platforms.linux-x64-baseline"]
+checksum = "sha256:97a075ac82cd6131641101016f79142ac6765ba79a5a582864450e30d192a425"
+url = "https://github.com/oxc-project/oxc/releases/download/oxlint_v1.87.0/oxlint-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/612320692"
+provenance = "github-attestations"
+
+[tools."github:oxc-project/oxc"."platforms.linux-x64-musl"]
+checksum = "sha256:97a075ac82cd6131641101016f79142ac6765ba79a5a582864450e30d192a425"
+url = "https://github.com/oxc-project/oxc/releases/download/oxlint_v1.87.0/oxlint-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/612320692"
+provenance = "github-attestations"
+
+[tools."github:oxc-project/oxc"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:97a075ac82cd6131641101016f79142ac6765ba79a5a582864450e30d192a425"
+url = "https://github.com/oxc-project/oxc/releases/download/oxlint_v1.87.0/oxlint-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/612320692"
+provenance = "github-attestations"
+
 [[tools."github:oxc-project/oxc"]]
 version = "1.87.0"
 backend = "github:oxc-project/oxc"
@@ -73,6 +115,12 @@ asset_pattern = "oxlint-aarch64-unknown-linux-gnu.tar.gz"
 version_prefix = "oxlint_v"
 
 [tools."github:oxc-project/oxc"."platforms.linux-arm64"]
+checksum = "sha256:2226c5ac023135808a391a5f746666ca0fa398f05252b9007c329e4b62ae03c0"
+url = "https://github.com/oxc-project/oxc/releases/download/oxlint_v1.87.0/oxlint-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/612320601"
+provenance = "github-attestations"
+
+[tools."github:oxc-project/oxc"."platforms.linux-arm64-musl"]
 checksum = "sha256:2226c5ac023135808a391a5f746666ca0fa398f05252b9007c329e4b62ae03c0"
 url = "https://github.com/oxc-project/oxc/releases/download/oxlint_v1.87.0/oxlint-aarch64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/oxc-project/oxc/releases/assets/612320601"

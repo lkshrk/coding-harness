@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Check, GateResult, GateRunner, Mount, SandboxDriver, SandboxHandle } from '../../ports'
 
@@ -31,7 +31,7 @@ export class SandboxGateRunner implements GateRunner {
     bundle: string,
     headSha: string,
     checks: Check[],
-    opts: { run?: string; signal?: AbortSignal } = {},
+    opts: { run?: string; signal?: AbortSignal; collect?: { dir: string; into: string } } = {},
   ): Promise<GateResult[]> {
     opts.signal?.throwIfAborted()
     const name = gateName(opts.run, headSha)
@@ -77,6 +77,8 @@ export class SandboxGateRunner implements GateRunner {
         results.push(result)
         if (!result.passed) break
       }
+      if (opts.collect && results.every((r) => r.passed))
+        await step(this.collect(handle, `${workdir}/${opts.collect.dir}`, outbox, opts.collect.into))
       return results
     } finally {
       await destroy()
@@ -101,6 +103,21 @@ export class SandboxGateRunner implements GateRunner {
       bundle,
     ])
     if (res.exitCode !== 0) throw new Error(`gate checkout of ${headSha} failed: ${res.stderrTail.trim()}`)
+  }
+
+  // The outbox is the one host path the sandbox writes; it is removed with the sandbox.
+  private async collect(h: SandboxHandle, dir: string, outbox: string, into: string): Promise<void> {
+    const staged = join(outbox, 'collect')
+    const res = await this.o.sandbox.exec(h, [
+      'sh',
+      '-c',
+      'if [ -d "$1" ]; then cp -R "$1" "$2"; fi',
+      'sh',
+      dir,
+      staged,
+    ])
+    if (res.exitCode !== 0) throw new Error(`collecting ${dir} failed: ${res.stderrTail.trim()}`)
+    if (existsSync(staged)) cpSync(staged, into, { recursive: true })
   }
 
   private async exec(
