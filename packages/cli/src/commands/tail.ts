@@ -78,14 +78,14 @@ function newestRun(db: Db, issue: string): Run | undefined {
   return resolveRun(runStore(db), issue)
 }
 
-async function tailRun(
+export async function tailRun(
   ctx: Ctx,
   issue: string,
   run: Run,
   after: string | null,
   reasoning: boolean,
+  out: (line: string) => void = (line) => ctx.io.out(line),
 ): Promise<string | null> {
-  const out = (line: string) => ctx.io.out(line)
   const p = paint(ctx.color)
   let session: Stream | null = null
   let diffShown = false

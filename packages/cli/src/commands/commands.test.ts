@@ -9,6 +9,7 @@ import {
   EventLog,
   type EventType,
   openState,
+  type Run,
   RunStore,
   setCovered,
 } from '@nightshift/supervisor'
@@ -16,7 +17,7 @@ import { createCtx } from '../cli'
 import { ControlFailure, type ControlFn } from '../client'
 import { type CliDeps, run } from '../run'
 import { Tmux, type TmuxRunner } from '../tmux'
-import { type Manager, manageOnce, syncPanes } from './watch'
+import { type Manager, manageOnce, type StreamDeps, streamWatch, syncPanes } from './watch'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -851,7 +852,7 @@ describe('watch panes', () => {
     const listed = [pane('%11', old.id, 'XXX-1', 'XXX-1 [done]'), pane('%12', live.id, 'XXX-2')]
     const execs: string[][] = []
     const code = await run(
-      ['watch', '--all'],
+      ['watch', '--panes', '--all'],
       { out: () => {}, err: () => {} },
       {
         ...s.deps,
@@ -882,7 +883,7 @@ describe('watch panes', () => {
     const calls: string[][] = []
     const listed = [pane('%11', old.id, 'XXX-1', 'XXX-1 [done]')]
     const code = await run(
-      ['watch', '--all'],
+      ['watch', '--panes', '--all'],
       { out: () => {}, err: () => {} },
       {
         ...s.deps,
@@ -1018,6 +1019,134 @@ describe('watch panes', () => {
       expect.stringContaining('pane opened: XXX-2'),
       'watching all workers; prefix a in a pane attaches, prefix d leaves',
     ])
+  })
+
+  test('ns watch without --panes streams every active run in one pane, prefixed by issue', async () => {
+    const s = seeded()
+    const fake = (id: string, issue: string): Run =>
+      ({ id, issue, agent: 'implementer', state: 'running', failure: null }) as Run
+    const runs = [fake('r1', 'XXX-1'), fake('r2', 'XXX-2')]
+    const streams = new Map<string, { out: (line: string) => void; signal: AbortSignal }>()
+    const out: string[] = []
+    const stop = new AbortController()
+    const steps = [
+      () => {
+        streams.get('r1')?.out('working on 1')
+        streams.get('r2')?.out('working on 2')
+        runs.push(fake('r3', 'XXX-3'))
+      },
+      () => {
+        streams.get('r3')?.out('working on 3')
+        runs.splice(0, 1, { ...(runs[0] as Run), state: 'done' })
+        runs.splice(1, 1, { ...(runs[1] as Run), state: 'failed', failure: 'gate failed' })
+      },
+      () => {
+        streams.get('r1')?.out('late line')
+        stop.abort()
+      },
+    ]
+    const ctx = createCtx(
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { json: false, noColor: false, yes: false },
+      {
+        ...s.deps,
+        self: ['ns'],
+        signal: stop.signal,
+        sleep: async () => {
+          await Bun.sleep(0)
+          steps.shift()?.()
+        },
+      },
+    )
+    const deps: StreamDeps = {
+      runs: (ids) => ({
+        active: runs.filter((r) => !['done', 'failed'].includes(r.state)),
+        known: new Map(ids.map((id) => [id, runs.find((r) => r.id === id)])),
+      }),
+      stream: (run, write, signal) => {
+        streams.set(run.id, { out: write, signal })
+        write(`tail ${run.issue}`)
+        return new Promise((resolve) => signal.addEventListener('abort', () => resolve(undefined)))
+      },
+    }
+    expect(await streamWatch(ctx, [], deps)).toBe(0)
+    const status = await cli(['status'], s.deps)
+    expect(out.slice(0, status.out.length)).toEqual(status.out)
+    expect(out.slice(status.out.length)).toEqual([
+      'XXX-1 started (implementer)',
+      'XXX-1 │ tail XXX-1',
+      'XXX-2 started (implementer)',
+      'XXX-2 │ tail XXX-2',
+      'XXX-1 │ working on 1',
+      'XXX-2 │ working on 2',
+      'XXX-3 started (implementer)',
+      'XXX-3 │ tail XXX-3',
+      ...status.out,
+      'XXX-3 │ working on 3',
+      'XXX-1 done',
+      'XXX-2 failed: gate failed',
+      ...status.out,
+    ])
+    expect(streams.get('r1')?.signal.aborted).toBe(true)
+    expect(streams.get('r2')?.signal.aborted).toBe(true)
+  })
+
+  test('ns watch <issue> streams only that issue and one failing stream does not stop another', async () => {
+    const s = seeded()
+    const fake = (id: string, issue: string): Run =>
+      ({ id, issue, agent: 'reviewer', state: 'running', failure: null }) as Run
+    const runs = [fake('r1', 'XXX-1'), fake('r2', 'XXX-2'), fake('r3', 'XXX-33')]
+    const streams = new Map<string, (line: string) => void>()
+    const out: string[] = []
+    const stop = new AbortController()
+    const steps = [
+      () => {
+        streams.get('r3')?.('still here')
+        stop.abort()
+      },
+    ]
+    const ctx = createCtx(
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { json: false, noColor: false, yes: false },
+      {
+        ...s.deps,
+        self: ['ns'],
+        signal: stop.signal,
+        sleep: async () => {
+          await Bun.sleep(0)
+          steps.shift()?.()
+        },
+      },
+    )
+    const deps: StreamDeps = {
+      runs: () => ({ active: runs, known: new Map(runs.map((r) => [r.id, r])) }),
+      stream: async (run, write) => {
+        if (run.issue === 'XXX-1') throw new Error('socket closed')
+        streams.set(run.id, write)
+      },
+    }
+    expect(await streamWatch(ctx, ['XXX-1', 'XXX-33'], deps)).toBe(0)
+    const status = await cli(['status'], s.deps)
+    expect(out.slice(status.out.length)).toEqual([
+      'XXX-1  started (reviewer)',
+      'XXX-33 started (reviewer)',
+      'ERR XXX-1  │ stream failed: socket closed',
+      'XXX-33 │ still here',
+    ])
+  })
+
+  test('ns watch without tmux streams instead of failing; --panes still needs tmux', async () => {
+    const s = seeded()
+    addRun(s, 'XXX-1')
+    const stop = new AbortController()
+    const deps = { ...s.deps, which: () => null, signal: stop.signal, sleep: async () => stop.abort() }
+    const r = await cli(['watch'], deps)
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('XXX-1 started (implementer)')
+    expect(r.err.join('\n')).not.toContain('tmux')
+    const panes = await cli(['watch', '--panes'], deps)
+    expect(panes.code).toBe(1)
+    expect(panes.err[0]).toContain('tmux is not installed')
   })
 
   test('the attach key in a pane without a worker says so and exits 0', async () => {
