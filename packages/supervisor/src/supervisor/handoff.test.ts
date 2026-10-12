@@ -64,6 +64,16 @@ describe('graceful stop with a handoff', () => {
     expect(h.sup.escalationCount('FOR-1')).toBe(0)
   })
 
+  test('a nudge that never arrives does not hold the kill past the grace period', async () => {
+    const h = harness()
+    h.config.limits.handoff_grace_seconds = 0
+    const run = await running(h)
+    h.executor.nudge = () => new Promise<void>(() => {})
+    await h.sup.handOff('supervisor stopping')
+    expect(h.executor.ops('stop')).toEqual([run.id])
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'interrupted', headSha: 'head1' })
+  })
+
   test('a worker failure during the grace period still ends the run interrupted', async () => {
     const h = harness()
     h.config.limits.handoff_grace_seconds = 30

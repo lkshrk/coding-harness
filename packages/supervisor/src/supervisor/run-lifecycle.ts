@@ -235,7 +235,7 @@ export class RunLifecycle {
       timer = setTimeout(resolve, seconds * 1000)
     })
     try {
-      await this.rt.deps.executor.nudge(run, handoffMessage(reason, seconds)).catch((e: Error) => {
+      void this.rt.deps.executor.nudge(run, handoffMessage(reason, seconds)).catch((e: Error) => {
         console.error(`${run.issue}: asking run ${run.id} to hand off failed: ${e.message}`)
       })
       await Promise.race([answered, expired])
