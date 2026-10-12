@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { createInterface } from 'node:readline'
+import { clearScreenDown, createInterface, cursorTo, type Interface, moveCursor } from 'node:readline'
 import {
   AgentConfigError,
   buildGuardPlugin,
@@ -169,17 +169,52 @@ export async function leadSession(client: OpenCodeClient): Promise<string> {
 }
 
 export type Lines = (signal: AbortSignal) => AsyncIterable<string>
+export type ChatInput = { lines: Lines; around?: (write: () => void) => void }
 
-async function* stdinLines(signal: AbortSignal): AsyncGenerator<string> {
-  const rl = createInterface({ input: process.stdin, terminal: false })
-  const close = () => rl.close()
-  signal.addEventListener('abort', close, { once: true })
-  try {
-    for await (const line of rl) yield line
-  } finally {
-    signal.removeEventListener('abort', close)
-    rl.close()
+const PROMPT = '› '
+
+type Output = NodeJS.WritableStream & { isTTY?: boolean; columns?: number }
+
+// On a terminal the typed line is lifted out of the way of streamed output and redrawn below it.
+export function terminalInput(
+  input: NodeJS.ReadableStream = process.stdin,
+  output: Output = process.stdout,
+): Required<ChatInput> {
+  const tty = Boolean(output.isTTY)
+  let rl: Interface | null = null
+  const lines = async function* (signal: AbortSignal): AsyncGenerator<string> {
+    const r = createInterface({ input, output, terminal: tty, prompt: PROMPT })
+    rl = r
+    const close = () => r.close()
+    r.on('SIGINT', close)
+    signal.addEventListener('abort', close, { once: true })
+    if (tty) r.prompt()
+    try {
+      for await (const line of r) {
+        yield line
+        if (tty) r.prompt()
+      }
+    } finally {
+      signal.removeEventListener('abort', close)
+      rl = null
+      r.close()
+    }
   }
+  const around = (write: () => void) => {
+    const r = rl
+    if (!tty || !r) return write()
+    const cols = output.columns || 80
+    const at = r.getCursorPos()
+    if (at.rows) moveCursor(output, 0, -at.rows)
+    cursorTo(output, 0)
+    clearScreenDown(output)
+    write()
+    output.write(`${PROMPT}${r.line}`)
+    const end = Math.floor((PROMPT.length + r.line.length) / cols)
+    if (end > at.rows) moveCursor(output, 0, at.rows - end)
+    cursorTo(output, at.cols)
+  }
+  return { lines, around }
 }
 
 // Leaving the view only drops this client; the session keeps running on the lead service.
@@ -187,19 +222,23 @@ export async function chatView(
   ctx: Ctx,
   client: OpenCodeClient,
   session: string,
-  lines: Lines,
+  input: Lines | ChatInput,
 ): Promise<number> {
+  const { lines, around = (write: () => void) => write() } =
+    typeof input === 'function' ? { lines: input } : input
+  const out = (line: string) => around(() => ctx.io.out(line))
+  const err = (line: string) => around(() => ctx.io.err(line))
   const stop = new AbortController()
   const signal = AbortSignal.any(ctx.signal ? [ctx.signal, stop.signal] : [stop.signal])
   const renderer = new SessionRenderer(session, paint(ctx.color), terminalWidth())
   const stream = (async () => {
     try {
-      for await (const raw of client.events(signal)) for (const line of renderer.feed(raw)) ctx.io.out(line)
-      if (!signal.aborted) ctx.io.err('(lead connection closed)')
+      for await (const raw of client.events(signal)) for (const line of renderer.feed(raw)) out(line)
+      if (!signal.aborted) err('(lead connection closed)')
     } catch (e) {
-      if (!signal.aborted) ctx.io.err(`(lead connection lost: ${(e as Error).message})`)
+      if (!signal.aborted) err(`(lead connection lost: ${(e as Error).message})`)
     }
-    for (const line of renderer.flush()) ctx.io.out(line)
+    for (const line of renderer.flush()) out(line)
     stop.abort()
   })()
   try {
@@ -210,7 +249,7 @@ export async function chatView(
       try {
         await client.prompt(session, text)
       } catch (e) {
-        ctx.io.err(`prompt not sent: ${(e as Error).message}`)
+        err(`prompt not sent: ${(e as Error).message}`)
       }
     }
   } finally {
@@ -232,7 +271,7 @@ async function chat(ctx: Ctx, client: OpenCodeClient): Promise<number> {
     right: [],
   }))
   try {
-    return await chatView({ ...ctx, signal }, client, session, stdinLines)
+    return await chatView({ ...ctx, signal }, client, session, terminalInput())
   } finally {
     stopFooter()
     process.off('SIGINT', onInt)

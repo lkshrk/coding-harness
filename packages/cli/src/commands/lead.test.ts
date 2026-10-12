@@ -1,11 +1,12 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { OpenCodeClient, type StatusRecord } from '@nightshift/supervisor'
 import { createCtx, paint } from '../cli'
-import { SessionRenderer } from '../render/session'
+import { SessionRenderer, stripEscapes } from '../render/session'
 import { plainText } from '../render/status'
-import { chatView, leadSession, workersParts } from './lead'
+import { chatView, leadSession, terminalInput, workersParts } from './lead'
 import { terminalWidth } from './tail'
 
 const RICH = 'ses_ecea1c3a3ffeviBjwPtiWE7Jn6'
@@ -83,6 +84,52 @@ test('a typed line is posted as a prompt to the lead session, and leaving does n
     { method: 'POST', path: `/api/session/${RICH}/prompt`, body: { text: 'what is going on?' } },
     { method: 'POST', path: `/api/session/${RICH}/prompt`, body: { text: 'thanks' } },
   ])
+})
+
+test('output arriving while a line is typed is printed above the input line, which is redrawn intact', async () => {
+  const input = new PassThrough()
+  const output = new PassThrough() as PassThrough & { isTTY: boolean; columns: number }
+  output.isTTY = true
+  output.columns = 80
+  let written = ''
+  output.on('data', (b: Buffer) => {
+    written += b.toString()
+  })
+  const term = terminalInput(input, output)
+  const stop = new AbortController()
+  const seen: string[] = []
+  const reading = (async () => {
+    for await (const line of term.lines(stop.signal)) seen.push(line)
+  })()
+  input.write('what is go')
+  await Bun.sleep(10)
+  written = ''
+  term.around(() => output.write('reply line\n'))
+  await Bun.sleep(10)
+  const plain = stripEscapes(written)
+  expect(plain.startsWith('reply line\n')).toBe(true)
+  expect(plain.endsWith('› what is go')).toBe(true)
+  input.write('ing on?\r')
+  await Bun.sleep(10)
+  expect(seen).toEqual(['what is going on?'])
+  stop.abort()
+  await reading
+})
+
+test('the chat view routes its output through the input so the typed line survives', async () => {
+  const out: string[] = []
+  const wraps: number[] = []
+  const lead = fakeLead()
+  const never = async function* (signal: AbortSignal): AsyncGenerator<string> {
+    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+  }
+  const around = (write: () => void) => {
+    wraps.push(out.length)
+    write()
+  }
+  await chatView(ctxWith(out, [], { NO_COLOR: '1' }), lead.client, RICH, { lines: never, around })
+  expect(out.length).toBeGreaterThan(0)
+  expect(wraps.length).toBeGreaterThanOrEqual(out.length)
 })
 
 test('the chat view reuses the newest lead session and creates one when there is none', async () => {
