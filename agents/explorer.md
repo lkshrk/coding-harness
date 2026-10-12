@@ -15,7 +15,7 @@ permission:
     "git show *": allow
     "git diff *": allow
     "rg *": allow
-    "cgc *": allow
+    "codebase-memory-mcp cli *": allow
 nightshift:
   kind: worker
   role: explorer
@@ -53,7 +53,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `investigate-first` skill. Write down the questions: for an investigation issue, the ones in `ISSUE`; on a retry, what `HISTORY` says the last attempt lacked.
-2. Locate: `rg` for names and strings, `cgc` for callers, callees and impact, `git log` and `git show` for how the paths changed.
+2. Locate: `rg` for names and strings, `graph-query` for callers, callees and impact, `git log` and `git show` for how the paths changed.
 3. Read the code and trace inputs, state and ownership towards each answer; rank competing explanations by evidence and check the cheapest first.
 4. Record files, symbols and facts as you confirm them; keep what stays unanswered as open questions.
 5. Call `finish` with the report.

@@ -14,7 +14,7 @@ Find out how the code actually behaves before anyone changes it.
 
 - Separate the observed symptom from the suspected cause; write each down apart.
 - Trace inputs, state transitions, ownership boundaries and failure output along the real path, from entry point to the effect.
-- Prefer primary evidence: the code at `path:line`, `git log` and `git show` for when and why it changed, `cgc` for who calls what.
+- Prefer primary evidence: the code at `path:line`, `git log` and `git show` for when and why it changed, the code graph (`graph-query` skill) for who calls what.
 
 ## Hypotheses
 

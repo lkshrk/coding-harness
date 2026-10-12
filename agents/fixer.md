@@ -53,7 +53,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 
 1. Load the `surgical-patch` skill. Read `ISSUE`, `VERIFY` and `HISTORY`.
 2. Write the reproducing check, preferably a regression test; run it and record the failure.
-3. List three to five falsifiable hypotheses and rule them out cheapest first with `rg`, `cgc`, `git log` and tagged debug output until one explains the failure.
+3. List three to five falsifiable hypotheses and rule them out cheapest first with `rg`, the code graph (`graph-query` skill), `git log` and tagged debug output until one explains the failure.
 4. Fix the cause, rerun the reproducing check until it passes, then run every `VERIFY` command.
 5. Read `git diff`, remove debug output and unrelated edits, then commit.
 6. Call `finish`; `evidence` lists the reproducing check failing before the fix and passing after.

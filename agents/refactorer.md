@@ -52,7 +52,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `safe-refactor` skill. Read `ISSUE`, `VERIFY` and `HISTORY`, and name the target structure.
-2. Find every caller of what moves with `rg` and `cgc`.
+2. Find every caller of what moves with `rg` and the code graph (`graph-query` skill).
 3. Run the baseline: the covering tests and every `VERIFY` command. If the code has no test, add a characterization test first. A red baseline ends the run as `BLOCKED`.
 4. Move one boundary at a time, rerunning the focused checks after each step.
 5. Rerun the baseline checks, read `git diff`, remove dead code and stray edits, then commit.

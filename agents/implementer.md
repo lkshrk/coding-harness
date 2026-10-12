@@ -52,7 +52,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `lean-build` skill. Read `ISSUE`, `VERIFY` and `HISTORY`, and turn each acceptance criterion into a check you can run.
-2. Find where the change belongs: read `FILES`, then callers and existing helpers with `rg` or `cgc`; reuse what fits.
+2. Find where the change belongs: read `FILES`, then callers and existing helpers with `rg` or `graph-query`; reuse what fits.
 3. Per criterion: write the test, run it and see it fail for the expected reason, write the smallest code that passes, run it again.
 4. Run every `VERIFY` command; fix and rerun until all pass. `DONE` needs that output as evidence.
 5. Read `git diff`, remove debug output, stray files and unrelated edits, then commit.
