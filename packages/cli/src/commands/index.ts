@@ -5,6 +5,7 @@ import { ENV_USAGE } from '../env'
 import { ISSUE_USAGE } from '../issue-check'
 import { ATTACH_USAGE, attach } from './attach'
 import { answer, CONTROL_USAGE, cover, ingest, pause, retry, send, stop } from './control'
+import { LEAD_USAGE, lead } from './lead'
 import { LOGS_USAGE, logs } from './logs'
 import { QUESTIONS_USAGE, questions, TASKS_USAGE, tasks, WORKERS_USAGE, workers } from './read'
 import { DIFF_USAGE, diff, TESTS_USAGE, tests } from './results'
@@ -19,8 +20,9 @@ export type Command = (ctx: Ctx, args: string[]) => Promise<number> | number
 
 export const COMMAND_HELP: Record<string, { usage: string; description: string }> = {
   help: { usage: 'ns help [<command>]', description: 'Show command usage.' },
-  up: { usage: 'ns up', description: 'Install and start the supervisor service.' },
-  down: { usage: 'ns down', description: 'Stop and remove the supervisor service.' },
+  up: { usage: 'ns up', description: 'Install and start the supervisor and lead services.' },
+  down: { usage: 'ns down', description: 'Stop and remove the supervisor and lead services.' },
+  lead: { usage: LEAD_USAGE, description: 'Open the lead chat, or serve the lead (service entry point).' },
   supervise: { usage: 'ns supervise', description: 'Run the supervisor in the foreground.' },
   doctor: { usage: DOCTOR_USAGE, description: 'Check configuration and host readiness.' },
   env: { usage: ENV_USAGE, description: 'Build or open a repository environment.' },
@@ -54,6 +56,7 @@ export const COMMAND_HELP: Record<string, { usage: string; description: string }
 }
 
 export const COMMANDS: Record<string, Command> = {
+  lead,
   status,
   tasks,
   workers,

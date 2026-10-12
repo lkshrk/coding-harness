@@ -3,6 +3,8 @@ import type { CommandResult } from '@nightshift/core'
 export type ServiceSpec = {
   bun: string
   main: string
+  args?: string[]
+  description?: string
   workdir: string
   env: Record<string, string>
   logFile: string

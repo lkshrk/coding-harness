@@ -313,6 +313,18 @@
           "minLength": 1
         }
       }
+    },
+    "lead": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "description": "127.0.0.1 port of the lead's OpenCode server (ns lead serve)",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
     }
   },
   "$defs": {

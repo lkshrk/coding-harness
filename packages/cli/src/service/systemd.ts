@@ -9,6 +9,7 @@ import {
 } from './manager'
 
 export const SYSTEMD_UNIT = 'nightshift.service'
+export const SYSTEMD_LEAD_UNIT = 'nightshift-lead.service'
 
 function quote(value: string): string {
   if (!/[\s"\\$%]/.test(value)) return value
@@ -19,7 +20,7 @@ export function systemdUnit(spec: ServiceSpec): string {
   const env = Object.entries(spec.env).map(([k, v]) => `Environment=${quote(`${k}=${v}`)}`)
   return [
     '[Unit]',
-    'Description=nightshift supervisor',
+    `Description=${spec.description ?? 'nightshift supervisor'}`,
     'After=network-online.target',
     'Wants=network-online.target',
     '',
@@ -27,7 +28,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     'Type=simple',
     `WorkingDirectory=${quote(spec.workdir)}`,
     ...(spec.rbw ? [`ExecStartPre=-${quote(spec.rbw)} unlock`] : []),
-    `ExecStart=${quote(spec.bun)} ${quote(spec.main)} supervise`,
+    `ExecStart=${[spec.bun, spec.main, ...(spec.args ?? ['supervise'])].map(quote).join(' ')}`,
     'Restart=on-failure',
     'RestartSec=10',
     'KillSignal=SIGTERM',
@@ -43,11 +44,20 @@ export function systemdUnit(spec: ServiceSpec): string {
 export class SystemdUserService implements ServiceManager {
   readonly kind = 'systemd'
   readonly path: string
+  readonly unit: string
 
   constructor(
-    private readonly o: { home: string; user: string; run: Runner; files: ServiceFiles; configHome?: string },
+    private readonly o: {
+      home: string
+      user: string
+      run: Runner
+      files: ServiceFiles
+      configHome?: string
+      unit?: string
+    },
   ) {
-    this.path = join(o.configHome || join(o.home, '.config'), 'systemd/user', SYSTEMD_UNIT)
+    this.unit = o.unit ?? SYSTEMD_UNIT
+    this.path = join(o.configHome || join(o.home, '.config'), 'systemd/user', this.unit)
   }
 
   installed(): boolean {
@@ -57,7 +67,7 @@ export class SystemdUserService implements ServiceManager {
   async install(spec: ServiceSpec): Promise<void> {
     this.o.files.write(this.path, systemdUnit(spec))
     await must(this.o.run, ['systemctl', '--user', 'daemon-reload'])
-    await must(this.o.run, ['systemctl', '--user', 'enable', SYSTEMD_UNIT])
+    await must(this.o.run, ['systemctl', '--user', 'enable', this.unit])
   }
 
   async lingering(): Promise<boolean> {
@@ -71,22 +81,22 @@ export class SystemdUserService implements ServiceManager {
   }
 
   async uninstall(): Promise<void> {
-    await this.o.run(['systemctl', '--user', 'disable', SYSTEMD_UNIT])
+    await this.o.run(['systemctl', '--user', 'disable', this.unit])
     this.o.files.remove(this.path)
     await must(this.o.run, ['systemctl', '--user', 'daemon-reload'])
   }
 
   async start(): Promise<void> {
-    await must(this.o.run, ['systemctl', '--user', 'start', SYSTEMD_UNIT])
+    await must(this.o.run, ['systemctl', '--user', 'start', this.unit])
   }
 
   async stop(): Promise<void> {
-    await must(this.o.run, ['systemctl', '--user', 'stop', SYSTEMD_UNIT])
+    await must(this.o.run, ['systemctl', '--user', 'stop', this.unit])
   }
 
   async status(): Promise<ServiceState> {
     if (!this.installed()) return 'not installed'
-    const res = await this.o.run(['systemctl', '--user', 'is-active', SYSTEMD_UNIT])
+    const res = await this.o.run(['systemctl', '--user', 'is-active', this.unit])
     return res.stdout.trim() === 'active' || res.stdout.trim() === 'activating' ? 'running' : 'stopped'
   }
 }
