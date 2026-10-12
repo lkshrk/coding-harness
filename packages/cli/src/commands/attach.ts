@@ -1,5 +1,6 @@
 import type { AttachInfo } from '@nightshift/supervisor'
 import { type Ctx, EXIT, parseArgs, requireArg } from '../cli'
+import { DETACH_HINT, withPlainKeys } from '../keys'
 import { call } from './shared'
 
 export const ATTACH_USAGE = 'ns attach <target> [--full] [--shell] [--in-sandbox]'
@@ -27,9 +28,11 @@ export async function attach(ctx: Ctx, args: string[]): Promise<number> {
   if (bools.has('--in-sandbox') || ctx.which('opencode') === null) {
     if (!bools.has('--in-sandbox'))
       ctx.io.err('opencode is not installed on this host; attaching inside the sandbox')
-    return ctx.exec(info.fallback)
+    ctx.io.err(DETACH_HINT)
+    return withPlainKeys(ctx.env, ctx.capture, () => ctx.exec(info.fallback))
   }
   const tui = hostTui(info, bools.has('--full'))
-  const code = await ctx.exec(tui.cmd, { env: tui.env })
+  ctx.io.err(DETACH_HINT)
+  const code = await withPlainKeys(ctx.env, ctx.capture, () => ctx.exec(tui.cmd, { env: tui.env }))
   return code === 0 ? EXIT.ok : code
 }

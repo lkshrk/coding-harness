@@ -32,6 +32,7 @@ export class Tmux {
 
   createSession(manager: string[], swap: string[]): void {
     this.ok(['new-session', '-d', '-s', WATCH_SESSION, '-n', MANAGER_WINDOW, shellLine(manager)])
+    this.ok(['set-option', '-s', 'extended-keys', 'off'])
     this.ok(['set-option', '-wg', 'remain-on-exit', 'on'])
     this.ok(['set-option', '-wg', 'pane-border-status', 'top'])
     this.ok([

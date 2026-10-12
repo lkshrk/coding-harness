@@ -525,7 +525,7 @@ describe('attach', () => {
   test('runs the host TUI with the password only in its environment', async () => {
     const t = setup('/usr/local/bin/opencode')
     const r = await cli(['attach', 'XXX-42'], t.deps)
-    expect(r).toEqual({ code: 0, out: [], err: [] })
+    expect(r).toEqual({ code: 0, out: [], err: ['detach: ctrl+c twice, or type /exit and press Enter'] })
     expect(t.routes).toEqual(['/runs/XXX-42/attach'])
     expect(t.execs).toEqual([
       {
@@ -537,9 +537,58 @@ describe('attach', () => {
 
   test('falls back to the in-sandbox TUI without opencode on the host; --shell opens bash', async () => {
     const t = setup(null)
-    await cli(['attach', 'XXX-42'], t.deps)
+    const r = await cli(['attach', 'XXX-42'], t.deps)
     await cli(['attach', 'XXX-42', '--shell'], t.deps)
     expect(t.execs.map((e) => e.cmd)).toEqual([info.fallback, info.shell])
+    expect(r.err).toEqual([
+      'opencode is not installed on this host; attaching inside the sandbox',
+      'detach: ctrl+c twice, or type /exit and press Enter',
+    ])
+  })
+
+  test('inside tmux turns extended keys off while attached so ctrl+c arrives as 0x03, then restores them', async () => {
+    const t = setup('/usr/local/bin/opencode')
+    const order: string[][] = []
+    const deps: CliDeps = {
+      ...t.deps,
+      env: { TMUX: '/tmp/tmux-1000/default,1,0' },
+      capture: (argv) => {
+        order.push(argv)
+        return { exitCode: 0, stdout: argv[1] === 'show-options' ? 'on\n' : '', stderr: '' }
+      },
+      exec: async (cmd) => {
+        order.push(cmd)
+        return 0
+      },
+    }
+    expect((await cli(['attach', 'XXX-42'], deps)).code).toBe(0)
+    expect(order).toEqual([
+      ['tmux', 'show-options', '-sv', 'extended-keys'],
+      ['tmux', 'set-option', '-s', 'extended-keys', 'off'],
+      ['opencode', 'mini', '--server', 'http://127.0.0.1:49152', '--session', 'ses_1'],
+      ['tmux', 'set-option', '-s', 'extended-keys', 'on'],
+    ])
+    order.length = 0
+    await cli(['attach', 'XXX-42', '--in-sandbox'], deps)
+    expect(order.at(-1)).toEqual(['tmux', 'set-option', '-s', 'extended-keys', 'on'])
+    order.length = 0
+    expect((await cli(['attach', 'XXX-42'], { ...deps, env: {} })).code).toBe(0)
+    expect(order).toEqual([['opencode', 'mini', '--server', 'http://127.0.0.1:49152', '--session', 'ses_1']])
+  })
+
+  test('leaves tmux alone when extended keys are already off', async () => {
+    const t = setup('/usr/local/bin/opencode')
+    const calls: string[][] = []
+    const deps: CliDeps = {
+      ...t.deps,
+      env: { TMUX: '/tmp/tmux-1000/default,1,0' },
+      capture: (argv) => {
+        calls.push(argv)
+        return { exitCode: 0, stdout: 'off\n', stderr: '' }
+      },
+    }
+    await cli(['attach', 'XXX-42'], deps)
+    expect(calls).toEqual([['tmux', 'show-options', '-sv', 'extended-keys']])
   })
 
   test('without an active run exits 4', async () => {

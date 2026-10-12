@@ -1,5 +1,6 @@
 import { loadConfig } from '@nightshift/core'
-import { type CommandDeps, defaultExec, type GlobalFlags, type Io } from './cli'
+import { type CommandDeps, defaultCapture, defaultExec, type GlobalFlags, type Io } from './cli'
+import { withPlainKeys } from './keys'
 
 export const LOCAL = 'local'
 
@@ -71,10 +72,19 @@ export function remoteHost(
   return host && host !== LOCAL ? host : null
 }
 
-export async function runRemote(host: string, argv: string[], deps: CommandDeps, io: Io): Promise<number> {
+export async function runRemote(
+  host: string,
+  argv: string[],
+  deps: CommandDeps,
+  io: Io,
+  command?: string,
+): Promise<number> {
   const exec = deps.exec ?? defaultExec()
   const tty = deps.stdoutIsTTY ?? Boolean(process.stdout.isTTY)
-  const code = await exec(sshCommand(host, argv, { tty, env: deps.env ?? process.env }))
+  const env = deps.env ?? process.env
+  const ssh = () => exec(sshCommand(host, argv, { tty, env }))
+  const code =
+    command === 'attach' ? await withPlainKeys(env, deps.capture ?? defaultCapture, ssh) : await ssh()
   if (code === 255) io.err(`ssh to ${host} failed`)
   return code
 }
