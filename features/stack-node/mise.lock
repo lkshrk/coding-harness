@@ -3,19 +3,21 @@
 lockfile_version = 3
 
 [[tools."aqua:pnpm/pnpm"]]
-version = "10.34.6"
+version = "12.12.1"
 backend = "aqua:pnpm/pnpm"
-specifiers = ["10.34.6"]
+specifiers = ["12.12.1"]
 
 [tools."aqua:pnpm/pnpm"."platforms.linux-arm64"]
-checksum = "sha256:5e18e460aec11c0d39b345a732fbbdee0811354f6f384e2da230c6438ae2137c"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-arm64"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100723"
+checksum = "sha256:193f101e2e670c5ef0b167f82e894c7b863be442c4a691ec8b57e51d657cb6b9"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.12.1/pnpm-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/630553360"
+provenance = "github-attestations"
 
 [tools."aqua:pnpm/pnpm"."platforms.linux-x64"]
-checksum = "sha256:1bdfa04c3acbbf019befa4cf51f73f1de2729f4a513f737d1295905277f3b9cf"
-url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-x64"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100726"
+checksum = "sha256:f61657f53f7891f76ae5cf11e924ee3e9ae1659affcaf7deb9622d4d7ea5637e"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.12.1/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/630553361"
+provenance = "github-attestations"
 
 [[tools."github:oxc-project/oxc"]]
 version = "1.87.0"

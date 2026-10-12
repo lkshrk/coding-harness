@@ -1,5 +1,5 @@
 [tools]
-"aqua:pnpm/pnpm" = "10.34.6"
+"aqua:pnpm/pnpm" = "12.12.1"
 
 [tools."github:oxc-project/oxc"]
 version = "1.87.0"
