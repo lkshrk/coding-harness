@@ -102,7 +102,10 @@ export async function watch(ctx: Ctx, args: string[]): Promise<number> {
   const swap = values['--swap']
   if (swap !== undefined) {
     const issue = tmux.issueOf(swap)
-    if (!issue) throw new CliError(EXIT.notFound, `pane ${swap} shows no worker`)
+    if (!issue) {
+      tmux.message(swap, 'no worker in this pane')
+      return EXIT.ok
+    }
     const id = tmux.runOf(swap)
     const state = withDb(ctx, (db) => runStore(db).get(id)?.state)
     if (!state || isTerminal(state)) {
