@@ -70,6 +70,47 @@ describe('explicit coverage', () => {
   })
 })
 
+describe('dependents', () => {
+  const blocked = (identifier: string, ...by: string[]) =>
+    snapshot({
+      identifier,
+      delegated: false,
+      blockedBy: by.map((b) => ({ identifier: b, team: 'FOR', status: 'Todo' })),
+    })
+
+  test('lists the issue and every issue it blocks, transitively, within its project and without cycles', async () => {
+    const h = harness()
+    h.linear.put(
+      blocked('FOR-1', 'FOR-3'),
+      blocked('FOR-2', 'FOR-1'),
+      blocked('FOR-3', 'FOR-2'),
+      blocked('FOR-4', 'FOR-3'),
+      blocked('FOR-5'),
+      { ...blocked('FOR-6', 'FOR-1'), project: { id: 'p-web', name: 'Web', initiatives: [], labels: [] } },
+      { ...blocked('FOR-7', 'FOR-2'), status: 'Done' },
+    )
+    expect(await h.sup.dependents('FOR-1')).toEqual(['FOR-1', 'FOR-2', 'FOR-3', 'FOR-4'])
+    expect(await h.sup.dependents('FOR-5')).toEqual(['FOR-5'])
+    await expect(h.sup.dependents('FOR-99')).rejects.toThrow('unknown issue FOR-99')
+  })
+
+  test('a covered dependent starts once its blocker is done', async () => {
+    const h = harness()
+    const sup = h.make({
+      config: { ...h.config, linear: { ...h.config.linear, act_on: { delegated: false, labels: [] } } },
+    })
+    h.linear.put({ ...blocked('FOR-1'), status: 'In Review' }, blocked('FOR-2', 'FOR-1'))
+    await sup.start()
+    for (const issue of await sup.dependents('FOR-1')) sup.cover(issue)
+    expect(sup.covered()).toEqual(['FOR-1', 'FOR-2'])
+    expect((await sup.tick()).dispatched).toEqual([])
+    h.linear.patch('FOR-1', { status: 'Done' })
+    await sup.tick()
+    expect(h.executor.ops('start').length).toBe(1)
+    expect(sup.runs.active().map((r) => r.issue)).toEqual(['FOR-2'])
+  })
+})
+
 describe('escalated holds', () => {
   test('releasing an escalated issue clears its hold', async () => {
     const h = harness()

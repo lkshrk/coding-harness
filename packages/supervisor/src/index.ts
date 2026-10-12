@@ -102,6 +102,8 @@ export type {
   AnswerRequest,
   AttachInfo,
   CoverRequest,
+  DependentsRequest,
+  DependentsResponse,
   ErrorResponse,
   Health,
   IngestRequest,

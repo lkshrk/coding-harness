@@ -32,6 +32,8 @@ export interface InboxSupervisor {
 export interface ControlSupervisor extends InboxSupervisor {
   gateway(): 'ok' | 'unavailable'
   uncover(issue: string, by?: By): void
+  /** The issue and every open issue it blocks, transitively, in its team and project. */
+  dependents(issue: string): Promise<string[]>
   resolveRun(target: string): Run | undefined
   retryIngest(issue: string): Promise<Run>
   recordMiss(miss: MissReport): Promise<string>

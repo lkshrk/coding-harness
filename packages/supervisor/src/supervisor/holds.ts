@@ -1,7 +1,7 @@
 import type { ViewOptions } from '../policy/stages'
 import type { Intent } from '../policy/transition'
 import type { Awaiting } from '../ports'
-import type { By } from '../ports/control'
+import { type By, ControlError } from '../ports/control'
 import { coveredIssues, heldIssues, setCovered, setHeld } from '../state/coverage'
 import type { SupervisorRuntime } from './runtime'
 
@@ -23,6 +23,24 @@ export class Holds {
 
   uncover(issue: string, by: By = 'supervisor'): void {
     this.setCoverage(issue, false, by)
+  }
+
+  async dependents(issue: string): Promise<string[]> {
+    const root = await this.rt.deps.linear.issue(issue)
+    if (!root) throw new ControlError('not_found', `unknown issue ${issue}`)
+    const open = await this.rt.deps.linear.candidates({
+      team: root.team,
+      project: root.project?.id ?? null,
+      closedSince: this.rt.now().toISOString(),
+    })
+    const found = [root.identifier]
+    for (let i = 0; i < found.length; i++) {
+      const blocker = found[i]
+      for (const c of open)
+        if (!found.includes(c.identifier) && c.blockedBy.some((b) => b.identifier === blocker))
+          found.push(c.identifier)
+    }
+    return found
   }
 
   private setCoverage(issue: string, covered: boolean, by: By): void {

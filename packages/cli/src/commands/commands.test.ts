@@ -426,6 +426,52 @@ describe('control commands', () => {
     })
   })
 
+  test('implement --with-dependents lists every dependent before covering them; without it covers one', async () => {
+    const s = seeded()
+    const calls: unknown[][] = []
+    const control = (async (_path: string, method: string, route: string, body?: unknown) => {
+      calls.push([method, route, body])
+      return route === '/dependents' ? { issues: ['XXX-1', 'XXX-2', 'XXX-3'] } : { ok: true }
+    }) as ControlFn
+    const prompts: string[] = []
+    const confirm = async (q: string) => {
+      prompts.push(q)
+      return true
+    }
+    const r = await cli(['implement', 'XXX-1', '--with-dependents'], { ...s.deps, control, confirm })
+    expect(r).toEqual({
+      code: 0,
+      out: ['XXX-1, XXX-2, XXX-3 are covered; the supervisor picks them up on its next tick'],
+      err: [],
+    })
+    expect(prompts).toEqual([
+      'Let nightshift implement XXX-1, XXX-2, XXX-3 (XXX-1 and the issues it blocks)? This changes their Linear state.',
+    ])
+    expect(calls).toEqual([
+      ['POST', '/dependents', { issue: 'XXX-1' }],
+      ['POST', '/cover', { issue: 'XXX-1', covered: true }],
+      ['POST', '/cover', { issue: 'XXX-2', covered: true }],
+      ['POST', '/cover', { issue: 'XXX-3', covered: true }],
+    ])
+
+    calls.length = 0
+    prompts.length = 0
+    const one = await cli(['implement', 'XXX-1'], { ...s.deps, control, confirm })
+    expect(one.out).toEqual(['XXX-1 is covered; the supervisor picks it up on its next tick'])
+    expect(prompts).toEqual(['Let nightshift implement XXX-1? This changes its Linear state.'])
+    expect(calls).toEqual([['POST', '/cover', { issue: 'XXX-1', covered: true }]])
+
+    calls.length = 0
+    const declined = await cli(['implement', 'XXX-1', '--with-dependents'], {
+      ...s.deps,
+      control,
+      confirm: async () => false,
+    })
+    expect(declined.code).toBe(1)
+    expect(calls).toEqual([['POST', '/dependents', { issue: 'XXX-1' }]])
+    expect((await cli(['release', 'XXX-1', '--with-dependents'], { ...s.deps, control })).code).toBe(2)
+  })
+
   test('stop asks unless --yes', async () => {
     const s = seeded()
     const rec = recording({ run: '01J0000000000000000000000B' })

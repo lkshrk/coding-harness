@@ -384,6 +384,7 @@ export class Supervisor {
   covered = (): string[] => this.m.holds.covered()
   cover = (issue: string, by?: By): void => this.m.holds.cover(issue, by)
   uncover = (issue: string, by?: By): void => this.m.holds.uncover(issue, by)
+  dependents = (issue: string): Promise<string[]> => this.m.holds.dependents(issue)
   awaiting = (issue: string): Awaiting | null => this.m.holds.awaiting(issue)
   held = (): string[] => this.m.holds.held()
   hold = (issue: string, by?: By): void => this.m.holds.hold(issue, by)

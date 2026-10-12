@@ -10,6 +10,8 @@
     "ok": { "$ref": "#/$defs/ok" },
     "pause": { "$ref": "#/$defs/pauseRequest" },
     "cover": { "$ref": "#/$defs/coverRequest" },
+    "dependents": { "$ref": "#/$defs/dependentsRequest" },
+    "dependentsResult": { "$ref": "#/$defs/dependentsResponse" },
     "send": { "$ref": "#/$defs/sendRequest" },
     "answer": { "$ref": "#/$defs/answerRequest" },
     "stop": { "$ref": "#/$defs/stopRequest" },
@@ -67,6 +69,24 @@
       "additionalProperties": false,
       "required": ["issue", "covered"],
       "properties": { "issue": { "$ref": "#/$defs/issue" }, "covered": { "type": "boolean" } }
+    },
+    "dependentsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue"],
+      "properties": { "issue": { "$ref": "#/$defs/issue" } }
+    },
+    "dependentsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issues"],
+      "properties": {
+        "issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/issue" },
+          "description": "the issue first, then every open issue it blocks, transitively, in its team and project"
+        }
+      }
     },
     "sendRequest": {
       "type": "object",
