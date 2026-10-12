@@ -47,6 +47,7 @@ describe('tmux command builder', () => {
       'ns watch --manage',
     ])
     expect(t.calls).toContainEqual(['tmux', '-L', 'nightshift', 'set-option', '-wg', 'remain-on-exit', 'on'])
+    expect(t.calls).toContainEqual(['tmux', '-L', 'nightshift', 'set-option', '-s', 'extended-keys', 'off'])
     const border = t.calls.find((c) => c[5] === 'pane-border-format')?.[6] ?? ''
     expect(border).toContain('ns status-line --tmux --width #{pane_width} #{@ns-issue}')
     expect(border).not.toContain('#{pane_title}#{?#{@ns-issue}, │')

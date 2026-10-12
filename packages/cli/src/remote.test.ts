@@ -48,3 +48,30 @@ test('ns --host re-executes over ssh and returns the remote exit code', async ()
   expect(code).toBe(4)
   expect(execs).toEqual([['ssh', '-t', 'towerr-dev', '--', 'ns --host local workers']])
 })
+
+test('ns --host attach keeps ssh -t and turns the local tmux extended keys off around it', async () => {
+  const order: string[][] = []
+  const code = await run(
+    ['--host', 'towerr-dev', 'attach', 'XXX-360'],
+    { out: () => {}, err: () => {} },
+    {
+      exec: async (cmd) => {
+        order.push(cmd)
+        return 0
+      },
+      capture: (argv) => {
+        order.push(argv)
+        return { exitCode: 0, stdout: argv[1] === 'show-options' ? 'on\n' : '', stderr: '' }
+      },
+      stdoutIsTTY: true,
+      env: { TMUX: '/tmp/tmux-501/default,1,0' },
+    },
+  )
+  expect(code).toBe(0)
+  expect(order).toEqual([
+    ['tmux', 'show-options', '-sv', 'extended-keys'],
+    ['tmux', 'set-option', '-s', 'extended-keys', 'off'],
+    ['ssh', '-t', 'towerr-dev', '--', 'ns --host local attach XXX-360'],
+    ['tmux', 'set-option', '-s', 'extended-keys', 'on'],
+  ])
+})

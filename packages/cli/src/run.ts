@@ -109,7 +109,7 @@ export async function run(argv: string[], io: Io, given: CliDeps = {}): Promise<
   const user = flags.config
   const deps: CliDeps = user && !given.load ? { ...given, load: () => loadConfig({ user }) } : given
   const remote = remoteHost(flags, deps, args[0])
-  if (remote) return runRemote(remote, argv, deps, io)
+  if (remote) return runRemote(remote, argv, deps, io, args[0])
   const [command] = args
   if (command === '--version' || command === '-v') {
     io.out(`nightshift ${NIGHTSHIFT_VERSION}`)
