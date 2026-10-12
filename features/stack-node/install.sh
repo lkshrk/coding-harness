@@ -6,6 +6,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 prefix=/opt/nightshift/stack-node
 bin=/usr/local/bin
 cache=/var/cache/nightshift
+deps=/var/cache/nightshift-deps
 package_managers="${PACKAGEMANAGERS:-}"
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -57,8 +58,8 @@ EOF
 }
 
 prepare_cache() {
-  mkdir -p "$cache/corepack" "$cache/npm" "$cache/pnpm-store" "$cache/pnpm-cache"
-  chmod 1777 "$cache" "$cache/corepack" "$cache/npm" "$cache/pnpm-store" "$cache/pnpm-cache"
+  mkdir -p "$cache/corepack" "$deps/npm" "$deps/pnpm-store" "$deps/pnpm-cache"
+  chmod 1777 "$cache" "$cache/corepack" "$deps" "$deps/npm" "$deps/pnpm-store" "$deps/pnpm-cache"
 }
 
 # pnpm stays off PATH: it installs only the stack's own tools.

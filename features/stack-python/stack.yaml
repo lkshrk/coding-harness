@@ -22,7 +22,7 @@ checks:
     run: uv run --frozen --offline pytest -q
 egress: [pypi.org, files.pythonhosted.org]
 env:
-  UV_CACHE_DIR: /var/cache/nightshift/uv
+  UV_CACHE_DIR: /var/cache/nightshift-deps/uv
   UV_PYTHON_INSTALL_DIR: /opt/nightshift/stack-python/python
   UV_LINK_MODE: copy
 nested_docker: false
