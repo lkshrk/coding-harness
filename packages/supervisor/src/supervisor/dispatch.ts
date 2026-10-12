@@ -234,16 +234,11 @@ export class Dispatcher {
     return issueSize(view, repo, effectiveLimits(config, profile))
   }
 
-  logSize(
-    view: IssueView,
-    size: IssueSize,
-    decision: SizeDecision,
-    extra: { explorer_estimate?: number } = {},
-  ) {
+  logSize(view: IssueView, size: IssueSize, decision: SizeDecision, profile = this.profileFor(view)) {
     this.rt.log.append({
       type: 'SIZE_CHECKED',
       issue: view.snapshot.identifier,
-      data: { ...sizeData(size, decision, this.profileFor(view)), ...extra },
+      data: sizeData(size, decision, profile),
     })
   }
 
@@ -345,18 +340,19 @@ export class Dispatcher {
     if (agent === undefined || this.rt.deps.agentKind(agent) !== 'worker') {
       throw new ControlError('refused', `${identifier}: no worker agent for stage ${stage}`)
     }
-    const size = this.sizeOf(view, o.profile ?? this.profileFor(view))
+    const profile = o.profile ?? this.profileFor(view)
+    const size = this.sizeOf(view, profile)
     if (size.over.length && !o.forceSize) {
-      this.logSize(view, size, 'too_large')
+      this.logSize(view, size, 'too_large', profile)
       throw new ControlError(
         'refused',
         `${identifier} is too large (${size.over.join(', ')}); split it or retry with --force-size`,
       )
     }
-    const explore = !o.agent && !continueFrom && !continueRef && this.wantsExplorer(view, size)
+    const explore = !continueFrom && !continueRef && this.wantsExplorer(view, size)
     const active = this.rt.runs.active().find((r) => r.issue === identifier)
     if (active) await this.flow.stopRun(active.id, 'retry requested', { by })
-    this.logSize(view, size, size.over.length ? 'forced' : explore ? 'explore' : 'dispatch')
+    this.logSize(view, size, size.over.length ? 'forced' : explore ? 'explore' : 'dispatch', profile)
     this.flow.setAwaiting(identifier, null)
     const run = await this.dispatch(view, {
       ...(explore ? { agent: EXPLORER, reason: SIZE_EXPLORE } : { agent }),

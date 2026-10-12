@@ -105,4 +105,30 @@ describe('size gate on dispatch', () => {
     expect(run.agent).toBe('explorer')
     expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ near: true, decision: 'explore' })
   })
+
+  test('a manual retry naming the implementer still runs the explorer first on a near-limit feature', async () => {
+    const h = sized({ max_estimate: 5 })
+    h.linear.put(snapshot({ identifier: 'FOR-1', estimate: 4 }))
+    await h.sup.start()
+    const run = await h.sup.retryRun('FOR-1', { agent: 'implementer' }, 'cli')
+    expect(run.agent).toBe('explorer')
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ near: true, decision: 'explore' })
+  })
+
+  test('a manual retry under another profile logs SIZE_CHECKED with that profile', async () => {
+    const h = sized({ max_estimate: 5 })
+    const profiles = h.config.profiles as Record<string, unknown>
+    profiles.big = { ...(profiles.default as object), limits: { max_estimate: 20 } }
+    h.linear.put(snapshot({ identifier: 'FOR-1', estimate: 8 }))
+    await h.sup.start()
+    await expect(h.sup.retryRun('FOR-1', {}, 'cli')).rejects.toThrow('too large')
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ profile: 'default', decision: 'too_large' })
+    const run = await h.sup.retryRun('FOR-1', { profile: 'big' }, 'cli')
+    expect(run.profile).toBe('big')
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({
+      profile: 'big',
+      over: [],
+      decision: 'dispatch',
+    })
+  })
 })
