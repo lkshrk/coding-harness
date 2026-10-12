@@ -563,18 +563,24 @@ describe('WorkerExecutor watching', () => {
     expect(cb.of('stalled')[0]?.[2]).toBe('repeated_tool_call')
   })
 
-  test('an invalid finish gets one correction, the second failure ends the run', async () => {
+  test('an invalid finish gets two corrections, the third failure ends the run', async () => {
     await started()
+    worker.stream.push({ kind: 'tool_result', tool: 'finish', ok: false })
     worker.stream.push({ kind: 'tool_result', tool: 'finish', ok: false })
     await Bun.sleep(10)
     expect(cb.of('failed')).toEqual([])
-    worker.stream.push({ kind: 'tool_result', tool: 'finish', ok: false })
+    worker.stream.push({
+      kind: 'tool_result',
+      tool: 'finish',
+      ok: false,
+      error: 'Invalid finish payload:\n- x',
+    })
     await until(() => cb.of('failed').length === 1)
     expect(cb.of('failed')[0]).toEqual([
       'failed',
       run.id,
       'no_finish',
-      'finish payload invalid after one correction',
+      'finish payload invalid after 3 attempts; last errors:\n- x',
     ])
     expect(worker.stopped).toEqual(['no_finish'])
   })

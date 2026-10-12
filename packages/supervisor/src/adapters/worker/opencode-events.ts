@@ -53,12 +53,14 @@ export class EventMapper {
         return [{ kind: 'tool_call', tool, argsDigest: argsDigest(tool, data.input) }]
       }
       case 'session.tool.success':
+        return [{ kind: 'tool_result', tool: this.tools.get(String(data.id)) ?? 'unknown', ok: true }]
       case 'session.tool.failed':
         return [
           {
             kind: 'tool_result',
             tool: this.tools.get(String(data.id)) ?? 'unknown',
-            ok: type === 'session.tool.success',
+            ok: false,
+            error: errorMessage(data),
           },
         ]
       case 'session.step.ended': {

@@ -83,6 +83,13 @@
       "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "finish.schema.json" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "FINISH_REJECTED" } } },
+      "then": {
+        "required": ["issue", "run"],
+        "properties": { "data": { "$ref": "#/$defs/data/finishRejected" } }
+      }
+    },
+    {
       "if": { "properties": { "type": { "const": "WIP_COMMITTED" } } },
       "then": { "required": ["issue", "run"], "properties": { "data": { "$ref": "#/$defs/data/wip" } } }
     },
@@ -236,6 +243,7 @@
         "WORKER_STALLED",
         "WORKER_NO_PROGRESS",
         "WORKER_FINISHED",
+        "FINISH_REJECTED",
         "WORKER_NO_FINISH",
         "WORKER_FAILED",
         "WIP_COMMITTED",
@@ -396,6 +404,23 @@
           },
           "detail": { "type": "string" },
           "by": { "$ref": "#/$defs/by" }
+        }
+      },
+      "finishRejected": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["attempt", "errors"],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "count of rejected finish calls in this run"
+          },
+          "errors": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "validation error lines from the finish tool"
+          }
         }
       },
       "runInterrupted": {
