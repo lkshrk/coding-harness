@@ -147,28 +147,27 @@ function isPage(v: unknown): v is { route: string; path: string; new?: unknown }
   )
 }
 
-// Which pages exist is the command's report: an empty base is trusted only for head pages it marks new.
+// Which pages exist is the command's report; a failed or manifest-less capture is already refused in shoot.
 function pagesOf(before: Capture, after: Capture): { status: Map<string, Status> } | { reason: string } {
   const was = new Set(before.pages.map((p) => p.route))
   const is = new Set(after.pages.map((p) => p.route))
-  if (was.size === 0) {
-    const existing = after.pages.filter((p) => !p.new).map((p) => `\`${p.route}\``)
-    if (existing.length)
-      return {
-        reason: `the screenshots command listed no pages on the base commit, but the head lists existing pages (${existing.join(', ')})`,
-      }
-  }
-  const shotOn = (c: Capture, route: string) => c.shots.some((s) => s.page === route)
+  const combos = (c: Capture, route: string) =>
+    new Set(c.shots.filter((s) => s.page === route).map((s) => `${s.viewport} ${s.theme}`))
   const status = new Map<string, Status>()
   const failed: string[] = []
   for (const route of new Set([...is, ...was])) {
     const s: Status = !was.has(route) ? 'new' : !is.has(route) ? 'removed' : 'pair'
-    if ((s !== 'new' && !shotOn(before, route)) || (s !== 'removed' && !shotOn(after, route)))
-      failed.push(`\`${route}\` on ${s === 'new' || shotOn(before, route) ? 'the head' : 'the base'} commit`)
+    const b = combos(before, route)
+    const a = combos(after, route)
+    if (s !== 'new' && b.size === 0) failed.push(`\`${route}\` on the base commit`)
+    if (s !== 'removed' && a.size === 0) failed.push(`\`${route}\` on the head commit`)
+    if (s === 'pair' && b.size && a.size)
+      for (const combo of new Set([...a, ...b]))
+        if (!a.has(combo) || !b.has(combo))
+          failed.push(`\`${route}\` ${combo} on the ${a.has(combo) ? 'base' : 'head'} commit`)
     status.set(route, s)
   }
-  if (failed.length)
-    return { reason: `the screenshots command listed pages without images: ${failed.join(', ')}` }
+  if (failed.length) return { reason: `the screenshots command missed images: ${failed.join(', ')}` }
   return { status }
 }
 

@@ -380,18 +380,13 @@ describe('integration stage (screenshots)', () => {
     expect(create?.stdin).toContain('no screenshots were taken: the screenshots command produced no images.')
   })
 
-  test('an empty base capture of existing pages opens a draft and never labels them new', async () => {
+  test('a successful base capture listing no pages makes every head page new without a draft', async () => {
     const headOnly = `if [ -f src/b.ts ]; then ${SHOTS_COMMAND}; else ${writeManifest([])}; fi`
     const h = integrationHarness(root, withUi(['src/**'], headOnly))
     await h.integrated()
-    expect(h.linear.uploads).toEqual([])
-    expect(shotComments(h)).toEqual([])
-    const [create] = h.gh.gh('create')
-    expect(create?.cmd.at(-1)).toBe('--draft')
-    expect(create?.stdin).toContain(
-      'no screenshots were taken: the screenshots command listed no pages on the base commit, but the head lists existing pages (`/`).',
-    )
-    expect(create?.stdin).not.toContain('new page')
+    expect(h.linear.uploads.map((u) => u.name)).toEqual(['desktop-dark-after.png'])
+    expect(shotComments(h)[0]?.body).toMatch(/\| `\/` \| desktop \| dark \| \(new page\) \| !\[after\]/)
+    expect(h.gh.gh('create')[0]?.cmd).not.toContain('--draft')
   })
 
   test('an empty base capture with every head page reported new opens a ready PR', async () => {
@@ -425,8 +420,20 @@ describe('integration stage (screenshots)', () => {
     expect(h.linear.uploads).toEqual([])
     const [create] = h.gh.gh('create')
     expect(create?.cmd.at(-1)).toBe('--draft')
+    expect(create?.stdin).toContain('the screenshots command missed images: `/about` on the base commit.')
+  })
+
+  test('a viewport and theme captured on only one side of a page opens a draft naming it', async () => {
+    const desktop = { page: '/', viewport: 'desktop', file: 'home.png' }
+    const phone = { page: '/', viewport: 'phone', file: 'phone.png' }
+    const run = `${writePng('home.png')} && ${writePng('phone.png')} && if [ -f src/b.ts ]; then ${writeManifest([desktop])}; else ${writeManifest([desktop, phone])}; fi`
+    const h = integrationHarness(root, withUi(['src/**'], run))
+    await h.integrated()
+    expect(h.linear.uploads).toEqual([])
+    const [create] = h.gh.gh('create')
+    expect(create?.cmd.at(-1)).toBe('--draft')
     expect(create?.stdin).toContain(
-      'the screenshots command listed pages without images: `/about` on the base commit.',
+      'the screenshots command missed images: `/` phone dark on the head commit.',
     )
   })
 
