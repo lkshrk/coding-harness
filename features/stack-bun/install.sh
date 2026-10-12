@@ -5,7 +5,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 prefix=/opt/nightshift/stack-bun
 bin=/usr/local/bin
-cache=/var/cache/nightshift
+deps=/var/cache/nightshift-deps
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install.sh must run as root" >&2
@@ -88,8 +88,8 @@ install_npm_tools() {
 }
 
 prepare_cache() {
-  mkdir -p "$cache/bun"
-  chmod 1777 "$cache" "$cache/bun"
+  mkdir -p "$deps/bun"
+  chmod 1777 "$deps" "$deps/bun"
 }
 
 ensure_packages
