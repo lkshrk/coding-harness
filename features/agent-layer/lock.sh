@@ -9,4 +9,4 @@ python="$(sed -nE 's/^python = "([0-9]+\.[0-9]+)\..*"$/\1/p' "$here/mise.toml")"
 
 printf 'semgrep==%s\n' "$SEMGREP_VERSION" |
   uv pip compile --universal --generate-hashes --python-version "$python" --no-header -q - -o "$here/semgrep.lock"
-(cd "$here/npm" && pnpm install --lockfile-only)
+(cd "$here/npm" && bun install --lockfile-only)
