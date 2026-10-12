@@ -1,0 +1,11 @@
+{
+  "name": "nightshift-stack-browser-tools",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "dependencies": {
+    "playwright": "1.64.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}

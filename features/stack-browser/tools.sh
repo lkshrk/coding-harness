@@ -1,4 +1,2 @@
-# shellcheck shell=bash disable=SC2034
-
-# renovate: datasource=npm depName=playwright
-PLAYWRIGHT_VERSION="1.64.0"
+# shellcheck shell=bash
+# Playwright and its dependencies are locked in npm/package.json and npm/pnpm-lock.yaml; pnpm is pinned in mise.toml.
