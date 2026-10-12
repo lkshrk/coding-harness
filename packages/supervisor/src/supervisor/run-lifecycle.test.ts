@@ -239,6 +239,42 @@ describe('worker lifecycle', () => {
     expect(h.of('QUESTION_ASKED').length).toBe(1)
   })
 
+  for (const needs of ['decision', 'permission'] as const) {
+    test(`a BLOCKED finish needing ${needs} asks the user and is not retried`, async () => {
+      const h = harness()
+      const run = await dispatchOne(h)
+      await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+      await h.sup.workerFinished(run.id, {
+        status: 'BLOCKED',
+        summary: 'blocked',
+        evidence: [],
+        blocker: { needs, reason: 'open choice', options: ['A', 'B', 'C'] },
+      })
+      expect(h.of('QUESTION_ASKED').map((e) => e.data)).toEqual([
+        expect.objectContaining({ to: 'user', question: 'open choice', options: ['A', 'B', 'C'] }),
+      ])
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.linear.get('FOR-1').status).toBe('Blocked')
+      await h.sup.tick()
+      await h.sup.tick()
+      expect(h.of('DISPATCHED').length).toBe(1)
+    })
+  }
+
+  test('a BLOCKED finish needing environment is still remediated', async () => {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+    await h.sup.workerFinished(run.id, {
+      status: 'BLOCKED',
+      summary: 'blocked',
+      evidence: [],
+      blocker: { needs: 'environment', reason: 'network down' },
+    })
+    expect(h.of('QUESTION_ASKED')).toEqual([])
+    expect(h.of('FAILURE_CLASSIFIED').length).toBe(1)
+  })
+
   test('a stall failure destroys the sandbox after preserving the head', async () => {
     const h = harness()
     const run = await dispatchOne(h)

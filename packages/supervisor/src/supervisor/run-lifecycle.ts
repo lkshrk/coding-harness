@@ -168,7 +168,8 @@ export class RunLifecycle {
     await this.end(runId, 'failed', event)
     await this.releaseSandbox(runId)
     this.flow.releaseLease(run.issue)
-    if (finish.status === 'NEEDS_CONTEXT') {
+    const needs = finish.blocker?.needs
+    if (finish.status === 'NEEDS_CONTEXT' || needs === 'decision' || needs === 'permission') {
       await this.flow.askQuestion(run, event, finish.blocker ?? {})
       return
     }
