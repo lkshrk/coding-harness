@@ -33,6 +33,7 @@ import { Questions } from './questions'
 import { Recovery } from './recovery'
 import { Remediation } from './remediation'
 import { Replan } from './replan'
+import { importXxx220, ReviewLabeller } from './review-labels'
 import { RunLifecycle } from './run-lifecycle'
 import { type RecoveryReport, type StopOptions, type SupervisorDeps, SupervisorRuntime } from './runtime'
 import { Verification } from './verification'
@@ -66,6 +67,7 @@ export class Supervisor {
   private gatewayFailures = 0
   private readonly rt: SupervisorRuntime
   private readonly m: Modules
+  private readonly labeller: ReviewLabeller | undefined
 
   constructor(deps: SupervisorDeps) {
     this.d = deps
@@ -116,6 +118,7 @@ export class Supervisor {
       remediation: new Remediation(rt, this.retry, flow),
       replan: new Replan(rt, flow),
     }
+    this.labeller = deps.evalDir === undefined ? undefined : new ReviewLabeller(rt, deps.evalDir)
   }
 
   get config(): Config {
@@ -133,6 +136,13 @@ export class Supervisor {
     this.paused = this.rt.meta('dispatch') === 'paused'
     retain(this.d.db, this.now())
     this.log.append({ type: 'SUPERVISOR_STARTED', data: { version: NIGHTSHIFT_VERSION } })
+    if (this.d.evalDir !== undefined) {
+      try {
+        importXxx220(this.rt, this.d.evalDir)
+      } catch (e) {
+        this.rt.setMeta('review_labels_error', `xxx-220 import: ${(e as Error).message}`)
+      }
+    }
     await this.m.linearSync.sync()
     const report = await this.m.recovery.recover()
     return report
@@ -197,6 +207,7 @@ export class Supervisor {
     await this.m.questions.checkQuestions()
     await this.m.replan.resumeApproved()
     await this.m.prWatch.watchPullRequests()
+    await this.labeller?.maybeLabel()
     const views = [...this.cache.values()].flatMap(
       (i) => viewIssue(i, this.cfg, this.m.holds.viewOptions(i.identifier)) ?? [],
     )

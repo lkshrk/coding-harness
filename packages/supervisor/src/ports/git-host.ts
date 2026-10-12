@@ -84,10 +84,16 @@ export interface GitHost {
   resolveThread(pr: PullRequest, threadId: string): Promise<void>
 }
 
+// `patch` is the commit's zero-context diff against its first parent.
+export type BaseCommit = { sha: string; at: string; subject: string; patch: string }
+
 export interface RepoInspector {
   baseSha(repository: string): Promise<string>
   fetchPullRequest?(repository: string, pr: Pick<PullRequest, 'number' | 'branch'>): Promise<string>
   conflictingFiles?(repository: string, base: string, head: string): Promise<string[]>
+  // Non-merge commits on the repository's base branch since `since`, oldest first.
+  baseCommits?(repository: string, since: string): Promise<BaseCommit[]>
+  diff?(repository: string, base: string, head: string): Promise<string>
 }
 
 // One repair round per base sha: `run` is the run the round continues from, `head` the PR head it saw.

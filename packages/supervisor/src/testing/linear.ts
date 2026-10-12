@@ -211,6 +211,17 @@ export class FakeLinear implements LinearPort {
     this.threads.set(identifier, [...(this.threads.get(identifier) ?? []), c])
   }
 
+  react(identifier: string, commentId: string, emoji: string): void {
+    const thread = this.threads.get(identifier) ?? []
+    const at = this.now().toISOString()
+    this.threads.set(
+      identifier,
+      thread.map((c) =>
+        c.id === commentId ? { ...c, reactions: [...(c.reactions ?? []), { emoji, at }] } : c,
+      ),
+    )
+  }
+
   async update(identifier: string, change: IssueUpdate): Promise<void> {
     this.updates.push({ identifier, change })
     const cur = this.get(identifier)

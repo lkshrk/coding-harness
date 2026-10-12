@@ -51,6 +51,8 @@ export type SupervisorDeps = {
   syncVault?: () => Promise<void>
   secretsLocked?: () => Promise<boolean>
   gatewayProbe?: () => Promise<{ ok: boolean; reason: string }>
+  // Root of the evaluation sets; reviewer examples go to `<evalDir>/reviewer/`.
+  evalDir?: string
   now?: () => Date
   instanceId?: string
   leaseTtlMs?: number

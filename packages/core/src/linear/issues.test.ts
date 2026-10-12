@@ -387,7 +387,11 @@ describe('LinearIssueReader.comments', () => {
               ? conn([comment('c1', '2026-01-01T00:00:00.000Z')])
               : conn(
                   [
-                    comment('c3', '2026-01-03T00:00:00.000Z', { user: null, botActor: { name: 'GitHub' } }),
+                    comment('c3', '2026-01-03T00:00:00.000Z', {
+                      user: null,
+                      botActor: { name: 'GitHub' },
+                      reactions: [{ emoji: '-1', createdAt: '2026-01-04T00:00:00.000Z' }],
+                    }),
                     comment('c2', '2026-01-02T00:00:00.000Z', {
                       parent: { id: 'c1' },
                       user: { name: 'You' },
@@ -401,7 +405,14 @@ describe('LinearIssueReader.comments', () => {
     expect(await reader.comments('FOR-1')).toEqual([
       { id: 'c1', body: 'body c1', createdAt: '2026-01-01T00:00:00.000Z', parentId: null, by: 'nightshift' },
       { id: 'c2', body: 'body c2', createdAt: '2026-01-02T00:00:00.000Z', parentId: 'c1', by: 'You' },
-      { id: 'c3', body: 'body c3', createdAt: '2026-01-03T00:00:00.000Z', parentId: null, by: 'GitHub' },
+      {
+        id: 'c3',
+        body: 'body c3',
+        createdAt: '2026-01-03T00:00:00.000Z',
+        parentId: null,
+        by: 'GitHub',
+        reactions: [{ emoji: '-1', at: '2026-01-04T00:00:00.000Z' }],
+      },
     ])
   })
 

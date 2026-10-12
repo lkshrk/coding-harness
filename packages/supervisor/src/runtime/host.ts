@@ -32,6 +32,33 @@ export function gitRepos(
       if (r.exitCode !== 1) throw new Error(`git merge-tree ${base} ${head}: ${r.stderr.toString().trim()}`)
       return r.stdout.toString().trim().split('\n').slice(1).filter(Boolean)
     },
+    async baseCommits(repository, since) {
+      const { repo, git } = await hostGit(config, auth, repository)
+      git('fetch', '--quiet', repo.remote, repo.base)
+      const log = git(
+        'log',
+        '--reverse',
+        '--no-merges',
+        `--since=${since}`,
+        '--format=%x1e%H%x1f%cI%x1f%s%x1f',
+        '-p',
+        '-U0',
+        '--no-renames',
+        '--no-color',
+        `${repo.remote}/${repo.base}`,
+      )
+      return log
+        .split('\x1e')
+        .filter(Boolean)
+        .map((entry) => {
+          const [sha = '', at = '', subject = '', patch = ''] = entry.split('\x1f')
+          return { sha, at: new Date(at).toISOString(), subject, patch: patch.trim() }
+        })
+    },
+    async diff(repository, base, head) {
+      const { git } = await hostGit(config, auth, repository)
+      return git('diff', '--no-color', '--no-renames', base, head)
+    },
   }
 }
 
