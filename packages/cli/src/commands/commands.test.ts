@@ -16,7 +16,7 @@ import { createCtx } from '../cli'
 import { ControlFailure, type ControlFn } from '../client'
 import { type CliDeps, run } from '../run'
 import { Tmux, type TmuxRunner } from '../tmux'
-import { syncPanes } from './watch'
+import { type Manager, manageOnce, syncPanes } from './watch'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -962,6 +962,62 @@ describe('watch panes', () => {
     expect(code).toBe(0)
     expect(calls.some((c) => c[0] === 'respawn-pane')).toBe(false)
     expect(calls.at(-1)).toEqual(['display-message', '-t', '%11', 'XXX-1 is not running'])
+  })
+
+  test('one manager iteration writes status, the selected events and pane changes, fitted to the height', async () => {
+    const s = seeded()
+    const old = addRun(s, 'XXX-1', 'done')
+    const live = addRun(s, 'XXX-2')
+    s.log.append({ type: 'WORKER_PROGRESS', run: live.id, data: { steps: 1, tool_calls: 1, tokens: 10 } })
+    s.log.append({
+      type: 'PR_CREATED',
+      issue: 'XXX-2',
+      run: live.id,
+      data: { url: 'https://github.com/o/r/pull/7', branch: 'ns/XXX-2' },
+    })
+    s.log.append({
+      type: 'QUESTION_ASKED',
+      issue: 'XXX-2',
+      data: { to: 'lead', question: 'which db?', comment: 'c1' },
+    })
+    const out: string[] = []
+    const now = () => new Date(Date.parse(s.runs.get(old.id)?.endedAt ?? '') + 1_000)
+    const ctx = createCtx(
+      { out: (l) => out.push(l), err: () => {} },
+      { json: false, noColor: false, yes: false },
+      { ...s.deps, self: ['ns'], now },
+    )
+    const t = fakeTmux([pane('%11', old.id, 'XXX-1', 'XXX-1 [done]')])
+    const m: Manager = { issues: [], maxPanes: 6, fresh: true, first: true, notes: [] }
+    await manageOnce(ctx, t.tmux, m, 40)
+    expect(out).toHaveLength(1)
+    const frame = out[0] ?? ''
+    expect(frame.startsWith('\x1b[H\x1b[2J')).toBe(true)
+    const lines = frame.slice('\x1b[H\x1b[2J'.length).split('\n')
+    const status = await cli(['status'], { ...s.deps, now })
+    expect(lines.slice(0, status.out.length)).toEqual(status.out)
+    expect(lines[status.out.length]).toBe('')
+    const feed = lines.slice(status.out.length + 1, -1)
+    expect(feed.map((l) => l.slice(9))).toEqual([
+      'XXX-1     DISPATCHED implementer attempt 1 on qwen-coder (profile default)',
+      'XXX-2     DISPATCHED implementer attempt 1 on qwen-coder (profile default)',
+      'XXX-2     PR_CREATED https://github.com/o/r/pull/7',
+      'XXX-2     QUESTION_ASKED to lead: which db?',
+      'pane closed: XXX-1',
+      'pane opened: XXX-2',
+    ])
+    expect(lines.at(-1)).toBe('watching all workers; prefix a in a pane attaches, prefix d leaves')
+    expect(killed(t.calls)).toEqual(['%11'])
+
+    out.length = 0
+    await manageOnce(ctx, fakeTmux([pane('%20', live.id, 'XXX-2')]).tmux, m, status.out.length + 4)
+    const short = (out[0] ?? '').split('\n')
+    expect(short).toHaveLength(status.out.length + 4)
+    expect(short.slice(-3)).toEqual([
+      expect.stringContaining('pane closed: XXX-1'),
+      expect.stringContaining('pane opened: XXX-2'),
+      'watching all workers; prefix a in a pane attaches, prefix d leaves',
+    ])
   })
 
   test('the attach key in a pane without a worker says so and exits 0', async () => {

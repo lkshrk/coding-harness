@@ -75,7 +75,7 @@ function limitsLine(l: EffectiveLimits): string {
   ].join(', ')
 }
 
-function render(ctx: Ctx, r: Awaited<ReturnType<typeof statusRecord>>): string[] {
+export function renderStatus(ctx: Ctx, r: Awaited<ReturnType<typeof statusRecord>>): string[] {
   const p = paint(ctx.color)
   const lines: string[] = []
   if (r.supervisor === 'down') lines.push(p('red', 'supervisor not running'))
@@ -140,7 +140,7 @@ export async function status(ctx: Ctx, args: string[]): Promise<number> {
     if (ctx.flags.json) printJson(ctx, r)
     else {
       if (bools.has('--watch') && ctx.stdoutIsTTY) ctx.io.out('\x1b[2J\x1b[H')
-      for (const line of render(ctx, r)) ctx.io.out(line)
+      for (const line of renderStatus(ctx, r)) ctx.io.out(line)
     }
     if (!bools.has('--watch') || ctx.signal?.aborted) return EXIT.ok
     await ctx.sleep(WATCH_MS)

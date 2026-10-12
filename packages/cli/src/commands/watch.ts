@@ -1,14 +1,31 @@
-import { isTerminal, runStore } from '@nightshift/supervisor'
-import { CliError, type Ctx, EXIT, parseArgs } from '../cli'
+import { type Event, eventsAfter, isTerminal, openStateReadOnly, runStore } from '@nightshift/supervisor'
+import { CliError, type Ctx, EXIT, paint, parseArgs } from '../cli'
 import { LOCAL } from '../remote'
+import { eventLine } from '../render/events'
 import { shellLine, Tmux } from '../tmux'
+import { issueOf } from './logs'
 import { withDb } from './shared'
+import { renderStatus, statusRecord } from './status'
 
 export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--max-panes N]'
 const POLL_MS = 2_000
 const MAX_PANES = 6
 // One poll of lead plus one of slack keeps every close within 60 s of the run's end.
 const CLOSE_AFTER_MS = 60_000 - 2 * POLL_MS
+const FEED_SIZE = 15
+const FEED_TYPES = [
+  'PR_CREATED',
+  'REVIEW_RECEIVED',
+  'FAILURE_CLASSIFIED',
+  'QUESTION_ASKED',
+  'DISPATCHED',
+  'RUN_INTERRUPTED',
+  'WORKER_FAILED',
+  'GATEWAY_UNAVAILABLE',
+  'GATEWAY_RECOVERED',
+  'TICK_STALLED',
+]
+const CLEAR = '\x1b[H\x1b[2J'
 
 function ns(ctx: Ctx, ...args: string[]): string[] {
   return [...ctx.self, '--host', LOCAL, ...(ctx.flags.config ? ['--config', ctx.flags.config] : []), ...args]
@@ -19,7 +36,7 @@ function stream(ctx: Ctx, issue: string): string {
   return `trap '' INT; exec ${shellLine(ns(ctx, 'tail', '--no-footer', issue))}`
 }
 
-function closeEnded(ctx: Ctx, tmux: Tmux, o: { fresh?: boolean }) {
+function closeEnded(ctx: Ctx, tmux: Tmux, o: { fresh?: boolean; note?: (line: string) => void }) {
   const panes = tmux.panes()
   const workers = panes.filter((p) => p.run)
   const runs = withDb(ctx, (db) => {
@@ -34,6 +51,7 @@ function closeEnded(ctx: Ctx, tmux: Tmux, o: { fresh?: boolean }) {
     const ended = run?.endedAt ? Date.parse(run.endedAt) : Number.NaN
     if (o.fresh || !(now - ended < CLOSE_AFTER_MS)) {
       tmux.close(pane)
+      o.note?.(`pane closed: ${pane.issue}`)
       return false
     }
     if (!pane.title.endsWith(']'))
@@ -46,7 +64,7 @@ function closeEnded(ctx: Ctx, tmux: Tmux, o: { fresh?: boolean }) {
 export function syncPanes(
   ctx: Ctx,
   tmux: Tmux,
-  o: { issues: string[]; maxPanes: number; fresh?: boolean },
+  o: { issues: string[]; maxPanes: number; fresh?: boolean; note?: (line: string) => void },
 ): string[] {
   const { panes, active } = closeEnded(ctx, tmux, o)
   const known = new Set(panes.map((p) => p.run))
@@ -61,24 +79,75 @@ export function syncPanes(
       maxPanes: o.maxPanes,
     })
     added.push(run.issue)
+    o.note?.(`pane opened: ${run.issue}`)
   }
   return added
 }
 
+export type Manager = {
+  issues: string[]
+  maxPanes: number
+  fresh: boolean
+  first: boolean
+  notes: { ts: string; line: string }[]
+}
+
+function recentEvents(ctx: Ctx): Event[] {
+  const db = openStateReadOnly(ctx.statePath())
+  if (!db) return []
+  try {
+    const issue = issueOf(db, new Map())
+    return eventsAfter(db, null, { types: FEED_TYPES, limit: FEED_SIZE }).map((e) => {
+      const known = issue(e)
+      return known ? { ...e, issue: known } : e
+    })
+  } finally {
+    db.close()
+  }
+}
+
+export async function manageOnce(ctx: Ctx, tmux: Tmux, m: Manager, height: number): Promise<void> {
+  const p = paint(ctx.color)
+  const errors: string[] = []
+  const note = (line: string) => {
+    const ts = ctx.now().toISOString()
+    m.notes = [...m.notes, { ts, line: `${p('dim', ts.slice(11, 19))} ${line}` }].slice(-FEED_SIZE)
+  }
+  try {
+    const added = syncPanes(ctx, tmux, { issues: m.issues, maxPanes: m.maxPanes, fresh: m.fresh, note })
+    m.fresh = false
+    if (m.first && added.length) {
+      tmux.selectWorkers()
+      m.first = false
+    }
+  } catch (e) {
+    errors.push((e as Error).message)
+  }
+  let status: string[] = []
+  let events: { ts: string; line: string }[] = []
+  try {
+    status = renderStatus(ctx, await statusRecord(ctx))
+    events = recentEvents(ctx).map((e) => ({ ts: e.ts, line: eventLine(e, p, e.issue ?? '-') }))
+  } catch (e) {
+    errors.push((e as Error).message)
+  }
+  const feed = [...events, ...m.notes]
+    .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+    .slice(-FEED_SIZE)
+    .map((f) => f.line)
+  const help = `watching ${m.issues.length ? m.issues.join(', ') : 'all workers'}; prefix a in a pane attaches, prefix d leaves`
+  const head = [...status, ...errors.map((e) => p('red', e)), '']
+  const room = Math.max(0, height - head.length - 1)
+  const lines = [...head, ...(room ? feed.slice(-room) : []), help]
+  ctx.io.out(`${CLEAR}${lines.join('\n')}`)
+}
+
 async function manage(ctx: Ctx, tmux: Tmux, issues: string[], maxPanes: number): Promise<number> {
-  let first = true
-  let fresh = true
-  ctx.io.out(
-    `watching ${issues.length ? issues.join(', ') : 'all workers'}; prefix a in a pane attaches, prefix d leaves`,
-  )
+  const m: Manager = { issues, maxPanes, fresh: true, first: true, notes: [] }
   while (!ctx.signal?.aborted) {
     try {
-      const added = syncPanes(ctx, tmux, { issues, maxPanes, fresh })
-      fresh = false
-      if (first && added.length) {
-        tmux.selectWorkers()
-        first = false
-      }
+      // The line written after the frame ends in a newline, which would scroll a full pane by one.
+      await manageOnce(ctx, tmux, m, (process.stdout.rows || 24) - 1)
     } catch (e) {
       ctx.io.err((e as Error).message)
     }
