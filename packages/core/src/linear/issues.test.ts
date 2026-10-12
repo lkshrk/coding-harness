@@ -390,7 +390,18 @@ describe('LinearIssueReader.comments', () => {
                     comment('c3', '2026-01-03T00:00:00.000Z', {
                       user: null,
                       botActor: { name: 'GitHub' },
-                      reactions: [{ emoji: '-1', createdAt: '2026-01-04T00:00:00.000Z' }],
+                      reactions: [
+                        {
+                          emoji: '-1',
+                          createdAt: '2026-01-04T00:00:00.000Z',
+                          user: { id: 'u1', isMe: true },
+                        },
+                        {
+                          emoji: '+1',
+                          createdAt: '2026-01-05T00:00:00.000Z',
+                          user: { id: 'u2', isMe: false },
+                        },
+                      ],
                     }),
                     comment('c2', '2026-01-02T00:00:00.000Z', {
                       parent: { id: 'c1' },
@@ -411,7 +422,10 @@ describe('LinearIssueReader.comments', () => {
         createdAt: '2026-01-03T00:00:00.000Z',
         parentId: null,
         by: 'GitHub',
-        reactions: [{ emoji: '-1', at: '2026-01-04T00:00:00.000Z' }],
+        reactions: [
+          { emoji: '-1', at: '2026-01-04T00:00:00.000Z', user: 'u1', me: true },
+          { emoji: '+1', at: '2026-01-05T00:00:00.000Z', user: 'u2' },
+        ],
       },
     ])
   })

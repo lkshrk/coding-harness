@@ -66,8 +66,14 @@ export function reactionLabel(emoji: string): Exclude<ExampleLabel, 'missed'> | 
   return REACTIONS[emoji]
 }
 
-export function latestReaction(c: Pick<LinearComment, 'reactions'>): ExampleLabel | undefined {
-  const known = (c.reactions ?? []).filter((r) => reactionLabel(r.emoji) !== undefined)
+// Only the owner's reactions count: `owner` when configured, else the user nightshift acts for.
+export function latestReaction(
+  c: Pick<LinearComment, 'reactions'>,
+  owner?: string,
+): ExampleLabel | undefined {
+  const known = (c.reactions ?? []).filter(
+    (r) => (owner === undefined ? r.me === true : r.user === owner) && reactionLabel(r.emoji) !== undefined,
+  )
   const newest = known.sort((a, b) => a.at.localeCompare(b.at)).at(-1)
   return newest && reactionLabel(newest.emoji)
 }
@@ -131,11 +137,75 @@ function lineRange(lines: string | undefined): [number, number] | undefined {
   return m ? [Number(m[1]), Number(m[2] ?? m[1])] : undefined
 }
 
-export function changesLines(patch: string, file: string, lines: string | undefined): boolean {
+type Hunk = { from: number; to: number; offset: number; moved: Map<number, number> }
+
+function fileHunks(patch: string, file: string): Hunk[] | 'deleted' {
+  const hunks: Hunk[] = []
+  let inFile = false
+  let cur: Hunk | undefined
+  let oldLine = 0
+  let newLine = 0
+  const close = () => {
+    if (cur) hunks.push({ ...cur, to: oldLine, offset: newLine - oldLine })
+    cur = undefined
+  }
+  for (const line of patch.split('\n')) {
+    const header = /^diff --git a\/(\S+) b\//.exec(line)
+    if (header) {
+      close()
+      inFile = header[1] === file
+      continue
+    }
+    if (!inFile || line.startsWith('--- ')) continue
+    if (line.startsWith('+++ ')) {
+      if (line === '+++ /dev/null') return 'deleted'
+      continue
+    }
+    const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    if (hunk) {
+      close()
+      // A zero count names the line before the hunk, not its first line.
+      oldLine = Number(hunk[1]) + (hunk[2] === '0' ? 1 : 0)
+      newLine = Number(hunk[3]) + (hunk[4] === '0' ? 1 : 0)
+      cur = { from: oldLine, to: oldLine, offset: 0, moved: new Map() }
+      continue
+    }
+    if (!cur) continue
+    if (line.startsWith('-')) oldLine++
+    else if (line.startsWith('+')) newLine++
+    else if (line.startsWith(' ')) cur.moved.set(oldLine++, newLine++)
+  }
+  close()
+  return hunks
+}
+
+// Maps old-side lines of `file` to new-side lines through `patch`; changed or deleted lines drop out.
+export function mapLines(patch: string, file: string, lines: readonly number[]): number[] {
+  const hunks = fileHunks(patch, file)
+  if (hunks === 'deleted') return []
+  return lines.flatMap((n) => {
+    const inside = hunks.find((h) => n >= h.from && n < h.to)
+    if (inside) return inside.moved.get(n) ?? []
+    const before = hunks.filter((h) => h.to <= n).at(-1)
+    return [n + (before?.offset ?? 0)]
+  })
+}
+
+// `moved` is the diff from the reviewed head to the commit's parent; review lines are mapped through it.
+export function changesLines(
+  patch: string,
+  file: string,
+  lines: string | undefined,
+  moved?: string,
+): boolean {
   const range = lineRange(lines)
   const touched = touchedLines(patch).get(file)
   if (!range || !touched) return false
-  return [...touched.old].some((n) => n >= range[0] && n <= range[1])
+  const all = Array.from({ length: range[1] - range[0] + 1 }, (_, i) => range[0] + i)
+  const now = moved === undefined ? all : mapLines(moved, file, all)
+  if (!now.length) return false
+  const [lo, hi] = [Math.min(...now), Math.max(...now)]
+  return [...touched.old].some((n) => n >= lo && n <= hi)
 }
 
 export function isFixCommit(c: Pick<BaseCommit, 'subject'>): boolean {
@@ -193,7 +263,6 @@ type Bundle = Partial<Omit<ReviewExample, 'label' | 'source' | 'confidence'>> & 
   confidence?: number
 }
 
-// Imports the hand-labelled findings from `<evalDir>/reviewer-xxx-220/` once.
 export function importXxx220(rt: SupervisorRuntime, evalDir: string): number {
   if (rt.meta(IMPORTED)) return 0
   const src = join(evalDir, 'reviewer-xxx-220')
@@ -272,6 +341,8 @@ export class ReviewLabeller {
     const threads = new Map<string, LinearComment[]>()
     const commits = new Map<string, BaseCommit[]>()
     const diffs = new Map<string, string>()
+    const between = new Map<string, string | undefined>()
+    const owner = this.rt.config().linear.owner
     let written = 0
     for (const event of reviews) {
       const run = this.rt.runs.get(event.run as string)
@@ -291,8 +362,16 @@ export class ReviewLabeller {
         const n = i + 1
         const tag = `<!-- nightshift:${event.id}-${n} -->`
         const reaction = thread?.find((c) => c.body.includes(tag))
-        const reacted = reaction && latestReaction(reaction)
-        const fixed = f.severity === 'SUGGESTION' && fixes.some((c) => changesLines(c.patch, f.file, f.lines))
+        const reacted = reaction && latestReaction(reaction, owner)
+        let fixed = false
+        if (f.severity === 'SUGGESTION')
+          for (const c of fixes) {
+            const moved = await this.movedSince(run, c, between)
+            if (moved !== undefined && changesLines(c.patch, f.file, f.lines, moved)) {
+              fixed = true
+              break
+            }
+          }
         const label: [ExampleLabel, ExampleSource] | undefined = reacted
           ? [reacted, 'reaction']
           : fixed
@@ -368,6 +447,23 @@ export class ReviewLabeller {
     const list = (await this.rt.deps.repos.baseCommits?.(repository, since)) ?? []
     cache.set(repository, list)
     return list
+  }
+
+  // Diff from the reviewed head to the fix commit's parent; undefined when it cannot be computed.
+  private async movedSince(
+    run: Run,
+    c: BaseCommit,
+    cache: Map<string, string | undefined>,
+  ): Promise<string | undefined> {
+    if (!run.headSha) return undefined
+    const key = `${run.id} ${c.sha}`
+    if (cache.has(key)) return cache.get(key)
+    let diff: string | undefined
+    try {
+      diff = await this.rt.deps.repos.diff?.(run.repository, run.headSha, `${c.sha}^`)
+    } catch {}
+    cache.set(key, diff)
+    return diff
   }
 
   private async diffOf(run: Run, cache: Map<string, string>): Promise<string> {

@@ -59,7 +59,8 @@ export type LinearIssueComment = {
   createdAt: string
   parentId: string | null
   by: string
-  reactions?: { emoji: string; at: string }[]
+  // `user` is the reacting Linear user id; `me` marks reactions by the authenticated user.
+  reactions?: { emoji: string; at: string; user?: string; me?: true }[]
 }
 
 export type LinearChange = { actor: string; app: boolean; at: string; status?: string; labels?: string[] }
@@ -334,7 +335,14 @@ export function toComment(c: RawComment): LinearIssueComment {
     parentId: c.parent?.id ?? null,
     by: c.user?.name ?? c.botActor?.name ?? c.externalUser?.name ?? 'unknown',
     ...(c.reactions?.length
-      ? { reactions: c.reactions.map((r) => ({ emoji: r.emoji, at: r.createdAt })) }
+      ? {
+          reactions: c.reactions.map((r) => ({
+            emoji: r.emoji,
+            at: r.createdAt,
+            ...(r.user ? { user: r.user.id } : {}),
+            ...(r.user?.isMe ? { me: true as const } : {}),
+          })),
+        }
       : {}),
   }
 }

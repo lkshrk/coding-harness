@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BaseCommit } from '../ports'
+import type { BaseCommit, LinearComment } from '../ports'
 import { findingComment, type ReviewFinding } from '../stages/gates/review'
 import {
   changesLines,
   keepsExisting,
   latestReaction,
+  mapLines,
   type ReviewExample,
   reactionLabel,
   redact,
@@ -43,14 +44,15 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function setup(o: { diff?: string } = {}) {
+function setup(o: { diff?: string; between?: Record<string, string> } = {}) {
   const commits: BaseCommit[] = []
   const h = harness({
     evalDir: dir,
     repos: {
       baseSha: async () => 'base1',
       baseCommits: async () => commits,
-      diff: async () => o.diff ?? PATCH('src/a.ts', 10, 1),
+      diff: async (_repo, base, head) =>
+        base === 'base1' ? (o.diff ?? PATCH('src/a.ts', 10, 1)) : (o.between?.[head] ?? ''),
     },
   })
   const run = h.sup.runs.create({
@@ -101,13 +103,23 @@ describe('reaction mapping', () => {
     expect(
       latestReaction({
         reactions: [
-          { emoji: '+1', at: '2026-10-01T00:00:00.000Z' },
-          { emoji: '-1', at: '2026-10-02T00:00:00.000Z' },
-          { emoji: 'heart', at: '2026-10-03T00:00:00.000Z' },
+          { emoji: '+1', at: '2026-10-01T00:00:00.000Z', me: true },
+          { emoji: '-1', at: '2026-10-02T00:00:00.000Z', me: true },
+          { emoji: 'heart', at: '2026-10-03T00:00:00.000Z', me: true },
         ],
       }),
     ).toBe('false')
     expect(latestReaction({})).toBeUndefined()
+  })
+
+  test("only the owner's reactions count: the acting user, or the configured owner id", () => {
+    const reactions: NonNullable<LinearComment['reactions']> = [
+      { emoji: '+1', at: '2026-10-01T00:00:00.000Z', user: 'u-owner', me: true },
+      { emoji: '-1', at: '2026-10-02T00:00:00.000Z', user: 'u-other' },
+    ]
+    expect(latestReaction({ reactions })).toBe('real')
+    expect(latestReaction({ reactions }, 'u-other')).toBe('false')
+    expect(latestReaction({ reactions: reactions.slice(1) })).toBeUndefined()
   })
 
   test('only a reaction replaces a reaction or a hand label', () => {
@@ -131,6 +143,26 @@ describe('fix-commit detection', () => {
     expect(changesLines(PATCH('src/a.ts', 1, 9), 'src/a.ts', '10-12')).toBe(false)
     expect(changesLines(PATCH('src/b.ts', 11, 1), 'src/a.ts', '10-12')).toBe(false)
     expect(changesLines(PATCH('src/a.ts', 11, 1), 'src/a.ts', undefined)).toBe(false)
+  })
+})
+
+describe('line mapping', () => {
+  const MOVE = [
+    'diff --git a/src/a.ts b/src/a.ts',
+    '--- a/src/a.ts',
+    '+++ b/src/a.ts',
+    '@@ -2,0 +3,5 @@',
+    ...Array.from({ length: 5 }, () => '+ins'),
+    '@@ -20,2 +25,1 @@',
+    ' keep',
+    '-gone',
+    '',
+  ].join('\n')
+
+  test('shifts lines by the hunks before them and drops changed lines', () => {
+    expect(mapLines(MOVE, 'src/a.ts', [1, 2, 3, 10, 20, 21, 30])).toEqual([1, 2, 8, 15, 25, 34])
+    expect(mapLines(MOVE, 'src/b.ts', [4])).toEqual([4])
+    expect(mapLines(MOVE.replace('+++ b/src/a.ts', '+++ /dev/null'), 'src/a.ts', [4])).toEqual([])
   })
 })
 
@@ -220,6 +252,48 @@ describe('review labeller', () => {
     s.h.linear.react('FOR-1', replies[0]?.id as string, '+1')
     await s.label()
     expect(s.example(1)).toMatchObject({ label: 'real', source: 'reaction' })
+  })
+
+  test('a reaction by someone other than the owner labels nothing', async () => {
+    const s = setup()
+    const { replies } = await s.review([SUGGESTION])
+    s.h.linear.react('FOR-1', replies[0]?.id as string, '-1', { user: 'u-other' })
+    await s.h.sup.start()
+    await s.label()
+    expect(s.example(1)).toBeUndefined()
+  })
+
+  test("with linear.owner set, that user's reaction decides", async () => {
+    const s = setup()
+    s.h.config.linear.owner = 'u-lead'
+    const { replies } = await s.review([SUGGESTION])
+    s.h.linear.react('FOR-1', replies[0]?.id as string, '-1', { user: 'u-lead' })
+    s.h.linear.react('FOR-1', replies[0]?.id as string, '+1')
+    await s.h.sup.start()
+    await s.label()
+    expect(s.example(1)).toMatchObject({ label: 'false', source: 'reaction' })
+  })
+
+  test('review lines are mapped through commits between the review head and the fix', async () => {
+    const shift = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,0 +2,20 @@',
+      ...Array.from({ length: 20 }, () => '+ins'),
+      '',
+    ].join('\n')
+    const s = setup({ between: { 'f1^': shift, 'f2^': shift } })
+    const { event } = await s.review([SUGGESTION, { ...SUGGESTION, lines: '31' }])
+    const at = new Date(Date.parse(event.ts) + 1000).toISOString()
+    s.commits.push(
+      { sha: 'f1', at, subject: 'fix: shifted', patch: PATCH('src/a.ts', 31, 1) },
+      { sha: 'f2', at, subject: 'fix: unrelated', patch: PATCH('src/a.ts', 11, 1) },
+    )
+    await s.h.sup.start()
+    await s.label()
+    expect(s.example(1)).toMatchObject({ label: 'real-minor', source: 'fix-commit' })
+    expect(s.example(2)).toBeUndefined()
   })
 
   test('reactions on reviews older than 30 days are not read', async () => {

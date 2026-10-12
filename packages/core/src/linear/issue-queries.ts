@@ -45,7 +45,7 @@ export type RawComment = {
   user: { name: string } | null
   botActor: { name: string | null } | null
   externalUser: { name: string } | null
-  reactions?: { emoji: string; createdAt: string }[]
+  reactions?: { emoji: string; createdAt: string; user: { id: string; isMe: boolean } | null }[]
 }
 
 export type RawHistory = {
@@ -72,7 +72,7 @@ const PAGE_INFO = 'pageInfo { hasNextPage endCursor }'
 export const LABEL_FIELDS = `nodes { id name parent { name } } ${PAGE_INFO}`
 
 export const COMMENT_FIELDS =
-  'id body createdAt parent { id } user { name } botActor { name } externalUser { name } reactions { emoji createdAt }'
+  'id body createdAt parent { id } user { name } botActor { name } externalUser { name } reactions { emoji createdAt user { id isMe } }'
 
 const RELATION_FIELDS = `nodes { type issue { identifier team { key } state { name } } } ${PAGE_INFO}`
 

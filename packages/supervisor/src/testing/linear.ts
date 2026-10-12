@@ -211,13 +211,15 @@ export class FakeLinear implements LinearPort {
     this.threads.set(identifier, [...(this.threads.get(identifier) ?? []), c])
   }
 
-  react(identifier: string, commentId: string, emoji: string): void {
+  // Reacts as the authenticated user unless `by.user` names someone else.
+  react(identifier: string, commentId: string, emoji: string, by: { user?: string } = {}): void {
     const thread = this.threads.get(identifier) ?? []
     const at = this.now().toISOString()
+    const who = by.user === undefined ? { user: 'u-me', me: true as const } : { user: by.user }
     this.threads.set(
       identifier,
       thread.map((c) =>
-        c.id === commentId ? { ...c, reactions: [...(c.reactions ?? []), { emoji, at }] } : c,
+        c.id === commentId ? { ...c, reactions: [...(c.reactions ?? []), { emoji, at, ...who }] } : c,
       ),
     )
   }

@@ -99,6 +99,10 @@ export interface Config {
        */
       labels: Name[]
     }
+    /**
+     * Linear user id whose reactions label review findings; default: the user nightshift authenticates as
+     */
+    owner?: string
     exclude_labels: Name[]
     statuses: Statuses
     /**
