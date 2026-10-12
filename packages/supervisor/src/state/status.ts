@@ -64,8 +64,11 @@ export function readStatus(db: Db): SupervisorStatus {
       askedTo: q.asked_to,
       askedAt: q.asked_at,
     }))
+  const paused = meta('dispatch') === 'paused'
+  const reason = paused ? meta('dispatch_reason') : undefined
   return {
-    dispatch: meta('dispatch') === 'paused' ? 'paused' : 'running',
+    dispatch: paused ? 'paused' : 'running',
+    ...(reason ? { dispatch_reason: reason } : {}),
     restartRequired: meta('restart_required') === 'true',
     activeProfile: meta('active_profile') ?? null,
     active: new RunStore(db, stores).active(),

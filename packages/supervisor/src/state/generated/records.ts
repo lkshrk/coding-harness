@@ -84,6 +84,10 @@ export interface QuestionRecord {
 export interface StatusRecord {
   supervisor: 'running' | 'down'
   dispatch: 'running' | 'paused'
+  /**
+   * why dispatch is paused; absent when running or unknown
+   */
+  dispatch_reason?: string
   gateway: 'ok' | 'unavailable' | null
   /**
    * Signal channel; absent when not configured

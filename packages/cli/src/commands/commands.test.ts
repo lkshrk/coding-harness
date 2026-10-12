@@ -145,6 +145,24 @@ describe('common rules', () => {
     expect(r.out[0]).toBe('dispatch: paused  gateway: unavailable')
   })
 
+  test('status shows the stored pause reason next to dispatch', async () => {
+    const s = seeded()
+    const meta = s.db.query(
+      'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    )
+    meta.run('dispatch', 'paused')
+    meta.run('dispatch_reason', 'gateway unavailable')
+    const control = (async () => ({
+      dispatch: 'paused',
+      gateway: 'unavailable',
+      version: '1',
+    })) as ControlFn
+    const r = await cli(['status'], { ...s.deps, control })
+    expect(r.out[0]).toBe('dispatch: paused (gateway unavailable)  gateway: unavailable')
+    const json = JSON.parse((await cli(['status', '--json'], { ...s.deps, control })).out.join('\n'))
+    expect(json).toMatchObject({ dispatch: 'paused', dispatch_reason: 'gateway unavailable' })
+  })
+
   test("status shows the active profile's effective limits", async () => {
     const s = seeded()
     const config = {

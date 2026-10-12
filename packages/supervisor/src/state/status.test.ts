@@ -154,3 +154,33 @@ describe('readStatus failures', () => {
     expect(readStatus(db).failures.map((e) => e.id)).toEqual(open.map((e) => e.id))
   })
 })
+
+describe('readStatus dispatch reason', () => {
+  const setMeta = (db: ReturnType<typeof setup>['db'], key: string, value: string) =>
+    db
+      .query(
+        'INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      )
+      .run(key, value)
+
+  test('the stored reason is returned while paused', () => {
+    const { db } = setup()
+    setMeta(db, 'dispatch', 'paused')
+    setMeta(db, 'dispatch_reason', 'gateway unavailable')
+    expect(readStatus(db)).toMatchObject({ dispatch: 'paused', dispatch_reason: 'gateway unavailable' })
+  })
+
+  test('no reason is returned while running', () => {
+    const { db } = setup()
+    setMeta(db, 'dispatch', 'running')
+    setMeta(db, 'dispatch_reason', 'rbw locked')
+    expect(readStatus(db).dispatch).toBe('running')
+    expect('dispatch_reason' in readStatus(db)).toBe(false)
+  })
+
+  test('no reason is returned when paused without one', () => {
+    const { db } = setup()
+    setMeta(db, 'dispatch', 'paused')
+    expect('dispatch_reason' in readStatus(db)).toBe(false)
+  })
+})

@@ -48,6 +48,7 @@ export type OpenQuestion = {
 
 export type SupervisorStatus = {
   dispatch: 'running' | 'paused'
+  dispatch_reason?: string
   restartRequired: boolean
   activeProfile: string | null
   active: Run[]

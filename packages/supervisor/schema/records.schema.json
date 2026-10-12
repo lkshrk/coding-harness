@@ -117,6 +117,10 @@
       "properties": {
         "supervisor": { "enum": ["running", "down"] },
         "dispatch": { "enum": ["running", "paused"] },
+        "dispatch_reason": {
+          "type": "string",
+          "description": "why dispatch is paused; absent when running or unknown"
+        },
         "gateway": { "enum": ["ok", "unavailable", null] },
         "signal": {
           "type": "object",
