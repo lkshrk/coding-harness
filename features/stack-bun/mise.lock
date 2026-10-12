@@ -43,6 +43,21 @@ url = "https://github.com/biomejs/biome/releases/download/%40biomejs/biome%402.5
 url_api = "https://api.github.com/repos/biomejs/biome/releases/assets/601227626"
 provenance = "github-attestations"
 
+[[tools."aqua:pnpm/pnpm"]]
+version = "10.34.6"
+backend = "aqua:pnpm/pnpm"
+specifiers = ["10.34.6"]
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-arm64"]
+checksum = "sha256:5e18e460aec11c0d39b345a732fbbdee0811354f6f384e2da230c6438ae2137c"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-arm64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100723"
+
+[tools."aqua:pnpm/pnpm"."platforms.linux-x64"]
+checksum = "sha256:1bdfa04c3acbbf019befa4cf51f73f1de2729f4a513f737d1295905277f3b9cf"
+url = "https://github.com/pnpm/pnpm/releases/download/v10.34.6/pnpm-linux-x64"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/596100726"
+
 [[tools.bun]]
 version = "1.4.3"
 backend = "core:bun"

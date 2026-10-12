@@ -73,7 +73,7 @@
       matchPackageNames: ['bun', 'oven-sh/bun'],
     },
     {
-      description: 'pnpm: agent-layer mise pin and the npm tools packageManager move together',
+      description: 'pnpm: the agent-layer and stack mise pins and the npm tools packageManager move together',
       groupName: 'pnpm',
       matchPackageNames: ['pnpm', 'aqua:pnpm/pnpm'],
     },

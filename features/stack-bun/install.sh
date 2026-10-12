@@ -55,15 +55,36 @@ EOF
   chmod 0755 "$bin/$name"
 }
 
-install_npm_tools() {
-  local node npm
-  node="$(find_node)"
-  npm="$(dirname "$node")/npm"
+# pnpm stays off PATH: it installs only the stack's own tools.
+locked() {
+  (cd "$here" && MISE_DATA_DIR=/opt/nightshift/mise/data MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config" \
+    MISE_STATE_DIR="$tmp/mise-state" MISE_TRUSTED_CONFIG_PATHS="$here" MISE_LOCKED=1 \
+    /opt/nightshift/mise/bin/mise which "$1")
+}
+
+# pnpm's .bin entries are shell shims, so the entry comes from the package's own bin field.
+bin_entry() {
+  local name="$1" package="$2" node="$3"
+  "$node" -e 'const [dir, name] = process.argv.slice(1); const b = require(dir + "/package.json").bin;
+    process.stdout.write(require("path").resolve(dir, typeof b === "string" ? b : b[name]))' \
+    "$(readlink -f "$prefix/npm/node_modules/$package")" "$name"
+}
+
+pnpm_install() {
+  local node="$1" pnpm
+  pnpm="$(locked pnpm)"
   mkdir -p "$prefix/npm"
-  cp "$here/npm/package.json" "$here/npm/package-lock.json" "$prefix/npm/"
-  npm_config_cache="$tmp/npm-cache" "$npm" ci --prefix "$prefix/npm" --omit=dev --ignore-scripts \
-    --no-audit --no-fund --loglevel=error
-  wrapper tsc "$(readlink -f "$prefix/npm/node_modules/.bin/tsc")" "$node"
+  cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$prefix/npm/"
+  PATH="$(dirname "$node"):$PATH" "$pnpm" install --dir "$prefix/npm" --frozen-lockfile --prod \
+    --store-dir "$tmp/pnpm-store" --config.cache-dir="$tmp/pnpm-cache" --config.update-notifier=false \
+    --reporter=append-only
+}
+
+install_npm_tools() {
+  local node
+  node="$(find_node)"
+  pnpm_install "$node"
+  wrapper tsc "$(bin_entry tsc typescript "$node")" "$node"
 }
 
 prepare_cache() {
