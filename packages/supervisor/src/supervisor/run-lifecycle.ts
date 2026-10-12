@@ -15,6 +15,8 @@ import {
 } from './runtime'
 
 const NO_FINISH_REASONS = ['step_cap', 'time_cap', 'token_cap', 'no_finish']
+// The worker was asked to hand off when it hit the limit; ending without one still keeps the run interrupted.
+const RUN_LIMITS = ['step_cap', 'time_cap', 'token_cap']
 
 export const handoffMessage = (reason: string, seconds: number) =>
   `nightshift is stopping this run (${reason}). Within ${seconds} seconds: finish your current step, commit your work, and call finish with status HANDOFF and a handoff note (done, in_progress, next, questions, verify). The next attempt continues from your commit.`
@@ -127,7 +129,7 @@ export class RunLifecycle {
     this.rt.runs.update(runId, { finish: payload })
     const finish = payload as FinishLike
     const pending = this.handoffs.get(runId)
-    if (handoff && run.agent !== INGEST_AGENT) {
+    if (handoff) {
       await this.interrupted(runId, pending ?? { reason: 'worker handed off', requeue: true }, true)
       pending?.resolve()
       return
@@ -161,6 +163,10 @@ export class RunLifecycle {
     const pending = this.handoffs.get(runId)
     if (pending) {
       pending.resolve()
+      return
+    }
+    if (RUN_LIMITS.includes(reason)) {
+      await this.interrupted(runId, { reason: `run limit: ${reason}`, requeue: true }, false)
       return
     }
     if (reason === 'gateway_error') this.flow.gatewayReachable(false, detail ?? reason)
@@ -220,7 +226,7 @@ export class RunLifecycle {
     opts: { by?: By; requeue?: boolean } = {},
   ): Promise<void> {
     const run = this.rt.requireRun(runId)
-    if (run.state !== 'running' || run.agent === INGEST_AGENT || this.handoffs.has(runId)) return
+    if (run.state !== 'running' || this.handoffs.has(runId)) return
     const seconds = this.rt.config().limits.handoff_grace_seconds
     const why: Interruption = { reason, requeue: opts.requeue ?? true, ...(opts.by ? { by: opts.by } : {}) }
     const answered = new Promise<void>((resolve) => this.handoffs.set(runId, { ...why, resolve }))
@@ -255,7 +261,10 @@ export class RunLifecycle {
     this.stalls.delete(runId)
     await this.releaseSandbox(runId)
     this.flow.releaseLease(run.issue)
-    if (why.requeue) await this.flow.applyIntent(run.issue, { kind: 'retryScheduled' })
+    // The issue of an ingest is already done: the ingest module resumes it, or a user stop leaves it to `ns ingest`.
+    if (run.agent === INGEST_AGENT) {
+      if (why.by) await this.flow.ingestRunFailed(runId, `stopped: ${why.reason}`)
+    } else if (why.requeue) await this.flow.applyIntent(run.issue, { kind: 'retryScheduled' })
   }
 
   requireActive(target: string): Run {

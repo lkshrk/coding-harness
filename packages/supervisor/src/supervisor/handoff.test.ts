@@ -159,3 +159,30 @@ describe('graceful stop with a handoff', () => {
     expect(k.sup.runs.get(other.id)?.headSha).toBe('head1')
   })
 })
+
+describe('run limits', () => {
+  test.each(['step_cap', 'time_cap', 'token_cap'])(
+    'a worker that ignores the limit handoff (%s) ends interrupted, not failed',
+    async (cap) => {
+      const h = harness()
+      const run = await running(h)
+      await h.sup.workerFailed(run.id, cap)
+      expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'interrupted', headSha: 'head1', failure: null })
+      expect(h.of('RUN_INTERRUPTED').map((e) => e.data)).toEqual([
+        { reason: `run limit: ${cap}`, handoff: false },
+      ])
+      expect(h.of('WORKER_NO_FINISH')).toEqual([])
+      expect(h.of('FAILURE_CLASSIFIED')).toEqual([])
+      expect(h.sup.escalationCount('FOR-1')).toBe(0)
+      expect(h.linear.get('FOR-1').status).toBe('Todo')
+    },
+  )
+
+  test('a worker that finishes without a limit keeps the failure path', async () => {
+    const h = harness()
+    const run = await running(h)
+    await h.sup.workerFailed(run.id, 'no_finish')
+    expect(h.sup.runs.get(run.id)?.state).toBe('failed')
+    expect(h.of('RUN_INTERRUPTED')).toEqual([])
+  })
+})

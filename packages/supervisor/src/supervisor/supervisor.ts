@@ -200,6 +200,7 @@ export class Supervisor {
     report.stopped = await this.m.linearSync.enforceLinear()
     await this.m.linearSync.clearDoneStages()
     await this.m.dispatcher.launchQueued()
+    if (!this.paused) await this.m.ingest.resumeInterrupted()
 
     const active = new Set(this.runs.active().map((r) => r.issue))
     const held = new Set(this.m.holds.held())

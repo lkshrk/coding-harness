@@ -49,14 +49,7 @@ export class Ingest {
     const { history, first } = this.retryable(identifier)
     this.ingesting.add(identifier)
     try {
-      const attempt = history.filter((e) => e.type === 'VAULT_INGEST_STARTED').length + 1
-      const started = this.rt.log.append({
-        type: 'VAULT_INGEST_STARTED',
-        issue: identifier,
-        data: { attempt },
-      })
-      const events = this.rt.log.since(null, { issue: identifier }).filter((e) => e.id <= first.id)
-      const run = await this.launch(view, started, attempt, events, first.ts.slice(0, 10))
+      const { started, run } = await this.relaunch(view, history, first)
       const failed = this.rt.log
         .since(started.id, { issue: identifier, types: ['VAULT_INGEST_FAILED'] })
         .at(-1)
@@ -71,12 +64,64 @@ export class Ingest {
     }
   }
 
-  private retryable(identifier: string): { history: Event[]; first: Event } {
-    if (!this.enabled()) throw new ControlError('refused', `${identifier}: vault ingest is disabled`)
-    const history = this.rt.log.since(null, {
+  // Runs another attempt of each ingest that nightshift interrupted, unless a user stopped it.
+  async resumeInterrupted(): Promise<void> {
+    if (!this.enabled()) return
+    const interrupted = this.rt.log.since(null, { types: ['RUN_INTERRUPTED'] })
+    const issues = new Set(interrupted.flatMap((e) => (e.issue ? [e.issue] : [])))
+    for (const identifier of issues) {
+      const latest = this.rt.runs
+        .forIssue(identifier)
+        .filter((r) => r.agent === INGEST_AGENT)
+        .at(-1)
+      if (latest?.state !== 'interrupted' || this.ingesting.has(identifier)) continue
+      if (interrupted.findLast((e) => e.run === latest.id)?.data.by !== undefined) continue
+      const history = this.history(identifier)
+      const first = history.find((e) => e.type === 'VAULT_INGEST_STARTED')
+      if (!first || history.at(-1)?.type !== 'VAULT_INGEST_STARTED') continue
+      const snapshot = this.rt.cache.get(identifier) ?? (await this.rt.deps.linear.issue(identifier))
+      if (!snapshot) continue
+      const view = viewIssue(snapshot, this.rt.config(), {
+        ...this.peers.viewOptions(identifier),
+        covered: true,
+      })
+      if (!view) continue
+      this.ingesting.add(identifier)
+      try {
+        await this.relaunch(view, history, first)
+      } finally {
+        this.ingesting.delete(identifier)
+      }
+    }
+  }
+
+  private async relaunch(
+    view: IssueView,
+    history: Event[],
+    first: Event,
+  ): Promise<{ started: Event; run: Run | null }> {
+    const identifier = view.snapshot.identifier
+    const attempt = history.filter((e) => e.type === 'VAULT_INGEST_STARTED').length + 1
+    const started = this.rt.log.append({
+      type: 'VAULT_INGEST_STARTED',
+      issue: identifier,
+      data: { attempt },
+    })
+    const events = this.rt.log.since(null, { issue: identifier }).filter((e) => e.id <= first.id)
+    const run = await this.launch(view, started, attempt, events, first.ts.slice(0, 10))
+    return { started, run }
+  }
+
+  private history(identifier: string): Event[] {
+    return this.rt.log.since(null, {
       issue: identifier,
       types: ['VAULT_INGEST_STARTED', 'VAULT_INGEST_FAILED', 'VAULT_INGESTED'],
     })
+  }
+
+  private retryable(identifier: string): { history: Event[]; first: Event } {
+    if (!this.enabled()) throw new ControlError('refused', `${identifier}: vault ingest is disabled`)
+    const history = this.history(identifier)
     const first = history.find((e) => e.type === 'VAULT_INGEST_STARTED')
     if (history.some((e) => e.type === 'VAULT_INGESTED'))
       throw new ControlError('refused', `${identifier}: vault ingest already succeeded`)
