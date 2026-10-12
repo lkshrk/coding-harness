@@ -9,7 +9,9 @@ import {
   branchParts,
   clipParts,
   compactCount,
+  fitLine,
   footerFrame,
+  type Part,
   plainText,
   renderLine,
   renderParts,
@@ -138,6 +140,18 @@ describe('status footer', () => {
   test('clipping counts visible characters and ends with an ellipsis', () => {
     expect(plainText(clipParts(statusParts(w), 12))).toBe('ROU-594 · f…')
     expect(plainText(clipParts([['dim', 'abc']], 3))).toBe('abc')
+  })
+
+  test('a fitted line that cannot hold the branch still ends with an ellipsis', () => {
+    const left: Part[] = [['issue', 'ROU-594']]
+    const right = branchParts(w)
+    const width = plainText(left).length + 4
+    const cut = fitLine(left, right, width)
+    const text = plainText(cut.left) + plainText(cut.right)
+    expect(text.length).toBeLessThanOrEqual(width)
+    expect(text.endsWith('…')).toBe(true)
+    expect(fitLine(left, right, 200)).toEqual({ left, right })
+    expect(fitLine(left, [], 7)).toEqual({ left, right: [] })
   })
 
   test('the footer is drawn on the last row on a dark background without moving the cursor', () => {
