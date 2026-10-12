@@ -506,3 +506,48 @@ describe('manual retry', () => {
     expect(h.of('DISPATCHED').at(-1)?.data).not.toHaveProperty('continues')
   })
 })
+
+describe('--force-size after the size gate sent an issue to decomposition', () => {
+  async function sentToDecomposition() {
+    const h = harness()
+    ;(h.config.profiles.default as { limits?: Record<string, unknown> }).limits = { max_estimate: 5 }
+    h.linear.put(snapshot({ identifier: 'FOR-1', estimate: 8 }))
+    await h.sup.start()
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').labels).toContain('ai-stage:decomposition')
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ decision: 'decomposition' })
+    return h
+  }
+
+  test('dispatches the implementation worker and logs decision=forced', async () => {
+    const h = await sentToDecomposition()
+    const run = await h.sup.retryRun('FOR-1', { forceSize: true }, 'cli')
+    expect(run).toMatchObject({ agent: 'implementer', attempt: 1 })
+    expect(h.of('SIZE_CHECKED').at(-1)?.data).toMatchObject({ decision: 'forced' })
+    expect(h.linear.get('FOR-1').status).toBe('In Progress')
+    expect(h.linear.get('FOR-1').labels).toContain('ai-stage:implementation')
+    expect(h.linear.get('FOR-1').labels).not.toContain('ai-stage:decomposition')
+    await h.sup.tick()
+    expect(h.sup.runs.get(run.id)?.state).not.toBe('stopped')
+    expect(h.sup.runs.forIssue('FOR-1')).toHaveLength(1)
+    expect(h.linear.get('FOR-1').labels).toContain('ai-stage:implementation')
+  })
+
+  test('a retry without --force-size is still refused', async () => {
+    const h = await sentToDecomposition()
+    await expect(h.sup.retryRun('FOR-1', {}, 'cli')).rejects.toMatchObject({ code: 'refused' })
+    expect(h.sup.runs.forIssue('FOR-1')).toEqual([])
+    expect(h.linear.get('FOR-1').labels).toContain('ai-stage:decomposition')
+  })
+
+  test('an issue in decomposition without a size-gate decision is still refused', async () => {
+    const h = harness()
+    h.linear.put(snapshot({ identifier: 'FOR-1', labels: ['ai-stage:decomposition'] }))
+    await h.sup.start()
+    await expect(h.sup.retryRun('FOR-1', { forceSize: true }, 'cli')).rejects.toMatchObject({
+      code: 'refused',
+      message: 'FOR-1: stage decomposition has no automatic role',
+    })
+    expect(h.sup.runs.forIssue('FOR-1')).toEqual([])
+  })
+})
