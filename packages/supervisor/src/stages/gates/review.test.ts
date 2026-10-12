@@ -348,77 +348,54 @@ describe('review step', () => {
   })
 })
 
-describe('low-confidence blockers', () => {
-  test('a BLOCKER below the default threshold is downgraded, the review passes and the PR body marks it', async () => {
+describe('blockers after an earlier failed review', () => {
+  test('the first review of an issue fails on an other BLOCKER', async () => {
     const h = harness([fail([THIN])])
     const run = await h.reviewed()
-
-    expect(run.state).toBe('done')
-    const downgraded = { ...THIN, severity: 'SUGGESTION', downgraded: true }
+    expect(run.state).toBe('failed')
     expect(h.of('REVIEW_RECEIVED').map((e) => e.data)).toEqual([
-      { verdict: 'pass', model: 'glm', findings: [downgraded] },
+      { verdict: 'fail', model: 'glm', findings: [THIN] },
     ])
-    const comments = await h.linear.comments('FOR-1')
-    expect(comments.some((c) => c.body.includes('**SUGGESTION** (downgraded BLOCKER) `src/a.ts:2`'))).toBe(
-      true,
+  })
+
+  test('without an earlier failure nothing is downgraded', () => {
+    const review: ReviewOutput = { verdict: 'fail', findings: [THIN] }
+    expect(downgradeBlockers(review, { earlierFailures: 0 })).toEqual(review)
+  })
+
+  test('after an earlier failure other BLOCKERs become SUGGESTIONs and the verdict is recomputed', () => {
+    const suggestion = { ...THIN, severity: 'SUGGESTION' as const, message: 'name it better' }
+    expect(
+      downgradeBlockers({ verdict: 'fail', findings: [THIN, suggestion] }, { earlierFailures: 1 }),
+    ).toEqual({
+      verdict: 'pass',
+      findings: [{ ...THIN, severity: 'SUGGESTION', downgraded: true }, suggestion],
+    })
+  })
+
+  test.each(['weakened_test', 'security'] as const)('a %s BLOCKER is kept and fails', (category) => {
+    const blocker = { ...THIN, category }
+    expect(downgradeBlockers({ verdict: 'fail', findings: [THIN, blocker] }, { earlierFailures: 2 })).toEqual(
+      {
+        verdict: 'fail',
+        findings: [{ ...THIN, severity: 'SUGGESTION', downgraded: true }, blocker],
+      },
     )
+  })
+
+  test('the PR body marks a downgraded BLOCKER', () => {
+    const review = downgradeBlockers({ verdict: 'fail', findings: [THIN] }, { earlierFailures: 1 })
     const body = pullRequestBody({
       issue: snapshot({ identifier: 'FOR-1' }),
-      runId: run.id,
+      runId: 'r',
       finish: null,
       gates: [],
-      review: h.of('REVIEW_RECEIVED')[0]?.data as ReviewOutput,
+      review,
       unreviewed: null,
       riskPaths: [],
     })
     expect(body).toContain(
       'Verdict: pass\n- **SUGGESTION** (downgraded BLOCKER) `src/a.ts:2` (confidence 0.6): b may be read before it is set',
     )
-  })
-
-  test('a BLOCKER at 0.8 still fails the run', async () => {
-    const h = harness([fail([{ ...THIN, confidence: 0.8 }])])
-    const run = await h.reviewed()
-    expect(run.state).toBe('failed')
-    expect(h.of('REVIEW_RECEIVED')[0]?.data).toMatchObject({
-      verdict: 'fail',
-      findings: [{ severity: 'BLOCKER', confidence: 0.8 }],
-    })
-  })
-
-  test.each(['weakened_test', 'security'] as const)('a %s BLOCKER fails at any confidence', (category) => {
-    const blocker = { ...THIN, category, confidence: 0.1 }
-    expect(downgradeBlockers({ verdict: 'fail', findings: [blocker] }, 0.7)).toEqual({
-      verdict: 'fail',
-      findings: [blocker],
-    })
-  })
-
-  test('a weakened-test BLOCKER at low confidence fails the run', async () => {
-    const h = harness([fail([{ ...BLOCKER, confidence: 0.3 }])])
-    expect((await h.reviewed()).state).toBe('failed')
-  })
-
-  test('the verdict is recomputed from the remaining BLOCKERs', () => {
-    const strong = { ...THIN, confidence: 0.9 }
-    expect(downgradeBlockers({ verdict: 'fail', findings: [THIN, strong] }, 0.7)).toEqual({
-      verdict: 'fail',
-      findings: [{ ...THIN, severity: 'SUGGESTION', downgraded: true }, strong],
-    })
-    expect(
-      downgradeBlockers({ verdict: 'fail', findings: [{ ...THIN, confidence: 0.7 }] }, 0.7).verdict,
-    ).toBe('fail')
-  })
-
-  test('limits.review_blocker_confidence overrides the threshold', async () => {
-    const base = testConfig()
-    const config = { ...base, limits: { ...base.limits, review_blocker_confidence: 0.9 } }
-    const h = harness([fail([{ ...THIN, confidence: 0.8 }])], config)
-    const run = await h.reviewed()
-    expect(run.state).toBe('done')
-    expect(h.of('REVIEW_RECEIVED')[0]?.data).toMatchObject({
-      verdict: 'pass',
-      findings: [{ severity: 'SUGGESTION', downgraded: true, confidence: 0.8 }],
-    })
   })
 })

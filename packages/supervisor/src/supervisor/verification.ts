@@ -8,7 +8,7 @@ import {
 } from '../policy/stages'
 import type { GateResult } from '../ports'
 import { type GateEventData, gateComment, gateEventData } from '../stages/gates/report'
-import { blockerSummary, type ReviewOutcome, reviewComment } from '../stages/gates/review'
+import { blockerSummary, downgradeBlockers, type ReviewOutcome, reviewComment } from '../stages/gates/review'
 import type { Event } from '../state/events'
 import type { RunFlow, SupervisorRuntime } from './runtime'
 
@@ -121,7 +121,11 @@ export class Verification {
       await this.reviewPassed(runId, event)
       return
     }
-    const { review, model } = outcome
+    const { model } = outcome
+    const earlierFailures = this.rt.log
+      .since(null, { issue: run.issue, types: ['REVIEW_RECEIVED'] })
+      .filter((e) => e.data.verdict === 'fail').length
+    const review = downgradeBlockers(outcome.review, { earlierFailures })
     const event = this.rt.log.append({
       type: 'REVIEW_RECEIVED',
       issue: run.issue,

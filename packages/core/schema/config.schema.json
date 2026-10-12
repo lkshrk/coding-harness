@@ -392,13 +392,6 @@
           "maximum": 3600,
           "default": 120,
           "description": "how long a stopped worker has to commit and hand off before it is killed"
-        },
-        "review_blocker_confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "default": 0.7,
-          "description": "a reviewer BLOCKER below this confidence is downgraded to SUGGESTION, unless it weakens a test or is a security problem"
         }
       }
     },

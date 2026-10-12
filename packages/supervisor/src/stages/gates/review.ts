@@ -195,12 +195,7 @@ async function review(d: ReviewStepDeps, run: Run): Promise<ReviewOutcome> {
     gateway: await d.gateway(),
     sessionId: run.id,
   })
-  if (res.ok)
-    return {
-      kind: 'verdict',
-      review: downgradeBlockers(res.output, config.limits.review_blocker_confidence),
-      model,
-    }
+  if (res.ok) return { kind: 'verdict', review: res.output, model }
   if (res.reason === 'gateway_error') return { kind: 'error', reason: 'gateway_error', detail: res.detail }
   return {
     kind: 'unreviewed',
@@ -224,10 +219,11 @@ export function reviewStep(d: ReviewStepDeps): (run: Run) => Promise<void> {
   }
 }
 
-export function downgradeBlockers(review: ReviewOutput, threshold: number): ReviewOutput {
+export function downgradeBlockers(review: ReviewOutput, o: { earlierFailures: number }): ReviewOutput {
+  if (o.earlierFailures === 0) return review
   const findings = review.findings.map(
     (f): ReviewFinding =>
-      f.severity === 'BLOCKER' && f.category === 'other' && f.confidence < threshold
+      f.severity === 'BLOCKER' && f.category === 'other'
         ? { ...f, severity: 'SUGGESTION', downgraded: true }
         : f,
   )

@@ -87,16 +87,16 @@ describe('loadConfig', () => {
       no_diff_tokens: '250k',
     })
     expect(res.config.limits.repair_rounds).toBe(2)
-    expect(res.config.limits.review_blocker_confidence).toBe(0.7)
+    expect(res.config.limits).not.toHaveProperty('review_blocker_confidence')
   })
 
-  test('a user file overrides limits.review_blocker_confidence; values outside 0-1 are rejected', () => {
+  test('limits.review_blocker_confidence is an unknown key', () => {
     const res = loadConfig(opts({ user: userWith((u) => (u.limits = { review_blocker_confidence: 0.5 })) }))
-    if (!res.ok) throw new Error(res.errors.map(formatError).join('\n'))
-    expect(res.config.limits.review_blocker_confidence).toBe(0.5)
-    const bad = loadConfig(opts({ user: userWith((u) => (u.limits = { review_blocker_confidence: 1.5 })) }))
-    expect(bad.ok).toBe(false)
-    if (!bad.ok) expect(bad.errors.map((e) => e.path)).toEqual(['limits.review_blocker_confidence'])
+    expect(res.ok).toBe(false)
+    if (!res.ok)
+      expect(res.errors.map((e) => [e.path, e.message])).toEqual([
+        ['limits.review_blocker_confidence', 'unknown key'],
+      ])
   })
 
   test('lists replace as a whole: a user pipeline is exactly the user list', () => {

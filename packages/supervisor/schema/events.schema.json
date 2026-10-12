@@ -468,7 +468,7 @@
                 "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
                 "downgraded": {
                   "const": true,
-                  "description": "a BLOCKER below limits.review_blocker_confidence, recorded as SUGGESTION"
+                  "description": "a BLOCKER of category other on an issue whose review already failed once, recorded as SUGGESTION"
                 }
               }
             }
