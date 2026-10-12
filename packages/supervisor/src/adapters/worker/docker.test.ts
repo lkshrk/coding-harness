@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SandboxSpec } from '../../ports'
@@ -123,6 +132,19 @@ describe('DockerSandbox', () => {
     await docker.create(spec({ name: '01NEXT', mounts }))
     expect(cli.last('run')).toContain(`${cache}:/var/cache/nightshift-deps`)
     expect(readdirSync(cache)).toEqual(['pkg.tgz'])
+  })
+
+  test('create makes an existing cache directory writable by the sandbox user', async () => {
+    cli.replies.push((a) => (a[0] === 'inspect' ? { exitCode: 1 } : undefined))
+    cli.replies.push((a) => (a[0] === 'run' ? { stdout: 'abc123\n' } : undefined))
+    const cache = join(dir, 'deps')
+    mkdirSync(cache, { mode: 0o755 })
+    chmodSync(cache, 0o755)
+    const mounts: SandboxSpec['mounts'] = [
+      { hostPath: cache, guestPath: '/var/cache/nightshift-deps', readOnly: false, cache: true },
+    ]
+    await docker.create(spec({ mounts }))
+    expect(statSync(cache).mode & 0o777).toBe(0o777)
   })
 
   test('exec passes env by name only, feeds stdin and reports a timeout as 124', async () => {

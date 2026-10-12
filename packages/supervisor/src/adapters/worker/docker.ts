@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
@@ -86,6 +86,19 @@ export function memoryMb(memory: string | undefined, fallback = 8192): number {
   return Number(m[1]) * (m[2] === 'g' ? 1024 : 1)
 }
 
+// The sandbox user's uid differs from the host user's, so the cache must be writable by anyone.
+export function writableCache(path: string): void {
+  mkdirSync(path, { recursive: true })
+  if ((statSync(path).mode & 0o777) === 0o777) return
+  try {
+    chmodSync(path, 0o777)
+  } catch (e) {
+    throw new Error(
+      `dependency cache ${path} is not writable by the sandbox user and its mode cannot be changed (${(e as Error).message}); run: chmod 0777 ${path}`,
+    )
+  }
+}
+
 export type DockerSandboxOptions = {
   cli?: DockerCli
   publish?: number[]
@@ -113,12 +126,7 @@ export class DockerSandbox implements SandboxDriver {
     const existing = await this.cli.run(['inspect', '--format', '{{.Id}}', name])
     if (existing.exitCode === 0) return this.handle(existing.stdout, spec.name)
     mkdirSync(spec.outbox, { recursive: true })
-    for (const m of spec.mounts) {
-      if (m.readOnly || existsSync(m.hostPath)) continue
-      mkdirSync(m.hostPath, { recursive: true })
-      // The sandbox user's uid differs from the host user's, so the cache must be writable by anyone.
-      chmodSync(m.hostPath, 0o777)
-    }
+    for (const m of spec.mounts) if (!m.readOnly) writableCache(m.hostPath)
     const labels = { ...spec.labels, nightshift: '1', [OUTBOX_LABEL]: spec.outbox }
     const args = [
       'run',
