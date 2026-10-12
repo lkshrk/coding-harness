@@ -179,7 +179,7 @@ function fileHunks(patch: string, file: string): Hunk[] | 'deleted' {
   return hunks
 }
 
-// Maps old-side lines of `file` to new-side lines through `patch`; changed or deleted lines drop out.
+// Changed or deleted lines drop out rather than map to a neighbour.
 export function mapLines(patch: string, file: string, lines: readonly number[]): number[] {
   const hunks = fileHunks(patch, file)
   if (hunks === 'deleted') return []
@@ -191,7 +191,7 @@ export function mapLines(patch: string, file: string, lines: readonly number[]):
   })
 }
 
-// `moved` is the diff from the reviewed head to the commit's parent; review lines are mapped through it.
+// Review lines are mapped through `moved` first, since later commits shift line numbers.
 export function changesLines(
   patch: string,
   file: string,
@@ -237,7 +237,6 @@ export class ReviewExamples {
     return existsSync(p) ? (JSON.parse(readFileSync(p, 'utf8')) as ReviewExample) : undefined
   }
 
-  // Returns whether the file changed.
   write(n: number | string, example: ReviewExample): boolean {
     const existing = this.read(example.run, n)
     if (keepsExisting(existing, example.source)) return false
@@ -449,7 +448,6 @@ export class ReviewLabeller {
     return list
   }
 
-  // Diff from the reviewed head to the fix commit's parent; undefined when it cannot be computed.
   private async movedSince(
     run: Run,
     c: BaseCommit,

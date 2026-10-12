@@ -347,7 +347,7 @@ describe('review labeller', () => {
   })
 })
 
-describe('XXX-220 import', () => {
+describe('import of hand-labelled findings', () => {
   test('imports the hand labels once at start with source xxx-220', async () => {
     const src = join(dir, 'reviewer-xxx-220')
     mkdirSync(src, { recursive: true })
