@@ -5,6 +5,7 @@ import type { IssueView } from './stages'
 export type IssueSize = {
   estimate: number | null
   files: number
+  deleted: number
   risk: string[]
   designVerbs: string[]
   over: string[]
@@ -17,6 +18,7 @@ export function sizeData(size: IssueSize, decision: SizeDecision, profile: strin
   return {
     estimate: size.estimate,
     files: size.files,
+    deleted: size.deleted,
     risk: size.risk,
     design_verbs: size.designVerbs,
     over: size.over,
@@ -49,7 +51,11 @@ export function issueSize(
   limits: SizeLimits = {},
 ): IssueSize {
   const estimate = view.snapshot.estimate
-  const files = view.files.reduce((n, f) => n + (isDirectory(f) ? DIRECTORY_WEIGHT : 1), 0)
+  const deleted = new Set(view.deleted)
+  const files = view.files.reduce(
+    (n, f) => n + (deleted.has(f) ? 0 : isDirectory(f) ? DIRECTORY_WEIGHT : 1),
+    0,
+  )
   const riskPaths = repo?.risk_paths ?? []
   const risk = view.files.filter((f) =>
     riskPaths.some((p) => {
@@ -68,5 +74,5 @@ export function issueSize(
     over.length === 0 &&
     ((max_estimate !== undefined && estimate !== null && estimate >= max_estimate - 1) ||
       (max_files !== undefined && files >= max_files - 2))
-  return { estimate, files, risk, designVerbs, over, near }
+  return { estimate, files, deleted: deleted.size, risk, designVerbs, over, near }
 }

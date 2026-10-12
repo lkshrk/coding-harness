@@ -29,6 +29,7 @@ export type ParsedIssue = {
   sections: Record<IssueSectionKey, string>
   designLinks: string[]
   files: string[]
+  deleted: string[]
   acceptance: string[]
   tests: string[]
   verify: string[]
@@ -56,6 +57,7 @@ const NO_COMMANDS = 'no commands (use a fenced block or one inline-code command 
 const FENCE = /^\s{0,3}(```|~~~)/
 const LIST_ITEM = /^\s{0,3}(?:[-*+]|\d+[.)])\s+(.*)$/
 const NONE = /^none\.?$/i
+const DELETE = /\s\(delete\)\s*$/
 const LINK = /\]\((https?:\/\/[^)\s]+)\)|(?<!\()(https?:\/\/[^\s)>\]]+)/g
 
 type RawSection = { heading: string; lines: string[] }
@@ -157,6 +159,7 @@ export function validateIssue(description: string, opts: IssueOptions = {}): Iss
   const parsed: Omit<ParsedIssue, 'sections'> = {
     designLinks: [],
     files: [],
+    deleted: [],
     acceptance: [],
     tests: [],
     verify: [],
@@ -195,7 +198,10 @@ export function validateIssue(description: string, opts: IssueOptions = {}): Iss
         const path = fileEntry(item.trim())
         const problem = pathProblem(path)
         if (problem) fail('bad_path', `'${path}' ${problem}`)
-        else parsed.files.push(path)
+        else {
+          parsed.files.push(path)
+          if (DELETE.test(item)) parsed.deleted.push(path)
+        }
       }
     } else if (def.key === 'acceptance' || def.key === 'tests') {
       const items = listItems(lines)

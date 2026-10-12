@@ -13,6 +13,7 @@ export type IssueView = {
   repository: string | null
   mergeMode: MergeMode | null
   files: string[]
+  deleted: string[]
   templateErrors: string[]
 }
 
@@ -105,6 +106,7 @@ export function viewIssue(issue: IssueSnapshot, config: Config, opts: ViewOption
     repository,
     mergeMode: MERGE_MODES.includes(merge as MergeMode) ? (merge as MergeMode) : null,
     files: template.ok ? template.issue.files : [],
+    deleted: template.ok ? template.issue.deleted : [],
     templateErrors: template.ok ? [] : template.errors.map((e) => e.message),
   }
 }

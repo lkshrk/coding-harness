@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { issueBody, snapshot, testConfig } from '../testing/testing'
-import { issueSize } from './size'
+import { issueSize, sizeData } from './size'
 import { viewIssue } from './stages'
 
 const config = testConfig()
 
 const view = (files: string[], over: Partial<Parameters<typeof snapshot>[0]> = {}, goal?: string) => {
-  const body = issueBody(files)
+  const body = issueBody(files).replace(/`([^`]+) \(delete\)`/g, '`$1` (delete)')
   const v = viewIssue(
     snapshot({
       identifier: 'FOR-1',
@@ -27,6 +27,24 @@ describe('issueSize', () => {
 
   test('a directory or glob entry counts as 3', () => {
     expect(issueSize(view(['backend/alembic/versions/', 'a.ts', 'src/*.ts']), undefined).files).toBe(7)
+  })
+
+  test('entries marked (delete) count 0 and are reported as deleted', () => {
+    const edited = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts']
+    const v = view([...edited, 'pnpm-lock.yaml (delete)', '.npmrc (delete)'])
+    expect(v.files).toContain('pnpm-lock.yaml')
+    const s = issueSize(v, undefined, { max_files: 8 })
+    expect(s).toMatchObject({ files: 8, deleted: 2, over: [] })
+    expect(sizeData(s, 'dispatch', 'default')).toMatchObject({ files: 8, deleted: 2 })
+  })
+
+  test('a deleted directory or glob counts 0', () => {
+    const s = issueSize(view(['a.ts', 'old/ (delete)', 'src/*.js (delete)']), undefined)
+    expect(s).toMatchObject({ files: 1, deleted: 2 })
+  })
+
+  test('without (delete) entries nothing is deleted', () => {
+    expect(issueSize(view(['a/', 'b.ts']), undefined)).toMatchObject({ files: 4, deleted: 0 })
   })
 
   test('entries matching risk_paths are named', () => {

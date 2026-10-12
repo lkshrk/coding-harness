@@ -689,8 +689,9 @@
           "files": {
             "type": "integer",
             "minimum": 0,
-            "description": "## Files entries, a directory counting as 3"
+            "description": "## Files entries, a directory counting as 3 and a (delete) entry as 0"
           },
+          "deleted": { "type": "integer", "minimum": 0, "description": "## Files entries marked (delete)" },
           "risk": { "type": "array", "items": { "type": "string" } },
           "design_verbs": { "type": "array", "items": { "type": "string" } },
           "over": { "type": "array", "items": { "type": "string" } },
