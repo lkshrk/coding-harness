@@ -12,7 +12,10 @@ permission:
   skill: allow
   todowrite: allow
   question: allow
-  webfetch: ask
+  webfetch: deny
+  gateway_searxng_web_search: allow
+  gateway_searxng_search_suggestions: allow
+  gateway_web_url_read: allow
   external_directory:
     "*": ask
     "~/Dev/**": allow
@@ -28,7 +31,6 @@ permission:
     "rg *": allow
     "jq *": allow
     "*/skills/code-graph/scripts/graph.sh *": allow
-    "*/skills/search/scripts/search.sh *": allow
     "*/skills/decompose/scripts/plan-check.sh *": allow
     "ctx7 library *": allow
     "ctx7 docs *": allow
@@ -159,5 +161,5 @@ Each CLI has a skill with the exact command forms; load it before the first call
 - Knowledge: the vault under `~/knowledge` (read `index.md` first).
 - Linear: the `linear` skill; read commands freely, writes as in the rules. Writes carry the user's own identity.
 - GitHub: the `gh` skill, read commands for PRs, checks and runs.
-- Library docs: the `ctx7` skill. Web: the `search` skill.
+- Library docs: the `ctx7` skill. Web: the `search` skill, through the gateway's search and page-reading tools.
 - Running system: `ns status`, `tasks`, `workers`, `logs`, `diff`, `tests`, `questions`. `ns attach` is not available here; print the command for the user to run in another terminal.
