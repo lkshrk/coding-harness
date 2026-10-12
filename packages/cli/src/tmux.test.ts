@@ -196,6 +196,16 @@ describe('ns watch', () => {
       expect(calls).toEqual([
         ['tmux', '-L', 'nightshift', 'has-session', '-t', 'ns-watch'],
         ['tmux', '-L', 'nightshift', 'list-panes', '-s', '-t', 'ns-watch', '-F', expect.any(String)],
+        [
+          'tmux',
+          '-L',
+          'nightshift',
+          'respawn-pane',
+          '-k',
+          '-t',
+          'ns-watch:manager',
+          expect.stringContaining('watch --manage --max-panes 6'),
+        ],
       ])
       expect(execs).toEqual([['tmux', '-L', 'nightshift', 'attach-session', '-t', 'ns-watch']])
     } finally {

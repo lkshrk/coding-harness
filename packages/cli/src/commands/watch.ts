@@ -114,10 +114,11 @@ export async function watch(ctx: Ctx, args: string[]): Promise<number> {
   }
   if (bools.has('--all') && positionals.length) throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
   if (bools.has('--manage')) return manage(ctx, tmux, positionals, maxPanes)
-  if (tmux.hasSession()) closeEnded(ctx, tmux, { fresh: true })
-  else {
-    const manager = ns(ctx, 'watch', '--manage', '--max-panes', String(maxPanes), ...positionals)
-    tmux.createSession(manager, ns(ctx, 'watch', '--swap'))
-  }
+  const manager = ns(ctx, 'watch', '--manage', '--max-panes', String(maxPanes), ...positionals)
+  if (tmux.hasSession()) {
+    // The running manager keeps the scope it was started with, so it is restarted with this one.
+    syncPanes(ctx, tmux, { issues: positionals, maxPanes, fresh: true })
+    tmux.restartManager(manager)
+  } else tmux.createSession(manager, ns(ctx, 'watch', '--swap'))
   return ctx.exec(tmux.attachCommand(), { env: { TMUX: undefined } })
 }

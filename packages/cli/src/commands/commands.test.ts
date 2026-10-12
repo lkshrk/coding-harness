@@ -780,6 +780,43 @@ describe('watch panes', () => {
     expect(execs).toHaveLength(1)
   })
 
+  test('ns watch --all on a session started for other issues shows the active run and widens the manager', async () => {
+    const s = seeded()
+    const old = addRun(s, 'XXX-1', 'done')
+    const live = addRun(s, 'XXX-2')
+    const calls: string[][] = []
+    const listed = [pane('%11', old.id, 'XXX-1', 'XXX-1 [done]')]
+    const code = await run(
+      ['watch', '--all'],
+      { out: () => {}, err: () => {} },
+      {
+        ...s.deps,
+        now: () => new Date(Date.parse(s.runs.get(old.id)?.endedAt ?? '') + 1_000),
+        which: () => '/usr/bin/tmux',
+        self: ['ns'],
+        capture: (argv) => {
+          calls.push(argv.slice(3))
+          if (argv[3] === 'list-panes') return { exitCode: 0, stdout: listed.join('\n'), stderr: '' }
+          if (argv[3] === 'new-window' || argv[3] === 'split-window')
+            return { exitCode: 0, stdout: '%20\n', stderr: '' }
+          return { exitCode: 0, stdout: '', stderr: '' }
+        },
+        exec: async () => 0,
+      },
+    )
+    expect(code).toBe(0)
+    expect(killed(calls)).toEqual(['%11'])
+    expect(calls.filter((c) => c[0] === 'new-window' || c[0] === 'split-window')).toHaveLength(1)
+    expect(calls).toContainEqual(['set-option', '-p', '-t', '%20', '@ns-run', live.id])
+    expect(calls.at(-1)).toEqual([
+      'respawn-pane',
+      '-k',
+      '-t',
+      'ns-watch:manager',
+      'ns --host local watch --manage --max-panes 6',
+    ])
+  })
+
   test('a fresh watch removes panes of inactive runs and shows one pane per active run', () => {
     const s = seeded()
     const old = addRun(s, 'XXX-1', 'done')

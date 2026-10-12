@@ -133,6 +133,10 @@ export class Tmux {
     this.ok(['respawn-pane', '-k', '-t', pane, typeof command === 'string' ? command : shellLine(command)])
   }
 
+  restartManager(manager: string[]): void {
+    this.respawn(`${WATCH_SESSION}:${MANAGER_WINDOW}`, manager)
+  }
+
   selectWorkers(): void {
     this.run(tmuxArgs('select-window', '-t', `${WATCH_SESSION}:${WORKERS_WINDOW}`))
   }
