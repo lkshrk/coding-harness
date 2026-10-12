@@ -53,6 +53,7 @@
     },
     {
       description: 'Python 3.15: hold until ruamel-yaml-clib and the other agent-layer tools ship 3.15 wheels; the image has no C compiler',
+      matchFileNames: ['features/agent-layer/**'],
       matchDepNames: ['python'],
       allowedVersions: '<3.15',
     },
@@ -68,24 +69,23 @@
       matchPackageNames: ['astral-sh/uv', 'github:astral-sh/uv', 'ghcr.io/astral-sh/uv'],
     },
     {
-      description: 'Bun: Feature pin and the workspace packageManager move together',
+      description: 'Bun: Feature pin, the workspace packageManager and its type definitions move together',
       groupName: 'bun',
-      matchPackageNames: ['bun', 'oven-sh/bun'],
+      matchPackageNames: ['bun', 'oven-sh/bun', '@types/bun'],
     },
     {
-      description: 'pnpm: the agent-layer and stack mise pins and the npm tools packageManager move together',
+      description: 'pnpm: the Feature mise pins (aqua package pnpm/pnpm) and the npm tools packageManager move together',
       groupName: 'pnpm',
-      matchPackageNames: ['pnpm', 'aqua:pnpm/pnpm'],
+      matchPackageNames: ['pnpm', 'pnpm/pnpm'],
     },
     {
       description: 'Biome: Feature pin, workspace dependency and biome.json schema move together',
       groupName: 'biome',
-      matchPackageNames: ['@biomejs/biome', 'biomejs/biome', 'aqua:biomejs/biome'],
+      matchPackageNames: ['@biomejs/biome', 'biomejs/biome'],
     },
     {
-      description: 'TypeScript language tooling: one version across the stack Features',
+      description: 'TypeScript language tooling: one version across the workspace and the stack Features',
       groupName: 'typescript tooling',
-      matchFileNames: ['features/stack-*/npm/**'],
       matchPackageNames: ['typescript', 'typescript-language-server'],
     },
     {
@@ -95,7 +95,7 @@
     },
     {
       description: 'Harness and agent-layer versions change agent behaviour: review by hand, re-run the evaluation',
-      matchDepNames: ['@opencode/cli', '@opencode/cli-linux-x64-baseline', '@opencode/cli-linux-arm64', 'rtk-ai/rtk', 'aqua:rtk-ai/rtk'],
+      matchPackageNames: ['@opencode/cli-linux-x64-baseline', '@opencode/cli-linux-arm64', 'rtk-ai/rtk'],
       automerge: false,
       labels: ['agent-behaviour'],
     },
