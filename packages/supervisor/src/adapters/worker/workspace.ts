@@ -193,13 +193,29 @@ export async function diffLines(
     .reduce((sum, [add, del]) => sum + (Number(add) || 0) + (Number(del) || 0), 0)
 }
 
+// A real directory: the agent layer installs with pnpm's hoisted linker, since OpenCode cannot watch symlinked plugin dirs.
+export const DCP_PACKAGE = '/opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp'
+
+export const DCP_CONFIG = {
+  enabled: true,
+  autoUpdate: false,
+  debug: false,
+  pruneNotification: 'off',
+  commands: { enabled: false },
+  compress: { permission: 'allow' },
+}
+
+export function dcpFiles(): { path: string; content: string }[] {
+  return [{ path: 'dcp.jsonc', content: `${JSON.stringify(DCP_CONFIG, null, 2)}\n` }]
+}
+
 export function agentConfig(
   plugin: OpenCodePluginEntry | undefined,
   lsp: WorkerImage['lsp'],
   skills = false,
 ): Record<string, unknown> {
   return {
-    plugins: plugin ? [plugin] : [],
+    plugins: [...(plugin ? [plugin] : []), { package: DCP_PACKAGE }],
     ...(Object.keys(lsp).length > 0 ? { lsp } : {}),
     ...(skills ? { skills: { paths: [`${OPENCODE_CONFIG_DIR}/skills`] } } : {}),
   }

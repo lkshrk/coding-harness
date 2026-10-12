@@ -4,6 +4,7 @@
   "packageManager": "pnpm@10.34.7",
   "dependencies": {
     "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@tarquinen/opencode-dcp": "3.2.0",
     "bash-language-server": "5.8.1",
     "bats": "1.13.0"
   },
