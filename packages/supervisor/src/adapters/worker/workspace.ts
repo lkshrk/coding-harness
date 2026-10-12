@@ -193,13 +193,35 @@ export async function diffLines(
     .reduce((sum, [add, del]) => sum + (Number(add) || 0) + (Number(del) || 0), 0)
 }
 
+export const DCP_PACKAGE = '/opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp'
+export const DCP_PLUGIN_DIR = 'plugins/opencode-dcp'
+
+export const DCP_CONFIG = {
+  enabled: true,
+  autoUpdate: false,
+  debug: false,
+  pruneNotification: 'off',
+  commands: { enabled: false },
+  compress: { permission: 'allow' },
+}
+
+// OpenCode 2.0.27 cannot watch pnpm's symlinked package dir and rejects file paths, so a wrapper dir re-exports it.
+export function dcpFiles(): { path: string; content: string }[] {
+  const pkg = { name: 'opencode-dcp', type: 'module', exports: { '.': './index.js' } }
+  return [
+    { path: `${DCP_PLUGIN_DIR}/package.json`, content: `${JSON.stringify(pkg, null, 2)}\n` },
+    { path: `${DCP_PLUGIN_DIR}/index.js`, content: `export { default } from "${DCP_PACKAGE}/server.js"\n` },
+    { path: 'dcp.jsonc', content: `${JSON.stringify(DCP_CONFIG, null, 2)}\n` },
+  ]
+}
+
 export function agentConfig(
   plugin: OpenCodePluginEntry | undefined,
   lsp: WorkerImage['lsp'],
   skills = false,
 ): Record<string, unknown> {
   return {
-    plugins: plugin ? [plugin] : [],
+    plugins: [...(plugin ? [plugin] : []), { package: `${OPENCODE_CONFIG_DIR}/${DCP_PLUGIN_DIR}` }],
     ...(Object.keys(lsp).length > 0 ? { lsp } : {}),
     ...(skills ? { skills: { paths: [`${OPENCODE_CONFIG_DIR}/skills`] } } : {}),
   }

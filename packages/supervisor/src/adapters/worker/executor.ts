@@ -37,6 +37,7 @@ import {
   agentConfig,
   continueFrom,
   copySources,
+  dcpFiles,
   GRAPH_CACHE,
   linkIndex,
   pinnedRepo,
@@ -206,6 +207,7 @@ export class WorkerExecutor implements RunExecutor {
           files: [
             { path: rendered.path, content: rendered.content },
             ...(plugin?.files ?? []),
+            ...dcpFiles(),
             ...skills,
             {
               path: 'opencode.json',
