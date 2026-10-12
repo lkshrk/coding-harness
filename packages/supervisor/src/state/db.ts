@@ -3,11 +3,11 @@ import { closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, writ
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { type Config, expandHome } from '@nightshift/core'
-import { STATE_V1, STATE_V2 } from './migrations'
+import { STATE_V1, STATE_V2, STATE_V3 } from './migrations'
 
 export const STATE_SQL_PATH = join(import.meta.dir, 'state.sql')
 
-export const MIGRATIONS: readonly string[] = [STATE_V1, STATE_V2]
+export const MIGRATIONS: readonly string[] = [STATE_V1, STATE_V2, STATE_V3]
 
 export type Db = Database
 

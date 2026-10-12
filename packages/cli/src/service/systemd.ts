@@ -31,7 +31,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     'Restart=on-failure',
     'RestartSec=10',
     'KillSignal=SIGTERM',
-    'TimeoutStopSec=60',
+    `TimeoutStopSec=${spec.stopTimeoutSec ?? 60}`,
     ...env,
     '',
     '[Install]',

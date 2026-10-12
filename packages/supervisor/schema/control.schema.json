@@ -85,7 +85,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["target"],
-      "properties": { "target": { "$ref": "#/$defs/target" }, "reason": { "type": "string" } }
+      "properties": {
+        "target": { "$ref": "#/$defs/target" },
+        "reason": { "type": "string" },
+        "now": { "type": "boolean", "description": "kill the worker without a handoff" }
+      }
     },
     "retryRequest": {
       "type": "object",

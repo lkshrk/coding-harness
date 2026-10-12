@@ -347,3 +347,91 @@ describe('vault ingest lifecycle', () => {
     expect(restarted.awaiting('FOR-1')).toBeNull()
   })
 })
+
+describe('interrupting a vault ingest', () => {
+  function setup() {
+    const ingest = {
+      prepare: async () => ({
+        repository: 'nightshift-vault',
+        baseSha: 'vault-base',
+        files: ['raw/linear/2026-10-04-FOR-1.md'],
+        sourceFiles: [{ path: 'raw/linear/2026-10-04-FOR-1.md', content: 'source' }],
+      }),
+      publish: async () => ['vault-commit'],
+    }
+    const h = harness({ ingest })
+    h.config.stages.acceptance = { automatic: true, human_checkpoint: 'none' }
+    h.linear.put(snapshot({ identifier: 'FOR-1', status: 'Done', labels: ['ai-stage:acceptance'] }))
+    return h
+  }
+
+  async function ingesting(h: ReturnType<typeof setup>) {
+    await h.sup.start()
+    await h.sup.completeStage('FOR-1')
+    const run = h.executor.starts[0]?.run
+    if (!run) throw new Error('ingester not started')
+    h.sandbox.add(run.id)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 'vault-session' })
+    return run
+  }
+
+  test('a supervisor stop gives the ingester the grace period and the restart runs the next attempt', async () => {
+    const h = setup()
+    h.config.limits.handoff_grace_seconds = 30
+    const run = await ingesting(h)
+    const stopping = h.sup.handOff('deploy restart')
+    await Bun.sleep(0)
+    expect(h.executor.calls.find((c) => c.op === 'nudge')?.detail).toContain('HANDOFF')
+    await h.sup.workerFinished(run.id, {
+      status: 'HANDOFF',
+      summary: 'half ingested',
+      evidence: [{ kind: 'command', ref: 'bun scripts/lint.ts', result: 'pass' }],
+      handoff: { done: ['raw file'], in_progress: ['pages'], next: ['lint'] },
+    })
+    await stopping
+    await h.sup.stop('signal')
+    expect(h.sup.runs.get(run.id)).toMatchObject({ state: 'interrupted', failure: null })
+    expect(h.of('RUN_INTERRUPTED').map((e) => e.data)).toEqual([{ reason: 'deploy restart', handoff: true }])
+    expect(h.of('VAULT_INGEST_FAILED')).toEqual([])
+    expect(h.sandbox.destroyed).toEqual([`sb-${run.id}`])
+    expect(h.linear.get('FOR-1').status).toBe('Done')
+
+    const next = h.make()
+    await next.start()
+    await next.tick()
+    expect(h.executor.starts).toHaveLength(2)
+    expect(h.executor.starts[1]?.run).toMatchObject({ agent: 'ingester', attempt: 2 })
+    expect(h.of('VAULT_INGEST_FAILED')).toEqual([])
+  })
+
+  test('an ingester that ignores the signal is killed after the grace period and ends interrupted', async () => {
+    const h = setup()
+    h.config.limits.handoff_grace_seconds = 0
+    const run = await ingesting(h)
+    await h.sup.handOff('supervisor stopping')
+    expect(h.executor.calls.filter((c) => c.op === 'stop')).toEqual([
+      { op: 'stop', run: run.id, detail: 'interrupted: supervisor stopping' },
+    ])
+    expect(h.sup.runs.get(run.id)?.state).toBe('interrupted')
+    expect(h.of('RUN_INTERRUPTED').map((e) => e.data)).toEqual([
+      { reason: 'supervisor stopping', handoff: false },
+    ])
+    expect(h.of('VAULT_INGEST_FAILED')).toEqual([])
+    await h.sup.tick()
+    expect(h.executor.starts.at(-1)?.run).toMatchObject({ agent: 'ingester', attempt: 2 })
+    await h.sup.tick()
+    expect(h.executor.starts).toHaveLength(2)
+  })
+
+  test('an ingest stopped by the user is not started again', async () => {
+    const h = setup()
+    h.config.limits.handoff_grace_seconds = 0
+    const run = await ingesting(h)
+    await h.sup.stopForUser(run.id, undefined, 'cli')
+    expect(h.sup.runs.get(run.id)?.state).toBe('interrupted')
+    await h.sup.tick()
+    expect(h.executor.starts).toHaveLength(1)
+    expect(h.of('VAULT_INGEST_FAILED').map((e) => e.data)).toEqual([{ reason: 'stopped: stopped by you' }])
+    expect(await h.sup.retryIngest('FOR-1')).toMatchObject({ agent: 'ingester', attempt: 2 })
+  })
+})

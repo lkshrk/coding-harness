@@ -11,7 +11,7 @@ export const CONTROL_USAGE = {
   release: 'ns release <issue>',
   send: 'ns send <target> <message>',
   answer: 'ns answer <issue> <text>',
-  stop: 'ns stop <target> [--reason R] [--yes]',
+  stop: 'ns stop <target> [--reason R] [--now] [--yes]',
   retry: 'ns retry <target> [--agent A] [--profile P] [--continue]',
   ingest: 'ns ingest <issue>',
 }
@@ -73,14 +73,20 @@ export async function answer(ctx: Ctx, args: string[]): Promise<number> {
 
 export async function stop(ctx: Ctx, args: string[]): Promise<number> {
   const usage = CONTROL_USAGE.stop
-  const { positionals, values } = parseArgs(args, { values: ['--reason'] }, usage)
+  const { positionals, values, bools } = parseArgs(args, { values: ['--reason'], bools: ['--now'] }, usage)
   const target = requireArg(positionals[0], usage)
-  if (!(await ctx.confirm(`Stop ${target}, destroy its sandbox and hold the issue for you?`))) {
+  const now = bools.has('--now')
+  const how = now ? 'Stop' : 'Ask the worker to hand off, stop'
+  if (!(await ctx.confirm(`${how} ${target}, destroy its sandbox and hold the issue for you?`))) {
     ctx.io.err('aborted')
     return EXIT.error
   }
   const reason = values['--reason']
-  const res = await call<RunResponse>(ctx, 'POST', '/stop', { target, ...(reason ? { reason } : {}) })
+  const res = await call<RunResponse>(ctx, 'POST', '/stop', {
+    target,
+    ...(reason ? { reason } : {}),
+    ...(now ? { now } : {}),
+  })
   return done(ctx, res, `stopped run ${res.run}; ${target} is blocked awaiting you`)
 }
 

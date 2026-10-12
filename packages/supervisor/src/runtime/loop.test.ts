@@ -32,6 +32,9 @@ function fakeSupervisor() {
         calls.push(`reload:${r.ok}`)
       },
       idle: async () => {},
+      handOff: async (reason?: string) => {
+        calls.push(`handOff:${reason}`)
+      },
       stop: async (reason?: string) => {
         calls.push(`stop:${reason}`)
       },
@@ -68,7 +71,13 @@ describe('runSupervisor', () => {
     onConfig({ ok: false, errors: [] })
     await Bun.sleep(0)
     await stop('signal')
-    expect(f.calls.slice(-4)).toEqual(['reload:false', 'cleared', 'unwatched', 'stop:signal'])
+    expect(f.calls.slice(-5)).toEqual([
+      'reload:false',
+      'cleared',
+      'unwatched',
+      'handOff:signal',
+      'stop:signal',
+    ])
   })
 })
 

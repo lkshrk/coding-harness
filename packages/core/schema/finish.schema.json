@@ -8,8 +8,8 @@
   "required": ["status", "summary", "evidence"],
   "properties": {
     "status": {
-      "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT"],
-      "description": "DONE: acceptance criteria met and verified; DONE_WITH_CONCERNS: met, with doubts listed in concerns; BLOCKED: cannot proceed, see blocker; NEEDS_CONTEXT: information missing, see blocker.question"
+      "enum": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT", "HANDOFF"],
+      "description": "DONE: acceptance criteria met and verified; DONE_WITH_CONCERNS: met, with doubts listed in concerns; BLOCKED: cannot proceed, see blocker; NEEDS_CONTEXT: information missing, see blocker.question; HANDOFF: nightshift asked you to stop, see handoff"
     },
     "summary": {
       "type": "string",
@@ -61,6 +61,23 @@
         }
       }
     },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["done", "in_progress", "next"],
+      "description": "state for the next attempt, which continues from your commit",
+      "properties": {
+        "done": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "in_progress": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "next": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "questions": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "verify": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 300 },
+          "description": "commands that verify the current state"
+        }
+      }
+    },
     "report": {
       "type": "object",
       "description": "agent-specific result, validated against nightshift.output of the agent"
@@ -70,6 +87,10 @@
     {
       "if": { "properties": { "status": { "enum": ["BLOCKED", "NEEDS_CONTEXT"] } } },
       "then": { "required": ["blocker"] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "HANDOFF" } } },
+      "then": { "required": ["handoff"] }
     },
     {
       "if": { "properties": { "status": { "const": "DONE_WITH_CONCERNS" } } },

@@ -83,3 +83,33 @@ CREATE TABLE IF NOT EXISTS issues (
   updated_at  TEXT NOT NULL
 ) STRICT;
 `
+
+export const STATE_V3 = `-- Adds the run state 'interrupted'; SQLite cannot alter a CHECK constraint, so the table is rebuilt.
+PRAGMA foreign_keys = OFF;
+CREATE TABLE runs_v3 (
+  id          TEXT PRIMARY KEY,
+  issue       TEXT NOT NULL,
+  agent       TEXT NOT NULL,
+  profile     TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  repository  TEXT NOT NULL,
+  base_sha    TEXT NOT NULL,
+  attempt     INTEGER NOT NULL CHECK (attempt >= 1),
+  state       TEXT NOT NULL CHECK (state IN ('queued','starting','running','finishing','gating','reviewing','done','failed','stopped','interrupted')),
+  sandbox     TEXT,
+  session     TEXT,
+  head_sha    TEXT,
+  finish      TEXT CHECK (finish IS NULL OR json_valid(finish)),
+  failure     TEXT,
+  started_at  TEXT NOT NULL,
+  ended_at    TEXT,
+  tokens_in   INTEGER NOT NULL DEFAULT 0,
+  tokens_out  INTEGER NOT NULL DEFAULT 0
+) STRICT;
+INSERT INTO runs_v3 SELECT * FROM runs;
+DROP TABLE runs;
+ALTER TABLE runs_v3 RENAME TO runs;
+CREATE INDEX IF NOT EXISTS runs_issue ON runs(issue, attempt);
+CREATE INDEX IF NOT EXISTS runs_active ON runs(state) WHERE state NOT IN ('done','failed','stopped','interrupted');
+PRAGMA foreign_keys = ON;
+`

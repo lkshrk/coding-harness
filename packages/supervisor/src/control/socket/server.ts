@@ -116,8 +116,8 @@ export function controlHandler(
       return { ok: true }
     },
     'POST /stop': async (req) => {
-      const { target, reason } = await body<StopRequest>(req, 'stopRequest')
-      return { run: (await sup.stopForUser(target, reason, by)).id }
+      const { target, reason, now } = await body<StopRequest>(req, 'stopRequest')
+      return { run: (await sup.stopForUser(target, reason, by, now ? { now } : {})).id }
     },
     'POST /retry': async (req) => {
       const { target, agent, profile, continue: cont } = await body<RetryRequest>(req, 'retryRequest')

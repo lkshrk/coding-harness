@@ -24,6 +24,7 @@ const config = {
     ca_bundle: '~/.config/nightshift/ca.pem',
   },
   secrets: { rbw_profile: 'nightshift' },
+  limits: { handoff_grace_seconds: 120 },
 } as unknown as Config
 
 function fakes(answers: Record<string, CommandResult> = {}) {
@@ -106,6 +107,11 @@ WantedBy=default.target
     const s = serviceSpec(config, { bun: '/b/bun', env: { HOME: '/home/dev' }, rbw: '/usr/bin/rbw' })
     expect(s.rbw).toBe('/usr/bin/rbw')
     expect(systemdUnit(s)).toContain('ExecStartPre=-/usr/bin/rbw unlock\nExecStart=/b/bun ')
+  })
+
+  test('the systemd stop timeout exceeds the handoff grace period', () => {
+    const s = serviceSpec(config, { bun: '/b/bun', env: { HOME: '/home/dev' } })
+    expect(systemdUnit(s)).toContain('TimeoutStopSec=180\n')
   })
 })
 

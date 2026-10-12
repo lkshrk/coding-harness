@@ -1,5 +1,5 @@
 import { fence, type IssueSpec, WORKER_BLOCKS, type WorkerBlock } from '@nightshift/core'
-import type { ContextInput, ContextRepository } from '../../ports'
+import type { ContextInput, ContextRepository, Handoff } from '../../ports'
 import type { CodeGraph } from '../../ports/context'
 
 export type TokenCounter = (text: string, model: string) => Promise<number>
@@ -151,7 +151,24 @@ export function historyItems(input: ContextInput): Item[] {
         },
       ]
     : []
-  return [...conflict, ...wip, ...answers, ...attempts]
+  const latest = [...input.attempts].sort((a, b) => b.attempt - a.attempt)[0]
+  const handoff = latest?.handoff
+    ? [{ source: `handoff ${latest.attempt}`, text: handoffText(latest.attempt, latest.handoff) }]
+    : []
+  return [...handoff, ...conflict, ...wip, ...answers, ...attempts]
+}
+
+function handoffText(attempt: number, h: Handoff): string {
+  const list = (title: string, items: string[] | undefined) =>
+    items?.length ? `${title}:\n${items.map((i) => `- ${i}`).join('\n')}` : ''
+  return joinParts([
+    `## Handoff from attempt ${attempt}\nAttempt ${attempt} was stopped by nightshift and handed off; continue from its commit instead of starting over.`,
+    list('Done', h.done),
+    list('In progress', h.in_progress),
+    list('Next', h.next),
+    list('Open questions', h.questions),
+    list('Verify the current state with', h.verify),
+  ])
 }
 
 function mergeInProgress(c: { base: string; files: string[] }): string {

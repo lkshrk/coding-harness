@@ -67,7 +67,7 @@ To change a Feature's tools, edit its `mise.toml` only and do not run `mise lock
 
 Commit your work on the current branch, then call `finish` exactly once, as your last action:
 
-- `status`: `DONE`, `DONE_WITH_CONCERNS`, `BLOCKED` or `NEEDS_CONTEXT`.
+- `status`: `DONE`, `DONE_WITH_CONCERNS`, `BLOCKED`, `NEEDS_CONTEXT`, or `HANDOFF` if told.
 - `summary`: one to three sentences a human can read.
 - `evidence`: each command, test or file you checked and its result; `DONE` needs at least one. `finish` is a claim: the gates re-run everything themselves.
 - `changed_files`, `concerns` and `blocker` where they apply.
