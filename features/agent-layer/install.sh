@@ -94,7 +94,7 @@ install_npm_tools() {
   node="$(locked node)"
   pnpm="$(locked pnpm)"
   mkdir -p "$prefix/npm"
-  cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$prefix/npm/"
+  cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$here/npm/.npmrc" "$prefix/npm/"
   PATH="$(dirname "$node"):$PATH" "$pnpm" install --dir "$prefix/npm" --frozen-lockfile --prod \
     --store-dir "$tmp/pnpm-store" --config.cache-dir="$tmp/pnpm-cache" --config.update-notifier=false \
     --reporter=append-only

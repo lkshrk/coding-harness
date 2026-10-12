@@ -23,6 +23,10 @@ if [ "$dcp" != 3.2.0 ]; then
   exit 1
 fi
 test -f /opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp/server.js
+if [ -L /opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp ]; then
+  echo "@tarquinen/opencode-dcp is a symlink; OpenCode cannot watch it (expected pnpm node-linker=hoisted)" >&2
+  exit 1
+fi
 
 for tool in uv node npm mise; do
   if command -v "$tool" >/dev/null; then

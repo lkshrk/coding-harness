@@ -299,16 +299,11 @@ describe('WorkerExecutor.start', () => {
       'agent/fixer.md',
       'plugins/nightshift-finish/package.json',
       'plugins/nightshift-finish/index.js',
-      'plugins/opencode-dcp/package.json',
-      'plugins/opencode-dcp/index.js',
       'dcp.jsonc',
       'opencode.json',
     ])
     expect(w?.agent.files[0]?.content).toContain('model: litellm/ns/worker')
-    expect(w?.agent.files[4]?.content).toBe(
-      'export { default } from "/opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp/server.js"\n',
-    )
-    expect(JSON.parse(w?.agent.files[5]?.content ?? '{}')).toEqual({
+    expect(JSON.parse(w?.agent.files[3]?.content ?? '{}')).toEqual({
       enabled: true,
       autoUpdate: false,
       debug: false,
@@ -316,10 +311,10 @@ describe('WorkerExecutor.start', () => {
       commands: { enabled: false },
       compress: { permission: 'allow' },
     })
-    expect(JSON.parse(w?.agent.files[6]?.content ?? '{}')).toEqual({
+    expect(JSON.parse(w?.agent.files[4]?.content ?? '{}')).toEqual({
       plugins: [
         { package: '/tmp/nightshift/config/opencode/plugins/nightshift-finish', options: { outputs: {} } },
-        { package: '/tmp/nightshift/config/opencode/plugins/opencode-dcp' },
+        { package: '/opt/nightshift/npm/node_modules/@tarquinen/opencode-dcp' },
       ],
       lsp: { typescript: { command: ['typescript-language-server', '--stdio'], extensions: ['.ts'] } },
     })
