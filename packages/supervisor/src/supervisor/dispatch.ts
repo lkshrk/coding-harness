@@ -29,6 +29,7 @@ type DispatchOverride = {
   continueFrom?: Run
   continueRef?: PrHead
   reason?: string
+  enterFrom?: string
 }
 
 export const EXPLORER = 'explorer'
@@ -103,6 +104,8 @@ export class Dispatcher {
     }
     this.flow.leaseEvent('LEASE_ACQUIRED', id)
     this.retry.take(id)
+    if (o.enterFrom)
+      await this.flow.applyIntent(id, { kind: 'stageEntered', stage: IMPLEMENTATION, from: o.enterFrom })
     await this.flow.applyIntent(id, { kind: 'dispatched' })
     await this.launch(run, view)
     return run
@@ -318,7 +321,9 @@ export class Dispatcher {
     if (pr && before?.stage === INTEGRATION && before.lifecycle !== 'done' && before.lifecycle !== 'canceled')
       await this.flow.applyIntent(identifier, { kind: 'retryRequested' })
     const current = this.rt.cache.get(identifier) ?? snapshot
-    const view = viewIssue(current, this.rt.config(), this.flow.viewOptions(identifier))
+    const seen = viewIssue(current, this.rt.config(), this.flow.viewOptions(identifier))
+    const sentBack = o.forceSize && seen?.stage === DECOMPOSITION && this.sizeRouted(identifier)
+    const view = seen && sentBack ? { ...seen, stage: IMPLEMENTATION } : seen
     const stage = view?.stage ?? null
     if (!view || stage === null || view.repository === null || !this.rt.config().stages[stage]?.automatic) {
       throw new ControlError('refused', `${identifier}: stage ${stage ?? '(none)'} has no automatic role`)
@@ -366,6 +371,7 @@ export class Dispatcher {
       ...(o.profile ? { profile: o.profile } : {}),
       ...(continueFrom ? { continueFrom } : {}),
       ...(continueRef ? { continueRef } : {}),
+      ...(sentBack ? { enterFrom: DECOMPOSITION } : {}),
       by,
     })
     if (!run && this.flow.awaiting(identifier)?.reason === 'base_conflict')
@@ -373,6 +379,11 @@ export class Dispatcher {
     if (!run) throw new ControlError('refused', `${identifier} could not be dispatched (lease held)`)
     await this.flow.refresh(identifier)
     return this.rt.requireRun(run.id)
+  }
+
+  sizeRouted(identifier: string): boolean {
+    const checked = this.rt.log.since(null, { issue: identifier, types: ['SIZE_CHECKED'] }).at(-1)
+    return checked?.data.decision === 'decomposition'
   }
 
   async prHead(pr: PullRequestRecord): Promise<string> {
