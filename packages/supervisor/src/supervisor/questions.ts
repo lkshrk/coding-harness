@@ -7,7 +7,9 @@ import type { Event } from '../state/events'
 import type { Run } from '../state/runs'
 import type { FinishLike, SupervisorRuntime } from './runtime'
 
-type QuestionRow = { comment: string; issue: string }
+type QuestionRow = { comment: string; issue: string; run: string | null; asked_to: 'lead' | 'user' }
+
+type Asked = { comment: string; issue: string; run: Run; question: string; options?: string[] }
 
 export type QuestionsPeers = {
   requireActive: (target: string) => Run
@@ -18,6 +20,8 @@ export type QuestionsPeers = {
 }
 
 export class Questions {
+  private readonly forwarded = new Set<string>()
+
   constructor(
     private readonly rt: SupervisorRuntime,
     private readonly peers: QuestionsPeers,
@@ -71,12 +75,64 @@ export class Questions {
       )
       .run(comment.id, run.issue, run.id, to, this.rt.now().toISOString())
     await this.peers.applyIntent(run.issue, { kind: 'heldForUser' })
-    await this.rt.notify(`question for the ${to}: ${question}`, run.issue, {
+    const asked = { comment: comment.id, issue: run.issue, run, question, ...(options ? { options } : {}) }
+    if (to === 'lead' && this.rt.deps.lead) this.forward(asked)
+    else await this.notifyOwner(to, asked)
+  }
+
+  private async notifyOwner(to: 'lead' | 'user', q: Asked, reason?: string): Promise<void> {
+    await this.rt.notify(`question for the ${to}: ${q.question}`, q.issue, {
       kind: 'question',
       context: [
-        `asked by ${run.agent} (attempt ${run.attempt})${options ? `; options: ${options.join(' | ')}` : ''}`,
+        `asked by ${q.run.agent} (attempt ${q.run.attempt})${q.options ? `; options: ${q.options.join(' | ')}` : ''}`,
+        ...(reason ? [reason] : []),
       ],
-      question: { comment: comment.id, text: question, ...(options ? { options } : {}) },
+      question: { comment: q.comment, text: q.question, ...(q.options ? { options: q.options } : {}) },
+    })
+  }
+
+  /** Asks the lead in the background; one ask per question comment for the life of the process. */
+  private forward(q: Asked): void {
+    const lead = this.rt.deps.lead
+    if (!lead || this.forwarded.has(q.comment)) return
+    this.forwarded.add(q.comment)
+    const ask = async () => {
+      const reply = await lead
+        .ask({ issue: q.issue, question: q.question, ...(q.options ? { options: q.options } : {}) })
+        .catch(() => null)
+      if (reply && 'answer' in reply) {
+        await this.rt.deps.linear.comment(q.issue, reply.answer, { parentId: q.comment })
+        this.rt.log.append({
+          type: 'MESSAGE_SENT',
+          issue: q.issue,
+          run: q.run.id,
+          data: { text: reply.answer, by: 'lead', comment: q.comment },
+        })
+        return
+      }
+      const reason = reply ? `lead escalated: ${reply.escalate}` : 'lead unavailable or timed out'
+      await this.notifyOwner('lead', q, reason)
+    }
+    ask().catch((e: Error) =>
+      console.error(`${q.issue}: forwarding the question to the lead failed: ${e.message}`),
+    )
+  }
+
+  private reforward(q: QuestionRow): void {
+    if (q.asked_to !== 'lead' || !this.rt.deps.lead || this.forwarded.has(q.comment) || !q.run) return
+    const run = this.rt.runs.get(q.run)
+    const data = this.rt.log
+      .since(null, { issue: q.issue, types: ['QUESTION_ASKED'] })
+      .find((e) => e.data.comment === q.comment)?.data as
+      | { question?: string; options?: string[] }
+      | undefined
+    if (!run || !data?.question) return
+    this.forward({
+      comment: q.comment,
+      issue: q.issue,
+      run,
+      question: data.question,
+      ...(data.options?.length ? { options: data.options } : {}),
     })
   }
 
@@ -84,12 +140,15 @@ export class Questions {
     const answered: string[] = []
     const open = this.rt.deps.db
       .query<QuestionRow, []>(
-        'SELECT comment, issue FROM questions WHERE answered_at IS NULL ORDER BY asked_at',
+        'SELECT comment, issue, run, asked_to FROM questions WHERE answered_at IS NULL ORDER BY asked_at',
       )
       .all()
     for (const q of open) {
       const reply = (await this.rt.deps.linear.comments(q.issue)).find((c) => c.parentId === q.comment)
-      if (!reply) continue
+      if (!reply) {
+        this.reforward(q)
+        continue
+      }
       this.rt.deps.db
         .query('UPDATE questions SET answered_at = ?, answer = ? WHERE comment = ?')
         .run(this.rt.now().toISOString(), reply.body, q.comment)

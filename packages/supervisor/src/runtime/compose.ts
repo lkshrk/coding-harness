@@ -25,6 +25,7 @@ import { sqliteCodeGraph } from '../adapters/codegraph/query'
 import { probeGateway } from '../adapters/gateway/probe'
 import { GhGitHost } from '../adapters/github/gh'
 import { GitHubTokens, gitAuthEnv, githubOwner } from '../adapters/github/github-tokens'
+import { leadAdvisor } from '../adapters/lead/advisor'
 import { createLinearPort } from '../adapters/linear/linear-adapter'
 import { type SignalInbox, signalApi, signalChannel } from '../adapters/signal'
 import {
@@ -334,6 +335,10 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       }),
     }),
     gitHost,
+    lead: leadAdvisor({
+      url: `http://127.0.0.1:${config.lead.port}`,
+      passwordFile: join(state, 'lead', 'server-password'),
+    }),
     ...(syncVault ? { syncVault } : {}),
     ingest: ingestRuntime({
       dir: expandHome(config.paths.vault, home),
