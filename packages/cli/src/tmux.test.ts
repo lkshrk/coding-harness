@@ -47,6 +47,9 @@ describe('tmux command builder', () => {
       'ns watch --manage',
     ])
     expect(t.calls).toContainEqual(['tmux', '-L', 'nightshift', 'set-option', '-wg', 'remain-on-exit', 'on'])
+    const border = t.calls.find((c) => c[5] === 'pane-border-format')?.[6] ?? ''
+    expect(border).toContain('ns status-line --tmux --width #{pane_width} #{@ns-issue}')
+    expect(border).not.toContain('#{pane_title}#{?#{@ns-issue}, │')
     expect(t.calls.at(-1)).toEqual([
       'tmux',
       '-L',
@@ -113,7 +116,9 @@ describe('ns watch', () => {
       )
       const tmux = new Tmux(t.runner)
       expect(syncPanes(ctx, tmux, { issues: [], maxPanes: 6 })).toEqual(['XXX-1'])
-      expect(t.calls.find((c) => c[3] === 'new-window')?.at(-1)).toBe('ns --host local tail XXX-1')
+      expect(t.calls.find((c) => c[3] === 'new-window')?.at(-1)).toBe(
+        'ns --host local tail --no-footer XXX-1',
+      )
       t.listed.push(`%11\t@2\t${a.run.id}\tXXX-1\tXXX-1\t0`)
       const b = s.add('XXX-2')
       a.finish()
@@ -193,7 +198,7 @@ describe('ns watch', () => {
       '-k',
       '-t',
       '%11',
-      "sh -c 'ns --host local attach XXX-42; exec ns --host local tail XXX-42'",
+      "sh -c 'ns --host local attach XXX-42; exec ns --host local tail --no-footer XXX-42'",
     ])
   })
 })

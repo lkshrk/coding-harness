@@ -26,7 +26,7 @@ import { follow } from './logs'
 import { runDiff, statLines } from './results'
 import { withDb } from './shared'
 
-export const TAIL_USAGE = 'ns tail <issue> [--follow-issue]'
+export const TAIL_USAGE = 'ns tail <issue> [--follow-issue] [--no-footer]'
 
 export const LIFECYCLE = [
   'DISPATCHED',
@@ -120,13 +120,13 @@ async function tailRun(ctx: Ctx, issue: string, run: Run, after: string | null):
 }
 
 export async function tail(ctx: Ctx, args: string[]): Promise<number> {
-  const { positionals, bools } = parseArgs(args, { bools: ['--follow-issue'] }, TAIL_USAGE)
+  const { positionals, bools } = parseArgs(args, { bools: ['--follow-issue', '--no-footer'] }, TAIL_USAGE)
   const issue = requireArg(positionals[0], TAIL_USAGE)
   const followIssue = bools.has('--follow-issue')
   const run = withDb(ctx, (db) => newestRun(db, issue))
   if (!run && !followIssue) throw new CliError(EXIT.notFound, `no run for ${issue}`)
   const cursor: string | null = null
-  const stopFooter = startFooter(ctx, issue)
+  const stopFooter = bools.has('--no-footer') ? () => {} : startFooter(ctx, issue)
   try {
     return await tailLoop(ctx, issue, run, followIssue, cursor)
   } finally {
