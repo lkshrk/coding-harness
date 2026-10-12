@@ -216,6 +216,69 @@ describe('review input', () => {
     expect(input).toContain('test: pass (exit 0, 1.5s)\n3 pass')
   })
 
+  test('replaces a lockfile section by its omission line and keeps the source diffs', () => {
+    const lock = Array.from({ length: 9000 }, (_, i) => `+  pkg-${i}: 1.0.0`)
+    const patch = [
+      'diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml',
+      'index 3333333..4444444 100644',
+      '--- a/pnpm-lock.yaml',
+      '+++ b/pnpm-lock.yaml',
+      '@@ -0,0 +1,9000 @@',
+      ...lock,
+      PATCH,
+    ].join('\n')
+    const input = reviewInput({
+      issue: snapshot({ identifier: 'FOR-1' }),
+      patch,
+      testsTouched: ['src/a.test.ts'],
+      gates: [],
+    })
+    expect(input).not.toContain('pkg-0')
+    expect(input.match(/pnpm-lock\.yaml/g)).toEqual(['pnpm-lock.yaml'])
+    expect(input).toContain('pnpm-lock.yaml: generated lockfile, 9000 lines changed (diff omitted)\n')
+    expect(input).toContain('+2 export const b = 2')
+    expect(input).toContain('+3 expect(a).toBeDefined()')
+  })
+
+  test('omits every lockfile and leaves other sections untouched', () => {
+    const section = (path: string, body: string[]) => [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      '@@ -1,2 +1,2 @@',
+      ...body,
+    ]
+    const patch = [
+      ...section('apps/web/package-lock.json', ['-  "a": 1', '+  "a": 2', ' }']),
+      ...section('mise.lock', ['-sha = "x"', '+sha = "y"', '+sha2 = "z"']),
+      ...section('src/lock.ts', ['-export const lock = 1', '+export const lock = 2']),
+      '',
+    ].join('\n')
+    const input = reviewInput({
+      issue: snapshot({ identifier: 'FOR-1' }),
+      patch,
+      testsTouched: [],
+      gates: [],
+    })
+    expect(input).toContain(
+      'apps/web/package-lock.json: generated lockfile, 2 lines changed (diff omitted)\n',
+    )
+    expect(input).toContain('mise.lock: generated lockfile, 3 lines changed (diff omitted)\n')
+    expect(input).not.toContain('sha = ')
+    expect(input).toContain('diff --git a/src/lock.ts b/src/lock.ts')
+    expect(input).toContain('+1 export const lock = 2')
+  })
+
+  test('a patch without lockfiles builds the same input as its numbered diff', () => {
+    const input = reviewInput({
+      issue: snapshot({ identifier: 'FOR-1' }),
+      patch: PATCH,
+      testsTouched: [],
+      gates: [],
+    })
+    expect(input).toContain(numberDiff(PATCH).trim())
+  })
+
   test('numbers new-file lines and lists changes to existing tests apart', () => {
     const numbered = numberDiff(PATCH)
     expect(numbered).toContain(' 1 export const a = 1\n-2 export const b = 1\n+2 export const b = 2')

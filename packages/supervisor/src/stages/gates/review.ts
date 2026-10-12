@@ -125,6 +125,36 @@ export function splitDiff(numbered: string, tests: readonly string[]): { diff: s
   }
 }
 
+const LOCKFILES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'uv.lock',
+  'Cargo.lock',
+  'poetry.lock',
+  'go.sum',
+  'mise.lock',
+  'semgrep.lock',
+]
+
+export function omitLockfiles(patch: string): { patch: string; omitted: string[] } {
+  const omitted: string[] = []
+  const kept = patch.split(/^(?=diff --git )/m).filter((part) => {
+    const path = /^diff --git a\/\S+ b\/(\S+)/.exec(part)?.[1]
+    if (path === undefined || !LOCKFILES.some((name) => path === name || path.endsWith(`/${name}`)))
+      return true
+    const lines = part.split('\n')
+    const start = lines.findIndex((l) => l.startsWith('@@'))
+    const changed =
+      start < 0 ? 0 : lines.slice(start).filter((l) => l.startsWith('+') || l.startsWith('-')).length
+    omitted.push(`${path}: generated lockfile, ${changed} lines changed (diff omitted)`)
+    return false
+  })
+  return { patch: kept.join(''), omitted }
+}
+
 function section(title: string, body: string): string {
   return body.trim() === '' ? '' : `## ${title}\n${body.trim()}`
 }
@@ -148,7 +178,10 @@ export function reviewInput(o: {
   const lens = ['Lens: acceptance', ...acceptance.slice(0, LENS_ITEMS).map((a, i) => `${i + 1}. ${a}`)].join(
     '\n',
   )
-  const { diff, tests } = splitDiff(numberDiff(o.patch), o.testsTouched)
+  const lockfiles = omitLockfiles(o.patch)
+  const split = splitDiff(numberDiff(lockfiles.patch), o.testsTouched)
+  const { tests } = split
+  const diff = lockfiles.omitted.length ? `${lockfiles.omitted.join('\n')}\n\n${split.diff}` : split.diff
   const gates = o.gates
     .map((g) => {
       const tail = (g.output_tail ?? '').split('\n').slice(-GATE_TAIL_LINES).join('\n').trim()
