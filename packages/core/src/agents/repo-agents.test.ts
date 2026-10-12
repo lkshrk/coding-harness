@@ -213,7 +213,7 @@ describe('explorer', () => {
     expect(permission.bash['*']).toBe('deny')
     const allowed = Object.entries(permission.bash).filter(([, action]) => action === 'allow')
     expect(allowed.map(([pattern]) => pattern).sort()).toEqual([
-      'cgc *',
+      'codebase-memory-mcp cli *',
       'git diff *',
       'git log *',
       'git show *',

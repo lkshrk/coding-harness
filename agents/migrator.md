@@ -52,7 +52,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load `upgrade-deps` for dependency upgrades, otherwise `migration`. Read `ISSUE`, `VERIFY` and `HISTORY`.
-2. Map what the change touches: readers and writers of the old shape with `rg` and `cgc`, or the dependency's changelog between both versions.
+2. Map what the change touches: readers and writers of the old shape with `rg` and the code graph (`graph-query` skill), or the dependency's changelog between both versions.
 3. Write the forward and rollback steps down, and run every `VERIFY` command as the baseline.
 4. Apply one step or one dependency at a time; test the forward path, then the rollback path, then commit.
 5. Run every `VERIFY` command and read `git diff` for stray edits.
