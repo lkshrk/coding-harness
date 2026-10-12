@@ -115,6 +115,12 @@ describe('ClientCredentialsProvider', () => {
     const p = new ClientCredentialsProvider({ credentials, fetch })
     await expect(p.authorization()).rejects.toThrow('linear.auth: token response has no access_token')
   })
+
+  test('a token request Linear never answers rejects after the timeout', async () => {
+    const fetch: FetchFn = () => new Promise<Response>(() => {})
+    const p = new ClientCredentialsProvider({ credentials, fetch, timeoutMs: 20 })
+    await expect(p.authorization()).rejects.toThrow('linear.auth: token request: no response after')
+  })
 })
 
 describe('ApiKeyProvider', () => {

@@ -115,7 +115,7 @@ function fakeLinear(
     },
     upload,
   )
-  return { writer, calls, puts, workspaceReads: () => reads }
+  return { writer, request, calls, puts, workspaceReads: () => reads }
 }
 
 const target = (
@@ -369,6 +369,21 @@ describe('LinearWriter.uploadFile', () => {
     const { writer } = fakeLinear({ nsFileUpload: () => signed() }, workspace, 403)
     await expect(writer.uploadFile('a.png', 'image/png', new Uint8Array([1]))).rejects.toThrow(
       'linear: upload of a.png failed (HTTP 403)',
+    )
+  })
+
+  test('a put that never answers rejects after the timeout', async () => {
+    const { request } = fakeLinear({ nsFileUpload: () => signed() })
+    const hang: FetchFn = () => new Promise(() => {})
+    const writer = new LinearWriter(
+      request,
+      new LinearIssueReader(request),
+      async () => workspace(),
+      hang,
+      20,
+    )
+    await expect(writer.uploadFile('a.png', 'image/png', new Uint8Array([1]))).rejects.toThrow(
+      'linear: upload of a.png: no response after',
     )
   })
 })
