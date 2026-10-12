@@ -44,6 +44,8 @@ export type { RecoveryReport, SupervisorDeps } from './runtime'
 
 const LEASE_TTL_MS = 180_000
 const RBW_LOCKED = 'rbw locked'
+const GATEWAY_UNAVAILABLE = 'gateway unavailable'
+const GATEWAY_FAILURES = 2
 
 export type TickReport = { dispatched: string[]; unblocked: string[]; stopped: string[]; waiting: Waiting[] }
 
@@ -61,6 +63,7 @@ export class Supervisor {
   private readonly steps = new Map<string, { job: Promise<void>; cancel: AbortController }>()
   private paused = false
   private stopped = false
+  private gatewayFailures = 0
   private readonly rt: SupervisorRuntime
   private readonly m: Modules
 
@@ -229,6 +232,7 @@ export class Supervisor {
       repository: r.repository,
       files: byId.get(r.issue)?.files ?? [],
     }))
+    await this.probeGateway()
     await this.probeSecrets(candidates.length > 0 && running.length < this.cfg.limits.concurrency)
     const slots = this.paused ? 0 : Math.max(0, this.cfg.limits.concurrency - running.length)
     const plan = planDispatch({
@@ -296,6 +300,27 @@ export class Supervisor {
         { kind: 'paused' },
       )
     } else if (!locked && lockPaused) this.resume('rbw unlocked')
+  }
+
+  private async probeGateway(): Promise<void> {
+    if (!this.d.gatewayProbe) return
+    let result: { ok: boolean; reason: string }
+    try {
+      result = await this.d.gatewayProbe()
+    } catch (e) {
+      result = { ok: false, reason: (e as Error).message }
+    }
+    if (result.ok) {
+      this.gatewayFailures = 0
+      this.gatewayReachable(true, result.reason)
+      if (this.paused && this.rt.meta('dispatch_reason') === GATEWAY_UNAVAILABLE)
+        this.resume('gateway recovered')
+      return
+    }
+    this.gatewayFailures++
+    if (this.gatewayFailures < GATEWAY_FAILURES) return
+    this.gatewayReachable(false, result.reason)
+    this.pause(GATEWAY_UNAVAILABLE, 'supervisor')
   }
 
   async reloadConfig(result: LoadResult): Promise<void> {
