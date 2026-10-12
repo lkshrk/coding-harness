@@ -5,17 +5,18 @@ import {
   openStateReadOnly,
   type Run,
   runStore,
+  workerRecords,
 } from '@nightshift/supervisor'
 import { CliError, type Ctx, EXIT, paint, parseArgs } from '../cli'
 import { LOCAL } from '../remote'
 import { eventLine } from '../render/events'
 import { shellLine, Tmux } from '../tmux'
 import { issueOf } from './logs'
-import { withDb } from './shared'
+import { duration, table, withDb } from './shared'
 import { renderStatus, statusRecord } from './status'
 import { LIFECYCLE, tailRun } from './tail'
 
-export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--panes [--max-panes N]]'
+export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--panes [--max-panes N]] | ns watch --snapshot'
 const POLL_MS = 2_000
 const MAX_PANES = 6
 // One poll of lead plus one of slack keeps every close within 60 s of the run's end.
@@ -34,6 +35,7 @@ const FEED_TYPES = [
   'TICK_STALLED',
 ]
 const CLEAR = '\x1b[H\x1b[2J'
+const SNAPSHOT_EVENTS = 10
 
 function ns(ctx: Ctx, ...args: string[]): string[] {
   return [...ctx.self, '--host', LOCAL, ...(ctx.flags.config ? ['--config', ctx.flags.config] : []), ...args]
@@ -291,12 +293,49 @@ export async function streamWatch(
   }
 }
 
+export function snapshot(ctx: Ctx): number {
+  const p = paint(ctx.color)
+  const db = openStateReadOnly(ctx.statePath())
+  if (!db) {
+    ctx.io.out('no state yet')
+    return EXIT.ok
+  }
+  try {
+    const workers = workerRecords(db, ctx.now())
+    const issue = issueOf(db, new Map())
+    const types = [...new Set<string>([...LIFECYCLE, ...FEED_TYPES])]
+    const events = eventsAfter(db, null, { types, limit: SNAPSHOT_EVENTS })
+    if (workers.length === 0) ctx.io.out('workers: none')
+    else {
+      ctx.io.out('workers:')
+      const rows = workers.map((w) => [
+        `  ${w.issue}`,
+        w.agent,
+        `attempt ${w.attempt}`,
+        duration(w.elapsed_ms),
+        w.last_tool ? `last ${w.last_tool}` : w.state,
+      ])
+      for (const line of table(rows)) ctx.io.out(line)
+    }
+    ctx.io.out(events.length ? 'recent events:' : 'recent events: none')
+    for (const e of events) ctx.io.out(`  ${eventLine(e, p, issue(e) ?? '-')}`)
+    return EXIT.ok
+  } finally {
+    db.close()
+  }
+}
+
 export async function watch(ctx: Ctx, args: string[]): Promise<number> {
   const { positionals, bools, values } = parseArgs(
     args,
-    { bools: ['--all', '--manage', '--panes'], values: ['--max-panes', '--swap'] },
+    { bools: ['--all', '--manage', '--panes', '--snapshot'], values: ['--max-panes', '--swap'] },
     WATCH_USAGE,
   )
+  if (bools.has('--snapshot')) {
+    if (positionals.length || bools.size > 1 || Object.keys(values).length)
+      throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
+    return snapshot(ctx)
+  }
   if (bools.has('--all') && positionals.length) throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
   if (!bools.has('--panes') && !bools.has('--manage') && values['--swap'] === undefined)
     return streamWatch(ctx, positionals)

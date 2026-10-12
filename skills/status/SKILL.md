@@ -10,10 +10,11 @@ Answer from what the system reports, never from memory of earlier turns. Read fi
 
 ## Read
 
-These run without asking. Start with the first two; add the others only when the question needs them.
+These run without asking. When asked what is going on, start with `ns watch --snapshot`; otherwise start with `ns status` and `ns tasks`. Add the others only when the question needs them.
 
 | Question | Command |
 |---|---|
+| What is going on now: running workers with role, attempt, elapsed time and last action, and the last 10 lifecycle events | `ns watch --snapshot` |
 | Overall: dispatch, gateway, profile, workers, covered issues | `ns status` |
 | Issues nightshift manages, by stage or state | `ns tasks [--project P] [--stage S] [--state S]` |
 | Active workers and their progress | `ns workers` |
@@ -53,7 +54,7 @@ Control commands change the running system. Propose the exact command with one l
 
 ## Watching
 
-`ns attach <issue>` and `ns watch` need a terminal. Print the command for the user to run in another terminal; do not run it.
+`ns attach <issue>` and `ns watch` (without `--snapshot`) need a terminal. Print the command for the user to run in another terminal; do not run it.
 
 ## Done
 
