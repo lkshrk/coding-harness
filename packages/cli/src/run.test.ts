@@ -70,7 +70,11 @@ describe('help', () => {
 
   test('help takes precedence over remote routing and global flags', async () => {
     const r = await capture(['--host', 'example', '--json', '--config', '/missing', 'tail', '--help'], noWork)
-    expect(r).toEqual({ code: 0, out: ['usage: ns tail <issue> [--follow-issue] [--no-footer]'], err: [] })
+    expect(r).toEqual({
+      code: 0,
+      out: ['usage: ns tail <issue> [--follow-issue] [--no-footer] [--reasoning]'],
+      err: [],
+    })
   })
 
   test.each([

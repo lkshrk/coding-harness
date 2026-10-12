@@ -26,7 +26,7 @@ import { follow } from './logs'
 import { runDiff, statLines } from './results'
 import { withDb } from './shared'
 
-export const TAIL_USAGE = 'ns tail <issue> [--follow-issue] [--no-footer]'
+export const TAIL_USAGE = 'ns tail <issue> [--follow-issue] [--no-footer] [--reasoning]'
 
 export const LIFECYCLE = [
   'DISPATCHED',
@@ -45,7 +45,7 @@ export const LIFECYCLE = [
 
 type Stream = { stop(): void; done: Promise<void> }
 
-function streamSession(ctx: Ctx, run: Run, out: (line: string) => void): Stream | null {
+function streamSession(ctx: Ctx, run: Run, out: (line: string) => void, reasoning: boolean): Stream | null {
   const controller = new AbortController()
   const done = (async () => {
     let info: Awaited<ReturnType<typeof attachInfo>>
@@ -58,7 +58,7 @@ function streamSession(ctx: Ctx, run: Run, out: (line: string) => void): Stream 
       }
       throw e
     }
-    const renderer = new SessionRenderer(info.session, paint(ctx.color), terminalWidth())
+    const renderer = new SessionRenderer(info.session, paint(ctx.color), terminalWidth(), { reasoning })
     const client = new OpenCodeClient(info.url, info.password, ctx.fetch)
     try {
       for await (const raw of client.events(controller.signal))
@@ -78,7 +78,13 @@ function newestRun(db: Db, issue: string): Run | undefined {
   return resolveRun(runStore(db), issue)
 }
 
-async function tailRun(ctx: Ctx, issue: string, run: Run, after: string | null): Promise<string | null> {
+async function tailRun(
+  ctx: Ctx,
+  issue: string,
+  run: Run,
+  after: string | null,
+  reasoning: boolean,
+): Promise<string | null> {
   const out = (line: string) => ctx.io.out(line)
   const p = paint(ctx.color)
   let session: Stream | null = null
@@ -103,7 +109,7 @@ async function tailRun(ctx: Ctx, issue: string, run: Run, after: string | null):
   }
   const startSession = (db: Db) => {
     const current = runStore(db).get(run.id)
-    if (!session && current?.state === 'running') session = streamSession(ctx, current, out)
+    if (!session && current?.state === 'running') session = streamSession(ctx, current, out, reasoning)
   }
   const ended = (db: Db) => {
     startSession(db)
@@ -120,7 +126,11 @@ async function tailRun(ctx: Ctx, issue: string, run: Run, after: string | null):
 }
 
 export async function tail(ctx: Ctx, args: string[]): Promise<number> {
-  const { positionals, bools } = parseArgs(args, { bools: ['--follow-issue', '--no-footer'] }, TAIL_USAGE)
+  const { positionals, bools } = parseArgs(
+    args,
+    { bools: ['--follow-issue', '--no-footer', '--reasoning'] },
+    TAIL_USAGE,
+  )
   const issue = requireArg(positionals[0], TAIL_USAGE)
   const followIssue = bools.has('--follow-issue')
   const run = withDb(ctx, (db) => newestRun(db, issue))
@@ -128,7 +138,7 @@ export async function tail(ctx: Ctx, args: string[]): Promise<number> {
   const cursor: string | null = null
   const stopFooter = bools.has('--no-footer') ? () => {} : startFooter(ctx, issue)
   try {
-    return await tailLoop(ctx, issue, run, followIssue, cursor)
+    return await tailLoop(ctx, issue, run, followIssue, cursor, bools.has('--reasoning'))
   } finally {
     stopFooter()
   }
@@ -140,13 +150,14 @@ async function tailLoop(
   first: Run | undefined,
   followIssue: boolean,
   start: string | null,
+  reasoning: boolean,
 ): Promise<number> {
   let run = first
   let cursor = start
   for (;;) {
     if (run) {
       const id = run.id
-      cursor = await tailRun(ctx, issue, run, cursor)
+      cursor = await tailRun(ctx, issue, run, cursor, reasoning)
       const state = withDb(ctx, (db) => runStore(db).get(id)?.state ?? 'gone')
       ctx.io.out(paint(ctx.color)('dim', `· run ${id} ended (${state})`))
     }

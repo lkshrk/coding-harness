@@ -20,16 +20,23 @@ import {
   statusParts,
 } from './status'
 
+const load = (name: string) =>
+  readFileSync(join(import.meta.dir, 'fixtures', name), 'utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as unknown)
+
 const SESSION = 'ses_ef925c079ffe2Fw8WrE5w1is7D'
-const recorded = readFileSync(join(import.meta.dir, 'fixtures/opencode-session.jsonl'), 'utf8')
-  .split('\n')
-  .filter(Boolean)
-  .map((l) => JSON.parse(l) as unknown)
+const recorded = load('opencode-session.jsonl')
+const RICH = 'ses_ecea1c3a3ffeviBjwPtiWE7Jn6'
+const rich = load('opencode-rich-session.jsonl')
 
 const plain = paint(false)
+const color = paint(true)
+const ESC = '\x1b'
 
 describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
-  test('renders the prompt, tool calls with one-line results and durations, text, and idle', () => {
+  test('renders the prompt, tool calls with results and durations, shell output, text, and idle', () => {
     const r = new SessionRenderer(SESSION, plain)
     const lines = recorded.flatMap((e) => r.feed(e))
     expect(lines).toEqual([
@@ -37,9 +44,114 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
       '▸ read /work/repo/hello.txt',
       '  ✗ Invalid arguments for tool "read": (+4 lines) (4ms)',
       '▸ shell echo hi',
-      '  ✓ hi (28ms)',
+      '  │ hi',
+      '  ✓ exit 0 (28ms)',
       'done',
       '· idle',
+    ])
+  })
+
+  test('a real worker run renders writes as diffs, shell head and tail, and the Markdown answer', () => {
+    const r = new SessionRenderer(RICH, plain, 80)
+    const lines = rich.flatMap((e) => r.feed(e))
+    expect(lines.slice(5)).toEqual([
+      '▸ write /tmp/tmp.unsuKoNlS5/NOTES.md',
+      '▸ write /tmp/tmp.unsuKoNlS5/greet.py',
+      "▸ shell seq 1 40 | sed 's/^/line /'",
+      '  ✓ Created file successfully: NOTES.md (22ms)',
+      '    @@ -1,0 +1,11 @@',
+      '    +# Notes',
+      '    +',
+      '    +- `greet.py` defines a single `greet` function.',
+      '    +- `greet` now builds its message with an f-string.',
+      '    +- `greet` has a docstring.',
+      '    +',
+      '    +```python',
+      '    +from greet import greet',
+      '    +',
+      '    +print(greet("world"))  # hello world',
+      '    +```',
+      '  ✓ Wrote file successfully: greet.py (22ms)',
+      '    @@ -1,2 +1,3 @@',
+      '     def greet(name):',
+      '    -    return "hello " + name',
+      '    +    """Return a greeting for the given name."""',
+      '    +    return f"hello {name}"',
+      '  │ line 1',
+      '  │ line 2',
+      '  │ line 3',
+      '  │ … +34 lines',
+      '  │ line 38',
+      '  │ line 39',
+      '  │ line 40',
+      '  ✓ exit 0 (37ms)',
+      'Summary',
+      '',
+      '1. I created NOTES.md. It has a heading, three bullet points about greet.py',
+      '  and a fenced Python example that calls greet.',
+      '2. In greet.py, greet now builds its message with an f-string instead of joining',
+      "  strings with +, and it has a docstring. I didn't run it.",
+      "3. I ran seq 1 40 | sed 's/^/line /'. It printed 40 lines, from line 1 to line",
+      '  40.',
+      '',
+      'Final greet.py:',
+      '',
+      '┌ [python]────────────────────────────────────────┐',
+      '│ def greet(name):                                │',
+      '│     """Return a greeting for the given name.""" │',
+      '│     return f"hello {name}"                      │',
+      '└─────────────────────────────────────────────────┘',
+      '· idle',
+    ])
+    expect(lines.join('\n')).not.toContain(ESC)
+  })
+
+  test('with colour the diff is red and green, the heading styled and code highlighted', () => {
+    const r = new SessionRenderer(RICH, color, 80)
+    const lines = rich.flatMap((e) => r.feed(e))
+    expect(lines).toContain(`    ${color('red', '-    return "hello " + name')}`)
+    expect(lines).toContain(`    ${color('green', '+    return f"hello {name}"')}`)
+    expect(lines).toContain(`    ${color('cyan', '@@ -1,2 +1,3 @@')}`)
+    expect(lines).toContain('\x1b[33m\x1b[1mSummary\x1b[22m\x1b[39m')
+    expect(lines.some((l) => l.includes('\x1b[38;2;187;154;247mdef\x1b[39m'))).toBe(true)
+  })
+
+  test('an edit tool diffs oldString against newString and caps long diffs', () => {
+    const r = new SessionRenderer('s1', plain)
+    const ev = (type: string, data: Record<string, unknown>) => ({
+      type,
+      data: { sessionID: 's1', id: 'c', ...data },
+    })
+    r.feed(ev('session.tool.input.started', { name: 'edit' }))
+    r.feed(
+      ev('session.tool.called', { input: { filePath: 'a.ts', oldString: 'a\nb\n', newString: 'a\nc\n' } }),
+    )
+    expect(r.feed(ev('session.tool.success', { content: [{ type: 'text', text: 'Edited a.ts' }] }))).toEqual([
+      '  ✓ Edited a.ts (0ms)',
+      '    @@ -1,2 +1,2 @@',
+      '     a',
+      '    -b',
+      '    +c',
+    ])
+    r.feed(ev('session.tool.input.started', { name: 'write' }))
+    const content = Array.from({ length: 50 }, (_, i) => `l${i}`).join('\n')
+    r.feed(ev('session.tool.called', { input: { path: 'b.ts', content } }))
+    const lines = r.feed(ev('session.tool.success', { content: 'ok' }))
+    expect(lines).toHaveLength(42)
+    expect(lines.at(-2)).toBe('    +l38')
+    expect(lines.at(-1)).toBe('    … +11 lines')
+  })
+
+  test('a failing shell call shows its exit code', () => {
+    const r = new SessionRenderer('s1', plain)
+    const ev = (type: string, data: Record<string, unknown>) => ({
+      type,
+      data: { sessionID: 's1', id: 'c', ...data },
+    })
+    r.feed(ev('session.tool.input.started', { name: 'shell' }))
+    r.feed(ev('session.tool.called', { input: { command: 'false' } }))
+    expect(r.feed(ev('session.tool.success', { content: '', metadata: { exit: 1 } }))).toEqual([
+      '  ✗ exit 1 (0ms)',
     ])
   })
 
@@ -48,17 +160,45 @@ describe('SessionRenderer (recorded OpenCode 2.0.22 events)', () => {
     const delta = (d: string) => ({ type: 'session.text.delta', data: { sessionID: 's1', delta: d } })
     expect(r.feed({ type: 'session.text.delta', data: { sessionID: 'other', delta: 'x\n' } })).toEqual([])
     expect(r.feed(delta('Looking at '))).toEqual([])
-    expect(r.feed(delta('the tests.\nNext'))).toEqual(['Looking at the tests.'])
+    expect(r.feed(delta('the **tests**.\nNext'))).toEqual(['Looking at the tests.'])
     expect(r.feed({ type: 'session.text.ended', data: { sessionID: 's1', text: '' } })).toEqual(['Next'])
   })
 
-  test('streams reasoning deltas dimmed and keeps them apart from answer text', () => {
-    const r = new SessionRenderer('s1', paint(true))
-    const ev = (type: string, delta: string) => ({ type, data: { sessionID: 's1', delta } })
-    const dim = paint(true)('dim', 'checking the picker')
-    expect(r.feed(ev('session.reasoning.delta', 'checking the picker\nand'))).toEqual([dim])
-    expect(r.feed(ev('session.text.delta', 'Done.\n'))).toEqual([paint(true)('dim', 'and'), 'Done.'])
-    expect(r.feed({ type: 'session.reasoning.ended', data: { sessionID: 's1' } })).toEqual([])
+  test('holds a fenced code block until it closes', () => {
+    const r = new SessionRenderer('s1', plain)
+    const delta = (d: string) => ({ type: 'session.text.delta', data: { sessionID: 's1', delta: d } })
+    expect(r.feed(delta('```ts\nconst a = 1\n'))).toEqual([])
+    expect(r.feed(delta('```\n'))).toEqual(['const a = 1'])
+  })
+
+  const reasoningEvents = [
+    { type: 'session.reasoning.delta', data: { sessionID: 's1', delta: 'Checking the picker first. It\n' } },
+    { type: 'session.reasoning.delta', data: { sessionID: 's1', delta: 'reads the config.' } },
+    { type: 'session.reasoning.ended', data: { sessionID: 's1' } },
+    { type: 'session.text.delta', data: { sessionID: 's1', delta: 'Done.\n' } },
+  ]
+
+  test('collapses each reasoning block to a dimmed first sentence', () => {
+    const r = new SessionRenderer('s1', color)
+    expect(reasoningEvents.flatMap((e) => r.feed(e))).toEqual([
+      color('dim', 'Checking the picker first. …'),
+      'Done.',
+    ])
+  })
+
+  test('--reasoning streams reasoning in full, dimmed and apart from answer text', () => {
+    const r = new SessionRenderer('s1', color, 100, { reasoning: true })
+    expect(reasoningEvents.flatMap((e) => r.feed(e))).toEqual([
+      color('dim', 'Checking the picker first. It'),
+      color('dim', 'reads the config.'),
+      'Done.',
+    ])
+    const p = new SessionRenderer('s1', plain, 100, { reasoning: true })
+    expect(reasoningEvents.flatMap((e) => p.feed(e))).toEqual([
+      'Checking the picker first. It',
+      'reads the config.',
+      'Done.',
+    ])
   })
 
   test('renders a fatal session error', () => {
