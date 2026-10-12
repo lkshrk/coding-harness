@@ -105,7 +105,10 @@ const CLOSES: Record<string, (code: number) => boolean> = {
   '29': (c) => c === 9,
   '39': (c) => (c >= 30 && c <= 38) || (c >= 90 && c <= 97),
   '49': (c) => (c >= 40 && c <= 48) || (c >= 100 && c <= 107),
+  '59': (c) => c === 58,
 }
+
+const EXTENDED = new Set(['38', '48', '58'])
 
 // Breaks at spaces, hard-breaks words wider than the line, and carries open SGR styles across breaks.
 function wrapLine(line: string, width: number, indent: number): string[] {
@@ -115,27 +118,41 @@ function wrapLine(line: string, width: number, indent: number): string[] {
   let styles: { code: number; text: string }[] = []
   let current = ''
   let used = 0
+  let padded = false
   let gap: Token[] = []
   let word: Token[] = []
-  const room = () => (lines.length === 0 ? width : width - pad.length)
+  const room = () => (padded ? width - pad.length : width)
   const track = (t: Token) => {
     const body = t.text.slice(2, -1)
     if (!t.text.startsWith('\x1b[') || !t.text.endsWith('m') || !/^[\d;]*$/.test(body)) return
     const params = body.split(';').map((n) => (n === '' ? '0' : n))
-    if (!CLOSES[params[0] as string]) styles = [...styles, { code: Number(params[0]), text: t.text }]
-    else
-      for (const n of params) {
-        const ends = CLOSES[n]
-        if (ends) styles = styles.filter((s) => !ends(s.code))
+    for (let i = 0; i < params.length; i++) {
+      const n = params[i] as string
+      const ends = CLOSES[n]
+      if (ends) {
+        styles = styles.filter((s) => !ends(s.code))
+        continue
       }
+      // 38/48/58 take a colour argument: 5;n or 2;r;g;b.
+      const extra = EXTENDED.has(n) ? (params[i + 1] === '5' ? 2 : params[i + 1] === '2' ? 4 : 0) : 0
+      const group = params.slice(i, i + 1 + extra)
+      i += extra
+      styles = [...styles, { code: Number(n), text: `\x1b[${group.join(';')}m` }]
+    }
   }
   const breakLine = () => {
     lines.push(styles.length ? `${current}\x1b[0m` : current)
     current = `${pad}${styles.map((s) => s.text).join('')}`
+    padded = pad.length > 0
     used = 0
   }
   const put = (t: Token) => {
     if (t.width && used + t.width > room() && used > 0) breakLine()
+    // A character wider than the room left after the indent starts its line unindented.
+    if (t.width > room() && used === 0 && padded) {
+      current = current.slice(pad.length)
+      padded = false
+    }
     current += t.text
     used += t.width
     track(t)
@@ -176,7 +193,16 @@ export function wrap(text: string, width: number, indent = 0): string[] {
 }
 
 function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text
+  if (visibleWidth(text) <= max) return text
+  const room = Math.max(1, max - 1)
+  let out = ''
+  let used = 0
+  for (const t of tokens(text)) {
+    if (used + t.width > room) break
+    out += t.text
+    used += t.width
+  }
+  return `${out}…`
 }
 
 export function firstSentence(text: string): string {

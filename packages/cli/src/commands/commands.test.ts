@@ -13,8 +13,9 @@ import {
   RunStore,
   setCovered,
 } from '@nightshift/supervisor'
-import { createCtx } from '../cli'
+import { createCtx, paint } from '../cli'
 import { ControlFailure, type ControlFn } from '../client'
+import { SessionRenderer, stripEscapes } from '../render/session'
 import { type CliDeps, run } from '../run'
 import { Tmux, type TmuxRunner } from '../tmux'
 import { type Manager, manageOnce, type StreamDeps, streamWatch, syncPanes } from './watch'
@@ -1133,6 +1134,45 @@ describe('watch panes', () => {
       'ERR XXX-1  │ stream failed: socket closed',
       'XXX-33 │ still here',
     ])
+  })
+
+  test('ns watch renders each stream for the terminal width minus its own issue prefix', async () => {
+    const s = seeded()
+    const runs = [
+      { id: 'r1', issue: 'XXX-1', agent: 'implementer', state: 'running', failure: null },
+      { id: 'r2', issue: 'XXX-1234', agent: 'implementer', state: 'running', failure: null },
+    ] as Run[]
+    const out: string[] = []
+    const stop = new AbortController()
+    const ctx = createCtx(
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { json: false, noColor: false, yes: false },
+      { ...s.deps, self: ['ns'], signal: stop.signal, sleep: async () => stop.abort() },
+    )
+    const text = `${Array.from({ length: 30 }, (_, i) => `word${i}`).join(' ')} 界界界界界界界界界界界界界界界界界界界界\n`
+    const widths: number[] = []
+    const deps: StreamDeps = {
+      width: () => 40,
+      runs: (ids) => ({ active: runs, known: new Map(ids.map((id) => [id, runs.find((r) => r.id === id)])) }),
+      stream: async (run, write, _signal, width) => {
+        widths.push(width())
+        const r = new SessionRenderer(run.id, paint(false), width)
+        const ev = (type: string, data: Record<string, unknown>) => ({
+          type,
+          data: { sessionID: run.id, ...data },
+        })
+        for (const line of [
+          ...r.feed(ev('session.text.delta', { delta: text })),
+          ...r.feed(ev('session.text.ended', {})),
+        ])
+          write(line)
+      },
+    }
+    expect(await streamWatch(ctx, [], deps)).toBe(0)
+    expect(widths).toEqual([40 - 'XXX-1234 │ '.length, 40 - 'XXX-1234 │ '.length])
+    const streamed = out.filter((l) => l.includes(' │ '))
+    expect(streamed.length).toBeGreaterThan(4)
+    for (const l of streamed) expect(Bun.stringWidth(stripEscapes(l))).toBeLessThanOrEqual(40)
   })
 
   test('ns watch without tmux streams instead of failing; --panes still needs tmux', async () => {

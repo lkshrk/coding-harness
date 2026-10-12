@@ -168,29 +168,23 @@ async function manage(ctx: Ctx, tmux: Tmux, issues: string[], maxPanes: number):
 
 export type StreamDeps = {
   runs(ids: string[]): { active: Run[]; known: Map<string, Run | undefined> }
-  stream(run: Run, out: (line: string) => void, signal: AbortSignal): Promise<unknown>
+  stream(run: Run, out: (line: string) => void, signal: AbortSignal, width: () => number): Promise<unknown>
+  // The terminal width; streamed lines are rendered for it minus the issue prefix.
+  width?: () => number
 }
 
 const ISSUE_COLORS = ['cyan', 'magenta', 'yellow', 'blue', 'green'] as const
 
-function tailDeps(ctx: Ctx, prefix: () => number): StreamDeps {
+function tailDeps(ctx: Ctx): StreamDeps {
   return {
     runs: (ids) =>
       withDb(ctx, (db) => {
         const store = runStore(db)
         return { active: store.active(), known: new Map(ids.map((id) => [id, store.get(id)])) }
       }),
-    stream: (run, out, signal) => {
+    stream: (run, out, signal, width) => {
       const any = AbortSignal.any(ctx.signal ? [ctx.signal, signal] : [signal])
-      return tailRun(
-        { ...ctx, signal: any },
-        run.issue,
-        run,
-        null,
-        false,
-        out,
-        () => terminalWidth() - prefix(),
-      )
+      return tailRun({ ...ctx, signal: any }, run.issue, run, null, false, out, width)
     },
   }
 }
@@ -224,7 +218,9 @@ export async function streamWatch(ctx: Ctx, issues: string[], deps?: StreamDeps)
     return p(color, issue.padEnd(width))
   }
   // Each streamed line is written after its `<issue> │ ` prefix.
-  const streams = deps ?? tailDeps(ctx, () => width + ' │ '.length)
+  const streams = deps ?? tailDeps(ctx)
+  const terminal = streams.width ?? terminalWidth
+  const room = () => terminal() - (width + ' │ '.length)
   const start = (run: Run) => {
     const stop = new AbortController()
     ctx.io.out(`${tag(run.issue)} started (${run.agent})`)
@@ -233,7 +229,7 @@ export async function streamWatch(ctx: Ctx, issues: string[], deps?: StreamDeps)
       if (stop.signal.aborted) return
       for (const line of text.split('\n')) ctx.io.out(`${tag(run.issue)} │ ${line}`)
     }
-    const done = streams.stream(run, write, stop.signal).catch((e) => {
+    const done = streams.stream(run, write, stop.signal, room).catch((e) => {
       if (!stop.signal.aborted) ctx.io.err(`${tag(run.issue)} │ stream failed: ${(e as Error).message}`)
     })
     live.set(run.id, { run, stop, done })
