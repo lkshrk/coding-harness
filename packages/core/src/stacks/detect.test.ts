@@ -110,6 +110,17 @@ describe('browser add-on', () => {
   })
 })
 
+describe('real go stack', () => {
+  test.each<[string, Record<string, string>, string[]]>([
+    ['go.mod', { 'go.mod': 'module x\n\ngo 1.27\n' }, ['go']],
+    ['nested module', { 'services/api/go.mod': 'module api\n' }, ['go']],
+    ['vendored module', { 'vendor/x/go.mod': '' }, []],
+    ['plain Go sources', { 'main.go': 'package main\n' }, []],
+  ])('%s', async (_name, files, expected) => {
+    expect(await detectStacks(memoryTree(files), real)).toEqual(expected)
+  })
+})
+
 describe('real python stack', () => {
   test.each<[string, Record<string, string>, string[]]>([
     ['uv.lock', { 'uv.lock': 'version = 1\n' }, ['python']],

@@ -154,6 +154,23 @@ describe('loadStacks', () => {
     expect(python?.env.UV_CACHE_DIR).toBe('/var/cache/nightshift/uv')
     expect(python?.env.UV_PYTHON_INSTALL_DIR).toStartWith('/opt/nightshift/')
     expect(python?.checks.map((c) => c.name)).toEqual(['sync', 'lint', 'test'])
-    expect([...stacks.keys()].sort()).toEqual(['browser', 'bun', 'node', 'python', 'wow'])
+    const go = stacks.get('go')
+    expect(go?.markers).toEqual([{ file: 'go.mod' }])
+    expect(go?.versionFiles).toEqual(['go.mod', '.tool-versions'])
+    expect(go?.lsp.go).toEqual({ command: ['gopls'], extensions: ['.go'] })
+    expect(go?.checks.map((c) => c.run)).toEqual([
+      'go build ./...',
+      'go vet ./...',
+      'golangci-lint run',
+      'go test ./...',
+    ])
+    expect(go?.egress).toEqual(['proxy.golang.org', 'sum.golang.org'])
+    expect(go?.env).toEqual({
+      GOMODCACHE: '/var/cache/nightshift-deps/go/mod',
+      GOCACHE: '/var/cache/nightshift-deps/go/build',
+      GOTOOLCHAIN: 'local',
+      CGO_ENABLED: '1',
+    })
+    expect([...stacks.keys()].sort()).toEqual(['browser', 'bun', 'go', 'node', 'python', 'wow'])
   })
 })

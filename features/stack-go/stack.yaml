@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../packages/core/schema/stack.schema.json
+id: go
+markers:
+  - file: go.mod
+version_files: [go.mod, .tool-versions]
+lsp:
+  go:
+    command: [gopls]
+    extensions: [.go]
+checks:
+  - name: build
+    run: go build ./...
+  - name: vet
+    run: go vet ./...
+  - name: lint
+    run: golangci-lint run
+  - name: test
+    run: go test ./...
+egress: [proxy.golang.org, sum.golang.org]
+env:
+  GOMODCACHE: /var/cache/nightshift-deps/go/mod
+  GOCACHE: /var/cache/nightshift-deps/go/build
+  GOTOOLCHAIN: local
+  CGO_ENABLED: "1"
+nested_docker: false
