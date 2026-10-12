@@ -132,7 +132,6 @@ describe('renderContext', () => {
       repair_rounds: 2,
       best_of: 2,
       handoff_grace_seconds: 120,
-      review_blocker_confidence: 0.7,
     },
   }
 

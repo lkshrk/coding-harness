@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ExecResult, GateResult } from '../ports'
 import { PermissionDeniedError } from '../ports/git-host'
+import type { ReviewFinding } from '../stages/gates/review'
 import { snapshot } from '../testing/testing'
 
 import { dispatchOne, harness } from './testing'
@@ -274,4 +275,68 @@ describe('gates', () => {
     await h.sup.gatesFinished(run.id, [gate('test', 1, { stdoutTail: 'x'.repeat(20_000) })])
     expect(String(h.of('GATE_FAILED')[0]?.data.output_tail).length).toBe(8000)
   })
+})
+
+describe('review', () => {
+  const OTHER: ReviewFinding = {
+    severity: 'BLOCKER',
+    file: 'a.ts',
+    lines: '1',
+    message: 'listbox unbounded',
+    evidence: 'e',
+    category: 'other',
+    confidence: 0.95,
+  }
+  const passed: GateResult = {
+    check: 't',
+    passed: true,
+    result: { exitCode: 0, durationMs: 1, stdoutTail: '', stderrTail: '', artifact: '', timedOut: false },
+  }
+
+  async function reviewed(h: ReturnType<typeof harness>, runId: string, findings: ReviewFinding[]) {
+    await h.sup.workerStarted(runId, { sandbox: 'sb', session: 's' })
+    await h.sup.workerFinished(runId, {
+      status: 'DONE',
+      summary: 's',
+      evidence: [{ kind: 'test', ref: 't', result: 'pass' }],
+    })
+    await h.sup.headImported(runId, `head-${runId}`)
+    await h.sup.gatesFinished(runId, [passed])
+    await h.sup.reviewFinished(runId, { kind: 'verdict', review: { verdict: 'fail', findings }, model: 'm' })
+    return h.sup.runs.get(runId)
+  }
+
+  async function secondAttempt(h: ReturnType<typeof harness>) {
+    const first = await dispatchOne(h)
+    expect((await reviewed(h, first.id, [OTHER]))?.state).toBe('failed')
+    h.advance(5_000)
+    await h.sup.tick()
+    const second = h.sup.runs.forIssue('FOR-1').at(-1)
+    if (!second || second.id === first.id) throw new Error('no second attempt')
+    return second
+  }
+
+  test('a later review of the issue passes on other BLOCKERs and the issue proceeds to integration', async () => {
+    const h = harness()
+    const second = await secondAttempt(h)
+    expect((await reviewed(h, second.id, [OTHER]))?.state).toBe('done')
+    expect(h.of('REVIEW_RECEIVED').map((e) => e.data)).toEqual([
+      { verdict: 'fail', model: 'm', findings: [OTHER] },
+      { verdict: 'pass', model: 'm', findings: [{ ...OTHER, severity: 'SUGGESTION', downgraded: true }] },
+    ])
+    expect(h.of('STAGE_ENTERED').at(-1)?.data).toEqual({ stage: 'integration', from: 'verification' })
+    expect(h.linear.get('FOR-1').labels).toContain('ai-stage:integration')
+    const comments = (await h.linear.comments('FOR-1')).map((c) => c.body).join('\n')
+    expect(comments).toContain('**SUGGESTION** (downgraded BLOCKER) `a.ts:1`')
+  })
+
+  test.each(['weakened_test', 'security'] as const)(
+    'a later review with a %s BLOCKER still fails',
+    async (category) => {
+      const h = harness()
+      const second = await secondAttempt(h)
+      expect((await reviewed(h, second.id, [OTHER, { ...OTHER, category }]))?.state).toBe('failed')
+      expect(h.of('REVIEW_RECEIVED').at(-1)?.data).toMatchObject({ verdict: 'fail' })
+    },
+  )
 })

@@ -69,7 +69,6 @@ limits:
     no_diff_tokens: 250k
   repair_rounds: 2
   best_of: 2
-  review_blocker_confidence: 0.7
 
 # OpenCode permission key → patterns denied in every rendered agent.
 policies:
