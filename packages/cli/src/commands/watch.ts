@@ -230,20 +230,30 @@ export async function streamWatch(
     })
     live.set(run.id, { run, stop, done })
   }
-  let cursor: string | null = null
-  try {
+  const status = async () => {
     try {
-      cursor = newEvents(ctx, null, 1).at(-1)?.id ?? null
       for (const line of renderStatus(ctx, await statusRecord(ctx))) ctx.io.out(line)
     } catch (e) {
       ctx.io.err((e as Error).message)
     }
+  }
+  let cursor: string | null = null
+  try {
+    try {
+      cursor = newEvents(ctx, null, 1).at(-1)?.id ?? null
+    } catch (e) {
+      ctx.io.err((e as Error).message)
+    }
+    await status()
+    let first = true
     while (!signal.aborted) {
+      let changed = false
       try {
         const { active, known } = deps.runs([...live.keys()])
         for (const [id, s] of live) {
           const run = known.get(id)
           if (run && !isTerminal(run.state)) continue
+          changed = true
           s.stop.abort()
           live.delete(id)
           const state = run?.state ?? 'gone'
@@ -253,6 +263,7 @@ export async function streamWatch(
         const fresh = active.filter((r) => !live.has(r.id) && (!issues.length || issues.includes(r.issue)))
         width = Math.max(width, ...fresh.map((r) => r.issue.length))
         for (const run of fresh) start(run)
+        if (fresh.length) changed = true
         for (const e of newEvents(ctx, cursor)) {
           cursor = e.id
           if (issues.length && !issues.includes(e.issue ?? '')) continue
@@ -264,6 +275,9 @@ export async function streamWatch(
       } catch (e) {
         ctx.io.err((e as Error).message)
       }
+      // The first poll's starts are already covered by the status printed on start.
+      if (changed && !first) await status()
+      first = false
       await Promise.race([
         ctx.sleep(POLL_MS),
         new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true })),

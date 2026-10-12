@@ -1081,9 +1081,11 @@ describe('watch panes', () => {
       'XXX-2 │ working on 2',
       'XXX-3 started (implementer)',
       'XXX-3 │ tail XXX-3',
+      ...status.out,
       'XXX-3 │ working on 3',
       'XXX-1 done',
       'XXX-2 failed: gate failed',
+      ...status.out,
     ])
     expect(streams.get('r1')?.signal.aborted).toBe(true)
     expect(streams.get('r2')?.signal.aborted).toBe(true)
