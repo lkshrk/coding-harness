@@ -38,7 +38,7 @@ export class Tmux {
       'set-option',
       '-wg',
       'pane-border-format',
-      ' #{pane_title}#{?#{@ns-issue}, │ #(ns status-line --tmux #{@ns-issue}),} ',
+      '#{?#{m:*],#{pane_title}},#{pane_title},#{?#{@ns-issue},#(ns status-line --tmux --width #{pane_width} #{@ns-issue}),#{pane_title}}}',
     ])
     this.ok(['set-option', '-g', 'status-interval', '5'])
     this.ok(['set-option', '-g', 'status-style', 'bg=#1a1b26,fg=#a9b1d6'])

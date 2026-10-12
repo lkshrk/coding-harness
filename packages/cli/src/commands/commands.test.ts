@@ -581,8 +581,51 @@ describe('tail', () => {
     ])
   })
 
+  test('--no-footer follows without drawing the footer or setting a scroll region', async () => {
+    const s = seeded()
+    addRun(s, 'XXX-42', 'done')
+    const stdout = process.stdout as unknown as Record<string, unknown>
+    const saved = { isTTY: stdout.isTTY, rows: stdout.rows, columns: stdout.columns, write: stdout.write }
+    const written: string[] = []
+    Object.assign(stdout, {
+      isTTY: true,
+      rows: 24,
+      columns: 80,
+      write: (chunk: string) => {
+        written.push(String(chunk))
+        return true
+      },
+    })
+    try {
+      const plain = await cli(['tail', 'XXX-42', '--no-footer'], s.deps)
+      expect(plain.code).toBe(0)
+      expect(written).toEqual([])
+      await cli(['tail', 'XXX-42'], s.deps)
+      expect(written.join('')).toContain('\x1b[1;23r')
+    } finally {
+      Object.assign(stdout, saved)
+    }
+  })
+
   test('an issue without runs exits 4', async () => {
     const s = seeded()
     expect((await cli(['tail', 'XXX-1'], s.deps)).code).toBe(4)
+  })
+})
+
+describe('status-line', () => {
+  test('--tmux --width clips the line to the pane width with an ellipsis', async () => {
+    const s = seeded()
+    addRun(s, 'XXX-42')
+    const visible = (l: string) => l.replace(/#\[[^\]]*\]/g, '').replaceAll('##', '#')
+    const full = await cli(['status-line', 'XXX-42', '--tmux'], s.deps)
+    expect(visible(full.out[0] ?? '').length).toBeGreaterThan(60)
+    const r = await cli(['status-line', 'XXX-42', '--tmux', '--width', '60'], s.deps)
+    expect(r.code).toBe(0)
+    const text = visible(r.out[0] ?? '')
+    expect(text.startsWith('XXX-42 · implementer · ')).toBe(true)
+    expect(text.length).toBeLessThanOrEqual(60)
+    expect(text.endsWith('…')).toBe(true)
+    expect((await cli(['status-line', 'XXX-42', '--width', 'x'], s.deps)).code).toBe(2)
   })
 })

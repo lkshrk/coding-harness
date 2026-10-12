@@ -152,6 +152,14 @@ export function clipParts(parts: Part[], width: number): Part[] {
   return out
 }
 
+// A cut line drops the right side so the visible text ends with the ellipsis.
+export function fitLine(left: Part[], right: Part[], width: number): { left: Part[]; right: Part[] } {
+  const leftWidth = plainText(left).length
+  const rightWidth = plainText(right).length
+  if (rightWidth > 0 && leftWidth + 2 + rightWidth <= width) return { left, right }
+  return { left: clipParts(left, width), right: [] }
+}
+
 export function footerFrame(
   rows: number,
   left: Part[],

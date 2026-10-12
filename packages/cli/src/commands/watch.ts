@@ -24,7 +24,12 @@ export function syncPanes(ctx: Ctx, tmux: Tmux, o: { issues: string[]; maxPanes:
   for (const run of runs.active) {
     if (o.issues.length && !o.issues.includes(run.issue)) continue
     if (known.has(run.id)) continue
-    tmux.addPane({ run: run.id, issue: run.issue, command: ns(ctx, 'tail', run.issue), maxPanes: o.maxPanes })
+    tmux.addPane({
+      run: run.id,
+      issue: run.issue,
+      command: ns(ctx, 'tail', '--no-footer', run.issue),
+      maxPanes: o.maxPanes,
+    })
     added.push(run.issue)
   }
   for (const pane of panes) {
@@ -73,7 +78,7 @@ export async function watch(ctx: Ctx, args: string[]): Promise<number> {
     tmux.respawn(swap, [
       'sh',
       '-c',
-      `${shellLine(ns(ctx, 'attach', issue))}; exec ${shellLine(ns(ctx, 'tail', issue))}`,
+      `${shellLine(ns(ctx, 'attach', issue))}; exec ${shellLine(ns(ctx, 'tail', '--no-footer', issue))}`,
     ])
     return EXIT.ok
   }
