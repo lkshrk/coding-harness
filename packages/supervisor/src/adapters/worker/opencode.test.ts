@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
+import { loadAgents, renderAgentConfig, renderContext } from '@nightshift/core'
 import type { HarnessEvent, WorkerStart } from '../../ports'
+import { testConfig } from '../../testing/config'
 import {
   argsDigest,
   EventMapper,
@@ -148,6 +151,57 @@ describe('opencodeConfig', () => {
     })
     expect(JSON.stringify(cfg)).not.toContain('sk-run')
   })
+
+  test('adds the gateway MCP server authenticated with the key from the environment', () => {
+    const cfg = opencodeConfig(workerStart())
+    expect(cfg.mcp).toEqual({
+      servers: {
+        gateway: {
+          type: 'remote',
+          url: 'https://gw.test/mcp',
+          oauth: false,
+          headers: {
+            Authorization: `Bearer {env:${GATEWAY_KEY_ENV}}`,
+            'x-litellm-session-id': 'run1',
+          },
+        },
+      },
+    })
+    expect(JSON.stringify(cfg)).not.toContain('sk-run')
+  })
+})
+
+describe('worker agents', () => {
+  const { agents } = loadAgents(join(import.meta.dir, '../../../../../agents'))
+  const GATEWAY_TOOLS = [
+    'context7-resolve-library-id',
+    'context7-query-docs',
+    'searxng-searxng_web_search',
+    'searxng-searxng_search_suggestions',
+    'searxng-searxng_instance_info',
+    'searxng-web_url_read',
+  ]
+
+  test.each(['explorer', 'implementer', 'fixer', 'repairer', 'migrator', 'refactorer'])(
+    '%s reaches exactly the six gateway MCP tools through execute',
+    (name) => {
+      const def = agents.get(name)
+      if (!def) throw new Error(`${name} missing`)
+      const ctx = renderContext(testConfig())
+      const profile = { ...ctx.profile.profile, roles: { ...ctx.profile.profile.roles, [def.role]: 'ns/x' } }
+      const permission =
+        renderAgentConfig(def, { ...ctx, profile: { ...ctx.profile, profile } }).config.permission ?? {}
+      expect(permission['*']).toBe('deny')
+      expect(permission.execute).toBe('allow')
+      const gateway = Object.entries(permission).filter(([key]) => key.startsWith('gateway_'))
+      expect(gateway.map(([key]) => key)).toEqual(['gateway_*', ...GATEWAY_TOOLS.map((t) => `gateway_${t}`)])
+      expect(Object.fromEntries(gateway)).toEqual({
+        'gateway_*': 'deny',
+        ...Object.fromEntries(GATEWAY_TOOLS.map((tool) => [`gateway_${tool}`, 'allow'])),
+      })
+      expect(def.body).toContain('tools.gateway["context7-query-docs"]')
+    },
+  )
 })
 
 describe('EventMapper', () => {

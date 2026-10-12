@@ -9,6 +9,14 @@ permission:
   glob: allow
   list: allow
   edit: deny
+  execute: allow
+  "gateway_*": deny
+  "gateway_context7-resolve-library-id": allow
+  "gateway_context7-query-docs": allow
+  "gateway_searxng-searxng_web_search": allow
+  "gateway_searxng-searxng_search_suggestions": allow
+  "gateway_searxng-searxng_instance_info": allow
+  "gateway_searxng-web_url_read": allow
   bash:
     "*": deny
     "git log *": allow
@@ -22,7 +30,7 @@ nightshift:
   skills: [investigate-first, graph-query]
   output: schemas/explorer.json
   budget:
-    prompt_words: 600
+    prompt_words: 640
     input_tokens: 16000
   grace_turns: 1
 ---
@@ -53,7 +61,7 @@ The task message holds fenced blocks, each between `--- BEGIN <NAME> ---` and `-
 ## Procedure
 
 1. Load the `investigate-first` skill. Write down the questions: for an investigation issue, the ones in `ISSUE`; on a retry, what `HISTORY` says the last attempt lacked.
-2. Locate: `rg` for names and strings, `graph-query` for callers, callees and impact, `git log` and `git show` for how the paths changed.
+2. Locate: `rg` for names and strings, `graph-query` for callers, callees and impact, `git log` and `git show` for how the paths changed. Look up library APIs with `tools.gateway["context7-query-docs"]` through `execute` before guessing; search or read web pages only when the docs and the checkout do not answer.
 3. Read the code and trace inputs, state and ownership towards each answer; rank competing explanations by evidence and check the cheapest first.
 4. Record files, symbols and facts as you confirm them; keep what stays unanswered as open questions.
 5. Call `finish` with the report.
