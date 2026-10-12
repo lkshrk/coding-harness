@@ -385,6 +385,22 @@ describe('wrapping to the live width', () => {
     for (const l of lines) expect(visible(l)).toBeLessThanOrEqual(30)
   })
 
+  test('a diff line clipped to one column or less keeps within the limit', () => {
+    for (const [width, expected] of [
+      [6, '    +…'],
+      [5, '    …'],
+      [4, '    '],
+    ] as const) {
+      const r = new SessionRenderer('s1', plain, () => width)
+      r.feed(ev('session.tool.input.started', { name: 'edit' }))
+      r.feed(
+        ev('session.tool.called', { input: { filePath: 'a.md', oldString: 'a\n', newString: '界界\n' } }),
+      )
+      const lines = r.feed(ev('session.tool.success', { content: 'Edited a.md' }))
+      expect(lines.at(-1)).toBe(expected)
+    }
+  })
+
   test('diff lines are clipped, not wrapped', () => {
     const r = new SessionRenderer('s1', plain, () => 60)
     r.feed(ev('session.tool.input.started', { name: 'edit' }))

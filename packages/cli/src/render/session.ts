@@ -194,7 +194,8 @@ export function wrap(text: string, width: number, indent = 0): string[] {
 
 function clip(text: string, max: number): string {
   if (visibleWidth(text) <= max) return text
-  const room = Math.max(1, max - 1)
+  if (max <= 0) return ''
+  const room = max - 1
   let out = ''
   let used = 0
   for (const t of tokens(text)) {
