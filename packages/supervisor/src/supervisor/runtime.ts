@@ -162,6 +162,7 @@ export type RunFlow = {
   startIngest(view: IssueView): Promise<void>
   ingestFinished(run: Run, event: Event, finish: FinishLike): Promise<void>
   ingestRunFailed(runId: string, reason: string, cause?: Event): Promise<void>
+  handleFinish(run: Run, event: Event, finish: FinishLike): Promise<void>
   workerFailed(runId: string, reason: string, detail?: string): Promise<void>
   stopRun(runId: string, reason: string, opts?: StopOptions): Promise<void>
   end(runId: string, to: 'done' | 'failed' | 'stopped' | 'interrupted', cause: Event): Promise<Run>

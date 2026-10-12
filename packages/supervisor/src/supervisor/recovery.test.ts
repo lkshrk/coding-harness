@@ -114,6 +114,79 @@ describe('recovery', () => {
     expect(h.executor.ops('runStep')).toEqual([run.id, run.id])
   })
 
+  // Records a finish the way workerFinished does, then stops before the finish is handled.
+  async function stoppedAfterFinish(finish: Record<string, unknown>, ended: boolean) {
+    const h = harness()
+    const run = await dispatchOne(h)
+    await h.sup.workerStarted(run.id, { sandbox: `sb-${run.id}`, session: 's-1' })
+    const event = h.sup.log.append({ type: 'WORKER_FINISHED', issue: run.issue, run: run.id, data: finish })
+    h.sup.runs.update(run.id, { finish })
+    if (ended) {
+      h.sup.runs.transition(run.id, 'failed', event)
+      h.sup.runs.update(run.id, { sandbox: null })
+      h.sup.leases.release(run.issue)
+    }
+    await h.sup.stop()
+    const first = h.make({ instanceId: 'inst-2' })
+    const report = await first.start()
+    const second = h.make({ instanceId: 'inst-3' })
+    const report2 = await second.start()
+    const lostComments = (await h.linear.comments('FOR-1')).filter((c) => c.body.includes('lost the runtime'))
+    return { h, run, first, second, report, report2, lostComments }
+  }
+
+  test('a BLOCKED decision finish interrupted by a restart is asked once, not re-dispatched', async () => {
+    const { h, second, report, report2, lostComments } = await stoppedAfterFinish(
+      {
+        status: 'BLOCKED',
+        summary: 'blocked',
+        evidence: [],
+        blocker: { needs: 'decision', reason: 'open choice', options: ['A', 'B', 'C'] },
+      },
+      true,
+    )
+    expect(report.lost).toEqual([])
+    expect(report2.lost).toEqual([])
+    expect(h.of('QUESTION_ASKED', second).length).toBe(1)
+    expect(lostComments).toEqual([])
+    await second.tick()
+    expect(h.of('DISPATCHED', second).length).toBe(1)
+  })
+
+  test('a BLOCKED environment finish interrupted by a restart is classified once', async () => {
+    const { h, second, report, report2, lostComments } = await stoppedAfterFinish(
+      {
+        status: 'BLOCKED',
+        summary: 'blocked',
+        evidence: [],
+        blocker: { needs: 'environment', reason: 'network down' },
+      },
+      true,
+    )
+    expect(report.lost).toEqual([])
+    expect(report2.lost).toEqual([])
+    expect(h.of('FAILURE_CLASSIFIED', second).length).toBe(1)
+    expect(h.of('QUESTION_ASKED', second)).toEqual([])
+    expect(lostComments).toEqual([])
+    expect(h.of('DISPATCHED', second).length).toBe(1)
+  })
+
+  test('a DONE finish interrupted by a restart enters verification instead of being re-dispatched', async () => {
+    const { h, run, second, report, report2, lostComments } = await stoppedAfterFinish(
+      { status: 'DONE', summary: 's', evidence: [{ kind: 'test', ref: 't', result: 'pass' }] },
+      false,
+    )
+    expect(report).toMatchObject({ lost: [], failed: [] })
+    expect(report2).toMatchObject({ lost: [], failed: [] })
+    expect(second.runs.get(run.id)?.state).toBe('gating')
+    expect(h.of('STAGE_ENTERED', second).map((e) => e.data)).toEqual([
+      { stage: 'verification', from: 'implementation' },
+    ])
+    expect(h.of('WORKER_FAILED', second)).toEqual([])
+    expect(h.of('DISPATCHED', second).length).toBe(1)
+    expect(lostComments).toEqual([])
+  })
+
   test('orphaned sandboxes and outboxes are removed', async () => {
     const h = harness()
     h.sandbox.add('01J9ZQ3W5C8XKQG4M2N7P6R1ST')
@@ -135,6 +208,8 @@ describe('recovery', () => {
     )
     const report = await h.sup.start()
     expect(report.lost).toEqual(['FOR-1'])
+    expect((await h.linear.comments('FOR-1')).length).toBe(1)
+    expect((await h.make({ instanceId: 'inst-2' }).start()).lost).toEqual([])
     expect((await h.linear.comments('FOR-1')).length).toBe(1)
     expect((await h.sup.tick()).dispatched).toEqual(['FOR-1'])
     const run = h.sup.runs.forIssue('FOR-1')[0]
