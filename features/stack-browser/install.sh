@@ -2,22 +2,24 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=tools.sh
-source "$here/tools.sh"
 
 prefix=/opt/nightshift/stack-browser
 bin=/usr/local/bin
 browsers=/var/cache/nightshift/ms-playwright
 version="${PLAYWRIGHTVERSION:-}"
-version="${version:-$PLAYWRIGHT_VERSION}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install.sh must run as root" >&2
   exit 1
 fi
 
-if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+if [ -n "$version" ] && ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
   echo "invalid Playwright version '$version'" >&2
+  exit 1
+fi
+
+if [ ! -x /opt/nightshift/mise/bin/mise ]; then
+  echo "/opt/nightshift/mise/bin/mise not found; the mise Feature must be installed first" >&2
   exit 1
 fi
 
@@ -35,12 +37,29 @@ find_node() {
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+# pnpm stays off PATH: it installs only the stack's own tools.
+mise() {
+  (cd "$here" && MISE_DATA_DIR=/opt/nightshift/mise/data MISE_CACHE_DIR="$tmp/mise-cache" MISE_CONFIG_DIR="$tmp/mise-config" \
+    MISE_STATE_DIR="$tmp/mise-state" MISE_TRUSTED_CONFIG_PATHS="$here" MISE_YES=1 MISE_LOCKED=1 \
+    /opt/nightshift/mise/bin/mise "$@")
+}
+
+pnpm_run() {
+  PATH="$(dirname "$node"):$PATH" "$pnpm" "$@" --dir "$prefix" --store-dir "$tmp/pnpm-store" \
+    --config.cache-dir="$tmp/pnpm-cache" --config.update-notifier=false --reporter=append-only
+}
+
 node="$(find_node)"
-npm="$(dirname "$node")/npm"
+mise install --locked
+pnpm="$(mise which pnpm)"
 mkdir -p "$prefix" "$browsers"
-printf '{"name":"nightshift-stack-browser","private":true}\n' >"$prefix/package.json"
-npm_config_cache="$tmp/npm-cache" "$npm" install --prefix "$prefix" --save-exact --ignore-scripts \
-  --no-audit --no-fund --loglevel=error "playwright@$version"
+cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$prefix/"
+pnpm_run install --frozen-lockfile --prod
+locked_version="$("$node" -p 'require(process.argv[1]).dependencies.playwright' "$prefix/package.json")"
+# The browser build must match the repository's Playwright; playwright pins playwright-core exactly.
+if [ -n "$version" ] && [ "$version" != "$locked_version" ]; then
+  pnpm_run add --save-exact --prod "playwright@$version"
+fi
 
 cat >"$bin/playwright" <<WRAP
 #!/usr/bin/env bash
