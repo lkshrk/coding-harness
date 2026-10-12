@@ -273,6 +273,12 @@ export interface Config {
      */
     host?: string
   }
+  lead: {
+    /**
+     * 127.0.0.1 port of the lead's OpenCode server (ns lead serve)
+     */
+    port: number
+  }
 }
 /**
  * lifecycle state → status name; in linear.statuses for every team, in a team overriding linear.statuses

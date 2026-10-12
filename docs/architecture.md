@@ -29,9 +29,9 @@ are configuration, nothing is hard-coded.
 
 ```
           you (terminal, local or over SSH)
-             │  `ns` chat: plan / discuss / "implement"      `ns attach | tail | watch`
+             │  `ns lead` chat: plan / discuss / "implement"  `ns attach | tail | watch`
              ▼                                                        │
-   ┌──────── lead agent (OpenCode, on the host) ──────────┐           │
+   ┌── lead agent (own OpenCode service, on the host) ────┐           │
    │ discovery · design options · decomposition            │           │
    │ writes Linear project, design document, issues        │           │
    └───────────────┬──────────────────────────────────────┘           │
@@ -167,8 +167,12 @@ The lead is the agent you talk to. It owns discovery, design, decomposition, re-
 and it is also nightshift's chat: it answers questions about the running system and steers it through
 nightshift's own commands (reads freely, control commands after your confirmation).
 
-- Runs in a background OpenCode v2 server kept alive by the supervisor, one session per project; `ns` opens
-  a TUI client on it, so closing the terminal ends nothing.
+- Runs as its own always-on OpenCode v2 server beside the supervisor, not inside it: `ns up` installs both
+  `nightshift.service` and `nightshift-lead.service` (launchd: `dev.nightshift.lead`), and either restarts
+  without touching the other. `ns lead serve` renders the lead agent, its skills, `linear-guard` and the
+  `gateway` MCP server into `<paths.state>/lead/config/opencode` and serves on `127.0.0.1:<lead.port>`; the
+  gateway key (`gateway.api_key`) reaches OpenCode only through the service's environment. `ns lead`
+  opens a TUI client on it (`ssh -t <host> ns lead` from elsewhere), so closing the terminal ends nothing.
 - Runs on the host, not in a sandbox: it needs your checkouts, the code-graph index and Linear, and it
   never changes code. Guardrails are OpenCode permissions: file edits denied, shell limited to read-only
   commands, Linear writes through a guard.

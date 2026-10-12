@@ -10,7 +10,7 @@ import {
   NIGHTSHIFT_ROOT,
 } from '@nightshift/core'
 import { acquireLock, statePath } from '@nightshift/supervisor'
-import { LaunchdAgent } from './launchd'
+import { LAUNCHD_LEAD_LABEL, LaunchdAgent } from './launchd'
 import {
   type Runner,
   ServiceError,
@@ -18,17 +18,19 @@ import {
   type ServiceManager,
   type ServiceSpec,
 } from './manager'
-import { SystemdUserService } from './systemd'
+import { SYSTEMD_LEAD_UNIT, SystemdUserService } from './systemd'
 
-export { LAUNCHD_LABEL, LaunchdAgent, launchdPlist } from './launchd'
+export { LAUNCHD_LABEL, LAUNCHD_LEAD_LABEL, LaunchdAgent, launchdPlist } from './launchd'
 export type { ServiceManager, ServiceSpec, ServiceState } from './manager'
-export { SYSTEMD_UNIT, SystemdUserService, systemdUnit } from './systemd'
+export { SYSTEMD_LEAD_UNIT, SYSTEMD_UNIT, SystemdUserService, systemdUnit } from './systemd'
 
 type Io = { out: (line: string) => void; err: (line: string) => void }
 
+export type ServiceRole = 'supervisor' | 'lead'
+
 export type ServiceDeps = {
   load?: () => LoadResult
-  service?: () => ServiceManager
+  service?: (role: ServiceRole) => ServiceManager
   lockHolder?: (dbPath: string) => string | null
   bun?: string
   rbw?: string | null
@@ -57,16 +59,27 @@ const diskFiles: ServiceFiles = {
   mkdir: (path) => mkdirSync(path, { recursive: true }),
 }
 
-export function hostService(env: Record<string, string | undefined> = process.env): ServiceManager {
+export function hostService(
+  env: Record<string, string | undefined> = process.env,
+  role: ServiceRole = 'supervisor',
+): ServiceManager {
   const home = homedir()
+  const lead = role === 'lead'
   if (process.platform === 'darwin')
-    return new LaunchdAgent({ home, uid: process.getuid?.() ?? 0, run: spawnRunner, files: diskFiles })
+    return new LaunchdAgent({
+      home,
+      uid: process.getuid?.() ?? 0,
+      run: spawnRunner,
+      files: diskFiles,
+      ...(lead ? { label: LAUNCHD_LEAD_LABEL } : {}),
+    })
   return new SystemdUserService({
     home,
     user: userInfo().username,
     run: spawnRunner,
     files: diskFiles,
     ...(env.XDG_CONFIG_HOME ? { configHome: env.XDG_CONFIG_HOME } : {}),
+    ...(lead ? { unit: SYSTEMD_LEAD_UNIT } : {}),
   })
 }
 
@@ -106,6 +119,19 @@ export function serviceSpec(
   }
 }
 
+export function leadServiceSpec(
+  config: Config,
+  o: { bun: string; env: Record<string, string | undefined>; rbw?: string | null },
+): ServiceSpec {
+  const { stopTimeoutSec: _, ...spec } = serviceSpec(config, o)
+  return {
+    ...spec,
+    args: ['lead', 'serve'],
+    description: 'nightshift lead',
+    logFile: join(dirname(spec.logFile), 'lead.log'),
+  }
+}
+
 function loaded(deps: ServiceDeps, io: Io): Config | null {
   const result = (deps.load ?? (() => loadConfig()))()
   if (result.ok) return result.config
@@ -119,52 +145,69 @@ function hint(manager: ServiceManager): string {
     : 'check launchctl print gui/$(id -u)'
 }
 
+function managers(deps: ServiceDeps, env: Record<string, string | undefined>) {
+  const make = deps.service ?? ((role: ServiceRole) => hostService(env, role))
+  return [
+    { name: 'nightshift', manager: make('supervisor'), spec: serviceSpec },
+    { name: 'nightshift lead', manager: make('lead'), spec: leadServiceSpec },
+  ]
+}
+
 export async function up(deps: ServiceDeps, io: Io): Promise<number> {
   const config = loaded(deps, io)
   if (!config) return 1
   const env = deps.env ?? process.env
-  const manager = (deps.service ?? (() => hostService(env)))()
+  const services = managers(deps, env)
+  const [supervisor] = services
+  let started = false
   try {
-    if ((await manager.status()) === 'running') {
-      io.out(`nightshift is already running (${manager.kind}: ${manager.path})`)
-      return 0
+    for (const { name, manager, spec } of services) {
+      if ((await manager.status()) === 'running') {
+        io.out(`${name} is already running (${manager.kind}: ${manager.path})`)
+        continue
+      }
+      if (manager === supervisor?.manager) {
+        const holder = (deps.lockHolder ?? lockHolder)(statePath(config, env.HOME ?? homedir()))
+        if (holder) {
+          io.err(holder)
+          return 1
+        }
+      }
+      const rbw = deps.rbw !== undefined ? deps.rbw : Bun.which('rbw', env.PATH ? { PATH: env.PATH } : {})
+      if (manager.installed()) await manager.stop()
+      await manager.install(spec(config, { bun: deps.bun ?? process.execPath, env, rbw }))
+      await manager.start()
+      started = true
+      io.out(`${name} installed and started (${manager.kind}: ${manager.path})`)
     }
-    const holder = (deps.lockHolder ?? lockHolder)(statePath(config, env.HOME ?? homedir()))
-    if (holder) {
-      io.err(holder)
-      return 1
-    }
-    const rbw = deps.rbw !== undefined ? deps.rbw : Bun.which('rbw', env.PATH ? { PATH: env.PATH } : {})
-    const spec = serviceSpec(config, { bun: deps.bun ?? process.execPath, env, rbw })
-    if (manager.installed()) await manager.stop()
-    await manager.install(spec)
-    await manager.start()
-    if (manager instanceof SystemdUserService && !(await manager.enableLinger()))
+    const systemd = services.find((s) => s.manager instanceof SystemdUserService)?.manager
+    if (started && systemd instanceof SystemdUserService && !(await systemd.enableLinger()))
       io.err(
         `warning: lingering is off; enable it so the service runs without a login: sudo loginctl enable-linger ${userInfo().username}`,
       )
-    io.out(`nightshift installed and started (${manager.kind}: ${manager.path})`)
-    io.out(`status: ${await manager.status()}`)
+    if (started) for (const { name, manager } of services) io.out(`${name}: ${await manager.status()}`)
     return 0
   } catch (e) {
     if (!(e instanceof ServiceError)) throw e
     io.err(e.message)
-    io.err(`fix: ${hint(manager)}`)
+    if (supervisor) io.err(`fix: ${hint(supervisor.manager)}`)
     return 1
   }
 }
 
 export async function down(deps: ServiceDeps, io: Io): Promise<number> {
   const env = deps.env ?? process.env
-  const manager = (deps.service ?? (() => hostService(env)))()
-  if (!manager.installed()) {
+  const installed = managers(deps, env).filter((s) => s.manager.installed())
+  if (installed.length === 0) {
     io.out('nightshift service is not installed')
     return 0
   }
   try {
-    await manager.stop()
-    await manager.uninstall()
-    io.out(`nightshift stopped and removed (${manager.kind}: ${manager.path})`)
+    for (const { name, manager } of installed) {
+      await manager.stop()
+      await manager.uninstall()
+      io.out(`${name} stopped and removed (${manager.kind}: ${manager.path})`)
+    }
     return 0
   } catch (e) {
     if (!(e instanceof ServiceError)) throw e

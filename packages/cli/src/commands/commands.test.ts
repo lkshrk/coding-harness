@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type Config, outputValidator } from '@nightshift/core'
+import { type Config, NIGHTSHIFT_ROOT, outputValidator, parseConfigSection } from '@nightshift/core'
 import {
   createUlid,
   type Db,
@@ -1164,5 +1164,116 @@ describe('watch panes', () => {
     expect(r).toEqual({ code: 0, out: [], err: [] })
     expect(calls.some((c) => c[0] === 'respawn-pane')).toBe(false)
     expect(calls.at(-1)).toEqual(['display-message', '-t', '%0', 'no worker in this pane'])
+  })
+})
+
+describe('lead', () => {
+  const KEY = 'sk-lead-literal-secret'
+  const leadSetup = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ns-lead-'))
+    dirs.push(dir)
+    const read = (file: string) => Bun.YAML.parse(readFileSync(join(NIGHTSHIFT_ROOT, file), 'utf8')) as never
+    const defaults = read('config/defaults.yaml') as Record<string, unknown>
+    const config = {
+      paths: { state: join(dir, 'state'), cache: dir, vault: dir },
+      gateway: { base_url: 'https://gw.example/v1', api_key: 'env:LEAD_GW_KEY', worker_key: 'env:W' },
+      secrets: { rbw_profile: 'nightshift' },
+      lead: { port: 4321 },
+      profiles: parseConfigSection('profiles', {
+        active: 'cloud',
+        memory_budget_gb: 1,
+        cloud: read('config/profiles/cloud.yaml'),
+      }),
+      policies: parseConfigSection('policies', defaults.policies),
+      limits: parseConfigSection('limits', defaults.limits),
+    } as unknown as Config
+    const execs: { cmd: string[]; env?: Record<string, string | undefined> }[] = []
+    const deps: CliDeps = {
+      load: () => ({ ok: true, config, sources: [] }),
+      stdoutIsTTY: false,
+      env: { HOME: dir, LEAD_GW_KEY: KEY },
+      exec: async (cmd, o) => {
+        execs.push({ cmd, ...(o?.env ? { env: o.env } : {}) })
+        return 0
+      },
+      which: () => '/usr/local/bin/opencode',
+    }
+    return { dir, config, execs, deps, leadDir: join(dir, 'state/lead') }
+  }
+  const files = (root: string): string[] =>
+    readdirSync(root, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => join(e.parentPath, e.name))
+
+  test('serve renders agent, skills, guard and gateway MCP with an env reference, then execs opencode serve', async () => {
+    const t = leadSetup()
+    const r = await cli(['lead', 'serve'], t.deps)
+    expect(r.code).toBe(0)
+    const configDir = join(t.leadDir, 'config/opencode')
+    const written = files(configDir).map((f) => f.slice(configDir.length + 1))
+    expect(written).toContain('agent/lead.md')
+    expect(written).toContain('plugins/linear-guard/index.js')
+    expect(written).toContain('skills/discover/SKILL.md')
+    expect(written).toContain('skills/decompose/SKILL.md')
+    const opencode = JSON.parse(readFileSync(join(configDir, 'opencode.json'), 'utf8'))
+    expect(opencode.model).toBe('litellm/claude-fable')
+    expect(opencode.default_agent).toBe('lead')
+    expect(opencode.plugins[0].package).toBe(join(configDir, 'plugins/linear-guard'))
+    expect(opencode.providers.litellm.env).toEqual(['NIGHTSHIFT_LEAD_KEY'])
+    expect(opencode.mcp.servers.gateway).toEqual({
+      type: 'remote',
+      url: 'https://gw.example/mcp',
+      oauth: false,
+      headers: { Authorization: 'Bearer {env:NIGHTSHIFT_LEAD_KEY}' },
+    })
+    for (const f of files(t.dir)) expect(readFileSync(f, 'utf8')).not.toContain(KEY)
+    const passwordFile = join(t.leadDir, 'server-password')
+    expect(statSync(passwordFile).mode & 0o777).toBe(0o600)
+    const password = readFileSync(passwordFile, 'utf8')
+    expect(password).toMatch(/^[0-9a-f]{48}$/)
+    expect(t.execs).toHaveLength(1)
+    expect(t.execs[0]?.cmd).toEqual(['opencode', 'serve', '--hostname', '127.0.0.1', '--port', '4321'])
+    expect(t.execs[0]?.env).toMatchObject({
+      OPENCODE_CONFIG_DIR: configDir,
+      OPENCODE_SERVER_PASSWORD: password,
+      NIGHTSHIFT_LEAD_KEY: KEY,
+    })
+  })
+
+  test('ns lead opens the TUI on the running lead server with the password in its environment', async () => {
+    const t = leadSetup()
+    mkdirSync(t.leadDir, { recursive: true })
+    writeFileSync(join(t.leadDir, 'server-password'), 'pw-1')
+    const seen: string[] = []
+    const httpFetch = (async (url: string, init?: RequestInit) => {
+      seen.push(`${url} ${(init?.headers as Record<string, string> | undefined)?.authorization}`)
+      return new Response('{}')
+    }) as unknown as typeof fetch
+    const r = await cli(['lead', '--full'], { ...t.deps, httpFetch })
+    expect(r).toEqual({ code: 0, out: [], err: ['detach: ctrl+c twice, or type /exit and press Enter'] })
+    expect(seen).toEqual([`http://127.0.0.1:4321/api/info Basic ${btoa('opencode:pw-1')}`])
+    expect(t.execs).toEqual([
+      { cmd: ['opencode', '--server', 'http://127.0.0.1:4321'], env: { OPENCODE_PASSWORD: 'pw-1' } },
+    ])
+    t.execs.length = 0
+    await cli(['lead'], { ...t.deps, httpFetch })
+    expect(t.execs[0]?.cmd).toEqual(['opencode', 'mini', '--server', 'http://127.0.0.1:4321'])
+  })
+
+  test('ns lead without a running server exits non-zero and says how to start it', async () => {
+    const t = leadSetup()
+    const refused = (async () => {
+      throw new TypeError('connection refused')
+    }) as unknown as typeof fetch
+    const missing = await cli(['lead'], { ...t.deps, httpFetch: refused })
+    expect(missing.code).toBe(3)
+    expect(missing.err).toEqual([
+      'the lead is not running at http://127.0.0.1:4321; start it with ns up, or systemctl --user start nightshift-lead.service',
+    ])
+    mkdirSync(t.leadDir, { recursive: true })
+    writeFileSync(join(t.leadDir, 'server-password'), 'pw-1')
+    const stopped = await cli(['lead'], { ...t.deps, httpFetch: refused })
+    expect(stopped.code).toBe(3)
+    expect(t.execs).toEqual([])
   })
 })

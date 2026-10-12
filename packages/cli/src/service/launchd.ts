@@ -9,6 +9,7 @@ import {
 } from './manager'
 
 export const LAUNCHD_LABEL = 'dev.nightshift.supervisor'
+export const LAUNCHD_LEAD_LABEL = 'dev.nightshift.lead'
 
 function xml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -16,7 +17,7 @@ function xml(value: string): string {
 
 const str = (value: string) => `<string>${xml(value)}</string>`
 
-export function launchdPlist(spec: ServiceSpec): string {
+export function launchdPlist(spec: ServiceSpec, label: string = LAUNCHD_LABEL): string {
   const env = Object.entries(spec.env)
     .map(([k, v]) => `      <key>${xml(k)}</key>${str(v)}`)
     .join('\n')
@@ -24,12 +25,10 @@ export function launchdPlist(spec: ServiceSpec): string {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
   <dict>
-    <key>Label</key>${str(LAUNCHD_LABEL)}
+    <key>Label</key>${str(label)}
     <key>ProgramArguments</key>
     <array>
-      ${str(spec.bun)}
-      ${str(spec.main)}
-      ${str('supervise')}
+${[spec.bun, spec.main, ...(spec.args ?? ['supervise'])].map((a) => `      ${str(a)}`).join('\n')}
     </array>
     <key>WorkingDirectory</key>${str(spec.workdir)}
     <key>EnvironmentVariables</key>
@@ -52,9 +51,13 @@ ${env}
 export class LaunchdAgent implements ServiceManager {
   readonly kind = 'launchd'
   readonly path: string
+  readonly label: string
 
-  constructor(private readonly o: { home: string; uid: number; run: Runner; files: ServiceFiles }) {
-    this.path = join(o.home, 'Library/LaunchAgents', `${LAUNCHD_LABEL}.plist`)
+  constructor(
+    private readonly o: { home: string; uid: number; run: Runner; files: ServiceFiles; label?: string },
+  ) {
+    this.label = o.label ?? LAUNCHD_LABEL
+    this.path = join(o.home, 'Library/LaunchAgents', `${this.label}.plist`)
   }
 
   private get domain(): string {
@@ -67,7 +70,7 @@ export class LaunchdAgent implements ServiceManager {
 
   async install(spec: ServiceSpec): Promise<void> {
     this.o.files.mkdir(dirname(spec.logFile))
-    this.o.files.write(this.path, launchdPlist(spec))
+    this.o.files.write(this.path, launchdPlist(spec, this.label))
   }
 
   async uninstall(): Promise<void> {
@@ -79,17 +82,16 @@ export class LaunchdAgent implements ServiceManager {
   }
 
   async stop(): Promise<void> {
-    if (await this.loaded())
-      await must(this.o.run, ['launchctl', 'bootout', `${this.domain}/${LAUNCHD_LABEL}`])
+    if (await this.loaded()) await must(this.o.run, ['launchctl', 'bootout', `${this.domain}/${this.label}`])
   }
 
   private async loaded(): Promise<boolean> {
-    return (await this.o.run(['launchctl', 'print', `${this.domain}/${LAUNCHD_LABEL}`])).exitCode === 0
+    return (await this.o.run(['launchctl', 'print', `${this.domain}/${this.label}`])).exitCode === 0
   }
 
   async status(): Promise<ServiceState> {
     if (!this.installed()) return 'not installed'
-    const res = await this.o.run(['launchctl', 'print', `${this.domain}/${LAUNCHD_LABEL}`])
+    const res = await this.o.run(['launchctl', 'print', `${this.domain}/${this.label}`])
     return res.exitCode === 0 && /\bstate = running\b/.test(res.stdout) ? 'running' : 'stopped'
   }
 }
