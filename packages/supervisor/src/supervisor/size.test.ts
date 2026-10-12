@@ -97,6 +97,24 @@ describe('size gate on dispatch', () => {
     expect(h.sup.runs.forIssue('FOR-1').map((r) => r.agent)).toEqual(['explorer', 'implementer'])
   })
 
+  test('an earlier ingest run does not skip the explorer on a near-limit feature', async () => {
+    const h = sized({ max_estimate: 5 })
+    h.linear.put(snapshot({ identifier: 'FOR-1', estimate: 4 }))
+    await h.sup.start()
+    const ingest = h.sup.runs.create({
+      issue: 'FOR-1',
+      agent: 'ingester',
+      profile: 'default',
+      model: 'm',
+      repository: 'omni',
+      baseSha: 'base',
+      attempt: 1,
+    })
+    await h.sup.stopRun(ingest.id, 'ingested', { keepWork: false })
+    const run = await h.sup.retryRun('FOR-1', {}, 'cli')
+    expect(run.agent).toBe('explorer')
+  })
+
   test('a manual retry of a near-limit feature runs the explorer before its first implementer run', async () => {
     const h = sized({ max_estimate: 5 })
     h.linear.put(snapshot({ identifier: 'FOR-1', estimate: 4 }))

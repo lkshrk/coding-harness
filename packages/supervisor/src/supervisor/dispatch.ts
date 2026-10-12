@@ -16,7 +16,7 @@ import { BaseConflictStore } from '../stages/integration/records'
 import type { LeaseStore } from '../state/leases'
 import { isTerminal, type Run } from '../state/runs'
 import { isIssueRef } from '../state/targets'
-import type { RunFlow, SupervisorRuntime } from './runtime'
+import { INGEST_AGENT, type RunFlow, type SupervisorRuntime } from './runtime'
 
 type PrHead = { ref: string; headSha: string }
 
@@ -253,7 +253,9 @@ export class Dispatcher {
       size.near &&
       view.pipeline.includes(DECOMPOSITION) &&
       view.stage === IMPLEMENTATION &&
-      this.rt.runs.forIssue(view.snapshot.identifier).length === 0 &&
+      !this.rt.runs
+        .forIssue(view.snapshot.identifier)
+        .some((r) => r.agent !== INGEST_AGENT && this.rt.deps.agentKind(r.agent) === 'worker') &&
       this.rt.deps.agentKind(EXPLORER) === 'worker'
     )
   }
