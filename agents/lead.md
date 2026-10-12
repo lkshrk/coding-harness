@@ -13,9 +13,11 @@ permission:
   todowrite: allow
   question: allow
   webfetch: deny
-  gateway_searxng_web_search: allow
-  gateway_searxng_search_suggestions: allow
-  gateway_web_url_read: allow
+  execute: allow
+  "gateway_*": deny
+  gateway_searxng-searxng_web_search: allow
+  gateway_searxng-searxng_search_suggestions: allow
+  gateway_searxng-web_url_read: allow
   external_directory:
     "*": ask
     "~/Dev/**": allow

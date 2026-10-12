@@ -30,9 +30,9 @@ const ctx: RenderContext = {
 const LEAD_SKILLS = ['discover', 'design', 'decompose', 'status', 'replan', 'intake']
 const CLI_SKILLS = ['linear', 'gh', 'code-graph', 'ctx7', 'search']
 const GATEWAY_WEB_TOOLS = [
-  'gateway_searxng_web_search',
-  'gateway_searxng_search_suggestions',
-  'gateway_web_url_read',
+  'gateway_searxng-searxng_web_search',
+  'gateway_searxng-searxng_search_suggestions',
+  'gateway_searxng-web_url_read',
 ]
 const { agents, errors } = loadAgents(join(ROOT, 'agents'), {
   profiles,
@@ -181,6 +181,8 @@ describe('lead writes', () => {
     const { permission } = rendered(agents.get('lead') as AgentDef).frontmatter
     for (const tool of GATEWAY_WEB_TOOLS) expect(permission[tool]).toBe('allow')
     expect(permission.webfetch).toBe('deny')
+    expect(permission.execute).toBe('allow')
+    expect(permission['gateway_*']).toBe('deny')
     expect(Object.keys(permission.bash).filter((p) => p.includes('search.sh'))).toEqual([])
   })
 })
