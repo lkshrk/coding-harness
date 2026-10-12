@@ -60,26 +60,52 @@ EOS
   chmod 0755 "$bin/semgrep"
 }
 
-node_wrapper() {
-  local name="$1" node="$2" entry
-  entry="$(readlink -f "$prefix/npm/node_modules/.bin/$name")"
-  cat >"$bin/$name" <<EOS
-#!/usr/bin/env bash
-set -euo pipefail
-exec "$node" "$entry" "\$@"
-EOS
+# pnpm's .bin entries are shell shims, so the entry comes from the package's own bin field.
+bin_entry() {
+  local name="$1" package="$2" node="$3"
+  "$node" -e 'const [dir, name] = process.argv.slice(1); const b = require(dir + "/package.json").bin;
+    process.stdout.write(require("path").resolve(dir, typeof b === "string" ? b : b[name]))' \
+    "$(readlink -f "$prefix/npm/node_modules/$package")" "$name"
+}
+
+wrapper() {
+  local name="$1"
+  shift
+  {
+    printf '#!/usr/bin/env bash\nset -euo pipefail\nexec'
+    printf ' %q' "$@"
+    printf ' "$@"\n'
+  } >"$bin/$name"
   chmod 0755 "$bin/$name"
 }
 
+# Only the native package matching the architecture installs: optionalDependencies with os and cpu fields.
+native_opencode() {
+  local native=("$prefix"/npm/node_modules/@opencode/cli-linux-*/bin/opencode)
+  if [ "${#native[@]}" -ne 1 ] || [ ! -x "${native[0]}" ]; then
+    echo "expected one @opencode/cli native package, found: ${native[*]}" >&2
+    exit 1
+  fi
+  readlink -f "${native[0]}"
+}
+
 install_npm_tools() {
-  local node
+  local node pnpm bls dsh bats opencode
   node="$(locked node)"
+  pnpm="$(locked pnpm)"
   mkdir -p "$prefix/npm"
-  cp "$here/npm/package.json" "$here/npm/package-lock.json" "$prefix/npm/"
-  PATH="$(dirname "$node"):$PATH" npm_config_cache="$tmp/npm-cache" npm ci --prefix "$prefix/npm" --omit=dev \
-    --ignore-scripts --no-audit --no-fund --loglevel=error
-  node_wrapper bash-language-server "$node"
-  node_wrapper dsh "$node"
+  cp "$here/npm/package.json" "$here/npm/pnpm-lock.yaml" "$prefix/npm/"
+  PATH="$(dirname "$node"):$PATH" "$pnpm" install --dir "$prefix/npm" --frozen-lockfile --prod \
+    --store-dir "$tmp/pnpm-store" --config.cache-dir="$tmp/pnpm-cache" --config.update-notifier=false \
+    --reporter=append-only
+  bls="$(bin_entry bash-language-server bash-language-server "$node")"
+  dsh="$(bin_entry dsh @deepseek-ai/dsh "$node")"
+  bats="$(readlink -f "$prefix/npm/node_modules/bats/bin/bats")"
+  opencode="$(native_opencode)"
+  wrapper bash-language-server "$node" "$bls"
+  wrapper dsh "$node" "$dsh"
+  wrapper bats "$bats"
+  wrapper opencode "$opencode"
 }
 
 install_scripts() {
@@ -89,7 +115,7 @@ install_scripts() {
 
 apt_install ca-certificates curl git jq tar gzip xz-utils unzip
 mkdir -p "$prefix"
-"$mise_install" "$here" opencode rtk gh rg ast-grep codebase-memory-mcp gitleaks osv-scanner actionlint shellcheck bats
+"$mise_install" "$here" rtk gh rg ast-grep codebase-memory-mcp gitleaks osv-scanner actionlint shellcheck
 install_semgrep
 install_npm_tools
 install_scripts
