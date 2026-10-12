@@ -67,6 +67,30 @@ For `osm_build/` the image carries `osmium-tool` and the DuckDB CLI at the versi
 pins, with the `spatial` extension preinstalled under `DUCKDB_EXTENSION_DIRECTORY`, so the build and diff
 tests run offline instead of skipping.
 
+## Screenshots
+
+A change touching a repository's `ui_paths` gets before and after screenshots: the integration step
+runs `screenshots.run` in the repository image, offline, on the base and on the head commit. The command
+writes PNG files and a `manifest.json` to `screenshots.output`: `pages`, every page the command
+considered at that commit (`{route, path}`, on the head optionally `new: true`), and `images`, a list of
+`{page, viewport, theme, file}` with `file` relative to the output directory. The images are uploaded to
+the Linear issue in one comment that a later attempt replaces. Every image must name a listed page and a
+PNG file the command wrote, and a command that cannot capture a page it lists must exit non-zero. A page
+in the head's `pages` only is shown as new, one in the base's only as removed. A listed page without
+images on a side, or an empty base `pages` while the head lists pages it does not mark `new`, opens the
+PR as a draft. Over `max_images` (default 40) or `max_mb` (default 20), every page is first reduced to the
+`phone` and `desktop` viewports in the `light` theme, then whole pages are kept in manifest order up to
+the cap; the comment and the PR body name the reduced and left-out pages, and the PR is not drafted. If
+the command fails, yields no images on the head or writes an invalid manifest, the PR opens as a draft
+with the reason. For `repositories.routivo`:
+
+```yaml
+ui_paths: ['frontend/src/routes/**', 'frontend/src/lib/components/**', '**/*.svelte', '**/*.css']
+screenshots:
+  run: cd frontend && pnpm test:screenshots
+  output: frontend/test/render/screenshots
+```
+
 ## nightshift-vault
 
 The closeout ingest's vault repository (`VAULT_REPOSITORY`, derived from `paths.vault`, also known to
