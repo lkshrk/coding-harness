@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PullRequest } from '../../ports'
-import { PushRejectedError } from '../../ports/git-host'
+import { PermissionDeniedError, PushRejectedError } from '../../ports/git-host'
 import { git, gitFixture } from '../../stages/gates/testing'
 import {
   AGENT_TOKEN,
@@ -166,6 +166,43 @@ describe('GhGitHost.push', () => {
       )
     }
     expect(pushes(gh)).toEqual([])
+  })
+
+  const refusingHost = (fx: ReturnType<typeof setup>, stderr: string) =>
+    fakeHost(
+      () => hostConfig(fx.fx.checkout),
+      Object.assign(Object.create(fx.gh), {
+        run: async (...a: Parameters<FakeGh['run']>) =>
+          a[0].includes('push') ? { exitCode: 1, stdout: '', stderr } : fx.gh.run(...a),
+      }),
+      fx.remote,
+    )
+
+  test('a push GitHub refuses for a missing permission throws PermissionDeniedError with its text', async () => {
+    const fx = setup()
+    for (const refusal of [
+      '! [remote rejected] abc -> ns/FOR-1 (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)',
+      'remote: Permission to lkshrk/omni.git denied to nightshift[bot].\nfatal: unable to access: The requested URL returned error: 403',
+    ]) {
+      const failed = refusingHost(fx, refusal).push({
+        repository: 'omni',
+        source: runRef('RUN1'),
+        branch: 'ns/FOR-1',
+      })
+      await expect(failed).rejects.toBeInstanceOf(PermissionDeniedError)
+      await expect(failed).rejects.toThrow(refusal.split('\n')[0] as string)
+    }
+  })
+
+  test('another failed push throws a generic error', async () => {
+    const fx = setup()
+    const failed = refusingHost(fx, 'fatal: unable to access: Could not resolve host: github.com').push({
+      repository: 'omni',
+      source: runRef('RUN1'),
+      branch: 'ns/FOR-1',
+    })
+    await expect(failed).rejects.toThrow('git push ns/FOR-1 exited 1: fatal: unable to access')
+    await expect(failed).rejects.not.toBeInstanceOf(PermissionDeniedError)
   })
 
   test('a repository with github: personal pushes with the personal token', async () => {
