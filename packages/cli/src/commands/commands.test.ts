@@ -739,6 +739,47 @@ describe('watch panes', () => {
     expect(killed(t.calls)).toEqual(['%11', '%12'])
   })
 
+  test('a pane closes no later than 60 s after its run ended, given the poll interval', () => {
+    const s = seeded()
+    const recent = addRun(s, 'XXX-2', 'done')
+    const ended = Date.parse(s.runs.get(recent.id)?.endedAt ?? '')
+    const t = fakeTmux([pane('%12', recent.id, 'XXX-2', 'XXX-2 [done]')])
+    syncPanes(ctxAt(s, ended + 57_000), t.tmux, { issues: [], maxPanes: 6 })
+    expect(killed(t.calls)).toEqual(['%12'])
+  })
+
+  test('ns watch on an existing session removes panes of inactive runs before attaching', async () => {
+    const s = seeded()
+    const old = addRun(s, 'XXX-1', 'done')
+    const live = addRun(s, 'XXX-2')
+    const calls: string[][] = []
+    const listed = [pane('%11', old.id, 'XXX-1', 'XXX-1 [done]'), pane('%12', live.id, 'XXX-2')]
+    const execs: string[][] = []
+    const code = await run(
+      ['watch', '--all'],
+      { out: () => {}, err: () => {} },
+      {
+        ...s.deps,
+        now: () => new Date(Date.parse(s.runs.get(old.id)?.endedAt ?? '') + 1_000),
+        which: () => '/usr/bin/tmux',
+        self: ['ns'],
+        capture: (argv) => {
+          calls.push(argv.slice(3))
+          const out = argv[3] === 'list-panes' ? listed.join('\n') : ''
+          return { exitCode: 0, stdout: out, stderr: '' }
+        },
+        exec: async (cmd) => {
+          execs.push(cmd)
+          return 0
+        },
+      },
+    )
+    expect(code).toBe(0)
+    expect(killed(calls)).toEqual(['%11'])
+    expect(calls.some((c) => c[0] === 'new-window' || c[0] === 'split-window')).toBe(false)
+    expect(execs).toHaveLength(1)
+  })
+
   test('a fresh watch removes panes of inactive runs and shows one pane per active run', () => {
     const s = seeded()
     const old = addRun(s, 'XXX-1', 'done')

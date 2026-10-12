@@ -7,7 +7,8 @@ import { withDb } from './shared'
 export const WATCH_USAGE = 'ns watch [<issue>…] [--all] [--max-panes N]'
 const POLL_MS = 2_000
 const MAX_PANES = 6
-const CLOSE_AFTER_MS = 60_000
+// One poll of lead plus one of slack keeps every close within 60 s of the run's end.
+const CLOSE_AFTER_MS = 60_000 - 2 * POLL_MS
 
 function ns(ctx: Ctx, ...args: string[]): string[] {
   return [...ctx.self, '--host', LOCAL, ...(ctx.flags.config ? ['--config', ctx.flags.config] : []), ...args]
@@ -18,33 +19,39 @@ function stream(ctx: Ctx, issue: string): string {
   return `trap '' INT; exec ${shellLine(ns(ctx, 'tail', '--no-footer', issue))}`
 }
 
+function closeEnded(ctx: Ctx, tmux: Tmux, o: { fresh?: boolean }) {
+  const panes = tmux.panes()
+  const workers = panes.filter((p) => p.run)
+  const runs = withDb(ctx, (db) => {
+    const store = runStore(db)
+    return { active: store.active(), states: new Map(workers.map((p) => [p.run, store.get(p.run)])) }
+  })
+  const now = ctx.now().getTime()
+  const open = panes.filter((pane) => {
+    if (!pane.run) return true
+    const run = runs.states.get(pane.run)
+    if (run && !isTerminal(run.state)) return true
+    const ended = run?.endedAt ? Date.parse(run.endedAt) : Number.NaN
+    if (o.fresh || !(now - ended < CLOSE_AFTER_MS)) {
+      tmux.close(pane)
+      return false
+    }
+    if (!pane.title.endsWith(']'))
+      tmux.title(pane.id, `${pane.issue} [${run?.state === 'done' ? 'done' : 'failed'}]`)
+    return true
+  })
+  return { panes: open, active: runs.active }
+}
+
 export function syncPanes(
   ctx: Ctx,
   tmux: Tmux,
   o: { issues: string[]; maxPanes: number; fresh?: boolean },
 ): string[] {
-  const panes = tmux.panes()
-  const runs = withDb(ctx, (db) => {
-    const store = runStore(db)
-    const states = new Map(panes.filter((p) => p.run).map((p) => [p.run, store.get(p.run)]))
-    return { active: store.active(), states }
-  })
-  const now = ctx.now().getTime()
-  for (const pane of panes) {
-    if (!pane.run) continue
-    const run = runs.states.get(pane.run)
-    if (run && !isTerminal(run.state)) continue
-    const ended = run?.endedAt ? Date.parse(run.endedAt) : Number.NaN
-    if (o.fresh || !(now - ended < CLOSE_AFTER_MS)) {
-      tmux.close(pane)
-      continue
-    }
-    if (!pane.title.endsWith(']'))
-      tmux.title(pane.id, `${pane.issue} [${run?.state === 'done' ? 'done' : 'failed'}]`)
-  }
+  const { panes, active } = closeEnded(ctx, tmux, o)
   const known = new Set(panes.map((p) => p.run))
   const added: string[] = []
-  for (const run of runs.active) {
+  for (const run of active) {
     if (o.issues.length && !o.issues.includes(run.issue)) continue
     if (known.has(run.id)) continue
     tmux.addPane({
@@ -107,7 +114,8 @@ export async function watch(ctx: Ctx, args: string[]): Promise<number> {
   }
   if (bools.has('--all') && positionals.length) throw new CliError(EXIT.usage, `usage: ${WATCH_USAGE}`)
   if (bools.has('--manage')) return manage(ctx, tmux, positionals, maxPanes)
-  if (!tmux.hasSession()) {
+  if (tmux.hasSession()) closeEnded(ctx, tmux, { fresh: true })
+  else {
     const manager = ns(ctx, 'watch', '--manage', '--max-panes', String(maxPanes), ...positionals)
     tmux.createSession(manager, ns(ctx, 'watch', '--swap'))
   }

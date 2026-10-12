@@ -193,7 +193,10 @@ describe('ns watch', () => {
         },
       })
       expect(code).toBe(0)
-      expect(calls).toEqual([['tmux', '-L', 'nightshift', 'has-session', '-t', 'ns-watch']])
+      expect(calls).toEqual([
+        ['tmux', '-L', 'nightshift', 'has-session', '-t', 'ns-watch'],
+        ['tmux', '-L', 'nightshift', 'list-panes', '-s', '-t', 'ns-watch', '-F', expect.any(String)],
+      ])
       expect(execs).toEqual([['tmux', '-L', 'nightshift', 'attach-session', '-t', 'ns-watch']])
     } finally {
       s.cleanup()
