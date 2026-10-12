@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { LinearComment } from '../ports'
+import { ControlError, type MissReport } from '../ports/control'
 import type { ReviewFinding } from '../stages/gates/review'
 import type { Event } from '../state/events'
 import type { Run } from '../state/runs'
@@ -123,6 +124,85 @@ export class ReviewExamples {
     renameSync(`${p}.tmp`, p)
     return true
   }
+}
+
+// New-side line numbers each file's hunks add, keyed by the b/ path.
+export function addedLines(patch: string): Map<string, Set<number>> {
+  const added = new Map<string, Set<number>>()
+  let file: Set<number> | undefined
+  let line = 0
+  for (const text of patch.split('\n')) {
+    const header = /^\+\+\+ (?:b\/)?(.+)$/.exec(text)
+    if (header) {
+      const path = header[1] as string
+      file = path === '/dev/null' ? undefined : (added.get(path) ?? new Set())
+      if (file) added.set(path, file)
+      continue
+    }
+    if (text.startsWith('diff --git ')) {
+      file = undefined
+      continue
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text)
+    if (hunk) line = Number(hunk[1])
+    else if (text.startsWith('+')) file?.add(line++)
+    else if (text.startsWith(' ')) line++
+  }
+  return added
+}
+
+function prMatches(url: string, pr: string): boolean {
+  if (/^\d+$/.test(pr)) return new RegExp(`/pull/${pr}/?$`).test(url)
+  return url.replace(/\/+$/, '') === pr.replace(/\/+$/, '')
+}
+
+export async function recordMiss(rt: SupervisorRuntime, evalDir: string, miss: MissReport): Promise<string> {
+  const range = /^(\d+)(?:-(\d+))?$/.exec(miss.lines)
+  if (!range) throw new ControlError('bad_request', `lines must be N or N-M, got ${miss.lines}`)
+  const from = Number(range[1])
+  const to = Number(range[2] ?? range[1])
+  if (to < from) throw new ControlError('bad_request', `empty line range ${miss.lines}`)
+  const runs = new Map<string, Run>()
+  for (const e of rt.log.since(null, { types: ['PR_CREATED'] })) {
+    const run = e.run ? rt.runs.get(e.run) : undefined
+    if (!run || !prMatches(String(e.data.url ?? ''), miss.pr)) continue
+    if (miss.repository !== undefined && run.repository !== miss.repository) continue
+    runs.set(run.id, run)
+  }
+  const where = miss.repository ? ` in ${miss.repository}` : ''
+  if (runs.size === 0) throw new ControlError('not_found', `no nightshift run produced PR ${miss.pr}${where}`)
+  if (runs.size > 1)
+    throw new ControlError('refused', `PR ${miss.pr} matches runs in several repositories; pass --repo`)
+  const run = [...runs.values()][0] as Run
+  if (!run.baseSha || !run.headSha || !rt.deps.repos.diff)
+    throw new ControlError('refused', `run ${run.id} has no diff to check ${miss.file}:${miss.lines} against`)
+  const diff = await rt.deps.repos.diff(run.repository, run.baseSha, run.headSha)
+  const added = addedLines(diff).get(miss.file)
+  // A reported range may span context around the bug; one added line ties it to the run.
+  let hit = false
+  for (let n = from; n <= to && !hit; n++) hit = added?.has(n) ?? false
+  if (!hit) throw new ControlError('refused', `run ${run.id} did not add ${miss.file}:${miss.lines}`)
+  const examples = new ReviewExamples(join(evalDir, 'reviewer'))
+  let n = 1
+  while (existsSync(examples.path(run.id, `m${n}`))) n++
+  examples.write(`m${n}`, {
+    issue: run.issue,
+    run: run.id,
+    repository: run.repository,
+    base: run.baseSha,
+    head: run.headSha,
+    file: miss.file,
+    lines: miss.lines,
+    severity: 'BLOCKER',
+    category: 'other',
+    confidence: 0,
+    message: miss.description,
+    evidence: '',
+    diff,
+    label: 'missed',
+    source: 'manual',
+  })
+  return examples.path(run.id, `m${n}`)
 }
 
 type Bundle = Partial<Omit<ReviewExample, 'label' | 'source' | 'confidence'>> & {

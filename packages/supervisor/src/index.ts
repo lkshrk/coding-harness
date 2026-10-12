@@ -108,6 +108,8 @@ export type {
   Ok,
   PauseRequest,
   RetryRequest,
+  ReviewMissRequest,
+  ReviewMissResponse,
   RunResponse,
   SendRequest,
   StopRequest,

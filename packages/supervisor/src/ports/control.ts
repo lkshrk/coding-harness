@@ -34,6 +34,15 @@ export interface ControlSupervisor extends InboxSupervisor {
   uncover(issue: string, by?: By): void
   resolveRun(target: string): Run | undefined
   retryIngest(issue: string): Promise<Run>
+  recordMiss(miss: MissReport): Promise<string>
+}
+
+export type MissReport = {
+  pr: string
+  file: string
+  lines: string
+  description: string
+  repository?: string
 }
 
 export type Waiting = { identifier: string; reason: string }

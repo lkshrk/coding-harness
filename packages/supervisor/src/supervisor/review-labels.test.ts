@@ -305,3 +305,77 @@ describe('import of hand-labelled findings', () => {
     expect(existsSync(join(out, 'R1-1.json'))).toBe(false)
   })
 })
+
+describe('recording a missed bug by hand', () => {
+  const PR = 'https://github.com/lkshrk/omni/pull/7'
+  const opened = (s: ReturnType<typeof setup>, url = PR) =>
+    s.h.sup.log.append({
+      type: 'PR_CREATED',
+      issue: 'FOR-1',
+      run: s.run.id,
+      data: { url, branch: 'ns/FOR-1-1', account: 'bot', mode: 'auto' },
+    })
+
+  test('writes a manual missed example for lines the run added and never rewrites one', async () => {
+    const s = setup({ diff: PATCH('src/a.ts', 10, 2, 12) })
+    opened(s)
+    const path = await s.h.sup.recordMiss({
+      pr: '7',
+      file: 'src/a.ts',
+      lines: '11-12',
+      description: 'leaks fd',
+    })
+    expect(path).toBe(join(dir, 'reviewer', `${s.run.id}-m1.json`))
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+      issue: 'FOR-1',
+      run: s.run.id,
+      repository: 'omni',
+      base: 'base1',
+      head: 'head1',
+      file: 'src/a.ts',
+      lines: '11-12',
+      severity: 'BLOCKER',
+      category: 'other',
+      confidence: 0,
+      message: 'leaks fd',
+      evidence: '',
+      diff: PATCH('src/a.ts', 10, 2, 12),
+      label: 'missed',
+      source: 'manual',
+    })
+    const second = await s.h.sup.recordMiss({ pr: PR, file: 'src/a.ts', lines: '12', description: 'other' })
+    expect(second).toBe(join(dir, 'reviewer', `${s.run.id}-m2.json`))
+    expect(JSON.parse(readFileSync(path, 'utf8')).message).toBe('leaks fd')
+  })
+
+  test('refuses lines the run did not add, naming the file and range', async () => {
+    const s = setup({ diff: PATCH('src/a.ts', 10, 1) })
+    opened(s)
+    await expect(
+      s.h.sup.recordMiss({ pr: '7', file: 'src/a.ts', lines: '20-25', description: 'x' }),
+    ).rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('src/a.ts:20-25') })
+    await expect(
+      s.h.sup.recordMiss({ pr: '7', file: 'src/b.ts', lines: '10', description: 'x' }),
+    ).rejects.toMatchObject({ code: 'refused', message: expect.stringContaining('src/b.ts:10') })
+    expect(existsSync(join(dir, 'reviewer'))).toBe(false)
+  })
+
+  test('accepts a range that includes context lines around an added line', async () => {
+    const s = setup({ diff: PATCH('src/a.ts', 10, 1) })
+    opened(s)
+    const path = await s.h.sup.recordMiss({ pr: '7', file: 'src/a.ts', lines: '8-14', description: 'x' })
+    expect(JSON.parse(readFileSync(path, 'utf8')).lines).toBe('8-14')
+  })
+
+  test('refuses a PR no nightshift run produced', async () => {
+    const s = setup()
+    opened(s)
+    await expect(
+      s.h.sup.recordMiss({ pr: '8', file: 'src/a.ts', lines: '10', description: 'x' }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    await expect(
+      s.h.sup.recordMiss({ pr: '7', file: 'src/a.ts', lines: '10', description: 'x', repository: 'other' }),
+    ).rejects.toMatchObject({ code: 'not_found' })
+    expect(existsSync(join(dir, 'reviewer'))).toBe(false)
+  })
+})

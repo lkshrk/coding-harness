@@ -297,6 +297,22 @@ describe('control socket', () => {
     })
   })
 
+  test('POST /review-miss validates the request and refuses an unknown PR', async () => {
+    const evalDir = mkdtempSync(join(tmpdir(), 'ns-eval-'))
+    dirs.push(evalDir)
+    const h = harness({ evalDir })
+    await h.sup.start()
+    expect(
+      (await h.req('POST', '/review-miss', { pr: '7', file: 'a.ts', lines: 'x', description: 'd' })).status,
+    ).toBe(400)
+    expect(
+      await h.req('POST', '/review-miss', { pr: '7', file: 'a.ts', lines: '3', description: 'd' }),
+    ).toEqual({
+      status: 404,
+      body: { error: { code: 'not_found', message: 'no nightshift run produced PR 7' } },
+    })
+  })
+
   test('GET /runs/<target>/attach returns the connection of a running worker only', async () => {
     const h = harness()
     const run = await running(h)

@@ -10,7 +10,7 @@ import { planDispatch } from '../policy/ready'
 import { RetryQueue } from '../policy/retry'
 import { decide, type IssueView, VERIFICATION, viewIssue } from '../policy/stages'
 import type { Awaiting, GateResult, IssueSnapshot } from '../ports'
-import type { By } from '../ports/control'
+import { type By, ControlError, type MissReport } from '../ports/control'
 import type { NoProgressInfo, Progress, SandboxCreatedInfo, WorkerStartedInfo } from '../ports/worker'
 import type { GateEventData } from '../stages/gates/report'
 import type { ReviewOutcome } from '../stages/gates/review'
@@ -33,7 +33,7 @@ import { Questions } from './questions'
 import { Recovery } from './recovery'
 import { Remediation } from './remediation'
 import { Replan } from './replan'
-import { importXxx220, ReviewLabeller } from './review-labels'
+import { importXxx220, ReviewLabeller, recordMiss } from './review-labels'
 import { RunLifecycle } from './run-lifecycle'
 import { type RecoveryReport, type StopOptions, type SupervisorDeps, SupervisorRuntime } from './runtime'
 import { Verification } from './verification'
@@ -437,4 +437,9 @@ export class Supervisor {
     by: By,
   ): Promise<Run> => this.m.dispatcher.retryRun(target, o, by)
   retryIngest = (issue: string): Promise<Run> => this.m.ingest.retryIngest(issue)
+
+  async recordMiss(miss: MissReport): Promise<string> {
+    if (this.d.evalDir === undefined) throw new ControlError('refused', 'no evaluation directory configured')
+    return recordMiss(this.rt, this.d.evalDir, miss)
+  }
 }
