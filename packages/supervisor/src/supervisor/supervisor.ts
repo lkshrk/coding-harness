@@ -144,6 +144,12 @@ export class Supervisor {
     await cancelled
   }
 
+  // Asks every running worker to hand off and waits for each until its grace period ends.
+  async handOff(reason = 'supervisor stopping'): Promise<void> {
+    const running = this.runs.active().filter((r) => r.state === 'running')
+    await Promise.allSettled(running.map((r) => this.m.lifecycle.interruptRun(r.id, reason)))
+  }
+
   async idle(): Promise<void> {
     while (this.steps.size > 0) await Promise.allSettled([...this.steps.values()].map((s) => s.job))
   }
@@ -194,6 +200,7 @@ export class Supervisor {
     report.stopped = await this.m.linearSync.enforceLinear()
     await this.m.linearSync.clearDoneStages()
     await this.m.dispatcher.launchQueued()
+    if (!this.paused) await this.m.ingest.resumeInterrupted()
 
     const active = new Set(this.runs.active().map((r) => r.issue))
     const held = new Set(this.m.holds.held())
@@ -380,8 +387,14 @@ export class Supervisor {
     this.m.lifecycle.lockRegenerated(runId, lock)
   stopRun = (runId: string, reason: string, opts?: StopOptions): Promise<void> =>
     this.m.lifecycle.stopRun(runId, reason, opts)
-  stopForUser = (target: string, reason: string | undefined, by: By): Promise<Run> =>
-    this.m.lifecycle.stopForUser(target, reason, by)
+  stopForUser = (
+    target: string,
+    reason: string | undefined,
+    by: By,
+    opts?: { now?: boolean },
+  ): Promise<Run> => this.m.lifecycle.stopForUser(target, reason, by, opts)
+  interruptRun = (runId: string, reason: string, opts?: { by?: By; requeue?: boolean }): Promise<void> =>
+    this.m.lifecycle.interruptRun(runId, reason, opts)
   retryRun = (
     target: string,
     o: { agent?: string; profile?: string; continue?: boolean; forceSize?: boolean },

@@ -12,6 +12,7 @@ export const RUN_STATES = [
   'done',
   'failed',
   'stopped',
+  'interrupted',
 ] as const
 
 export type RunState = (typeof RUN_STATES)[number]

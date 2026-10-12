@@ -7,6 +7,7 @@ export type ServiceSpec = {
   env: Record<string, string>
   logFile: string
   rbw?: string
+  stopTimeoutSec?: number
 }
 
 export type ServiceState = 'running' | 'stopped' | 'not installed'

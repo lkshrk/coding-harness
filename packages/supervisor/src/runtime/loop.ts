@@ -3,7 +3,7 @@ import type { AgentKind } from '../policy/stages'
 import type { Supervisor } from '../supervisor/supervisor'
 import { watchConfig } from './config-watch'
 
-type Loopable = Pick<Supervisor, 'start' | 'tick' | 'reloadConfig' | 'stop' | 'idle'>
+type Loopable = Pick<Supervisor, 'start' | 'tick' | 'reloadConfig' | 'stop' | 'idle' | 'handOff'>
 
 export type LoopOptions = {
   intervalMs: number
@@ -48,6 +48,7 @@ export async function runSupervisor(
     clear()
     unwatch()
     await ticking
+    await sup.handOff(reason)
     await Promise.race([sup.idle(), new Promise((r) => setTimeout(r, opts.stepGraceMs ?? STEP_GRACE_MS))])
     await sup.stop(reason)
   }

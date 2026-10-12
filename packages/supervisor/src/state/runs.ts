@@ -4,7 +4,7 @@ import type { Event } from './events'
 
 export { type NewRun, RUN_STATES, type Run, type RunState }
 
-const TERMINAL: readonly RunState[] = ['done', 'failed', 'stopped']
+const TERMINAL: readonly RunState[] = ['done', 'failed', 'stopped', 'interrupted']
 
 const NEXT: Record<RunState, readonly RunState[]> = {
   queued: ['starting'],
@@ -16,6 +16,7 @@ const NEXT: Record<RunState, readonly RunState[]> = {
   done: [],
   failed: [],
   stopped: [],
+  interrupted: [],
 }
 
 export function isTerminal(state: RunState): boolean {
@@ -24,7 +25,7 @@ export function isTerminal(state: RunState): boolean {
 
 export function canTransition(from: RunState, to: RunState): boolean {
   if (isTerminal(from)) return false
-  return to === 'failed' || to === 'stopped' || NEXT[from].includes(to)
+  return to === 'failed' || to === 'stopped' || to === 'interrupted' || NEXT[from].includes(to)
 }
 
 export type RunUpdate = Partial<
@@ -151,7 +152,9 @@ export class RunStore {
 
   active(): Run[] {
     return this.db
-      .query<Row, []>("SELECT * FROM runs WHERE state NOT IN ('done','failed','stopped') ORDER BY id")
+      .query<Row, []>(
+        "SELECT * FROM runs WHERE state NOT IN ('done','failed','stopped','interrupted') ORDER BY id",
+      )
       .all()
       .map(fromRow)
   }
