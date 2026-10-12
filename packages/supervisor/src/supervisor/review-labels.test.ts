@@ -2,17 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { BaseCommit, LinearComment } from '../ports'
-import { findingComment, REACTION_LEGEND, type ReviewFinding } from '../stages/gates/review'
-import {
-  changesLines,
-  keepsExisting,
-  latestReaction,
-  mapLines,
-  type ReviewExample,
-  reactionLabel,
-  redact,
-} from './review-labels'
+import type { LinearComment } from '../ports'
+import { findingComment, type ReviewFinding } from '../stages/gates/review'
+import { keepsExisting, latestReaction, type ReviewExample, reactionLabel, redact } from './review-labels'
 import { harness } from './testing'
 
 const SUGGESTION: ReviewFinding = {
@@ -44,15 +36,12 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function setup(o: { diff?: string; between?: Record<string, string> } = {}) {
-  const commits: BaseCommit[] = []
+function setup(o: { diff?: string } = {}) {
   const h = harness({
     evalDir: dir,
     repos: {
       baseSha: async () => 'base1',
-      baseCommits: async () => commits,
-      diff: async (_repo, base, head) =>
-        base === 'base1' ? (o.diff ?? PATCH('src/a.ts', 10, 1)) : (o.between?.[head] ?? ''),
+      diff: async () => o.diff ?? PATCH('src/a.ts', 10, 1),
     },
   })
   const run = h.sup.runs.create({
@@ -88,7 +77,7 @@ function setup(o: { diff?: string; between?: Record<string, string> } = {}) {
     await h.sup.tick()
     h.advance(3600_000)
   }
-  return { h, run, review, example, label, commits }
+  return { h, run, review, example, label }
 }
 
 describe('reaction mapping', () => {
@@ -123,46 +112,12 @@ describe('reaction mapping', () => {
   })
 
   test('only a reaction replaces a reaction or a hand label', () => {
-    expect(keepsExisting({ source: 'reaction' }, 'fix-commit')).toBe(true)
-    expect(keepsExisting({ source: 'xxx-220' }, 'fix-commit')).toBe(true)
+    expect(keepsExisting({ source: 'reaction' }, 'xxx-220')).toBe(true)
+    expect(keepsExisting({ source: 'xxx-220' }, 'manual')).toBe(true)
+    expect(keepsExisting({ source: 'manual' }, 'xxx-220')).toBe(true)
     expect(keepsExisting({ source: 'reaction' }, 'reaction')).toBe(false)
-    expect(keepsExisting({ source: 'fix-commit' }, 'fix-commit')).toBe(false)
-    expect(keepsExisting(undefined, 'fix-commit')).toBe(false)
-  })
-})
-
-describe('fix-commit detection', () => {
-  test('a commit changing a line inside the finding range overlaps', () => {
-    expect(changesLines(PATCH('src/a.ts', 11, 1), 'src/a.ts', '10-12')).toBe(true)
-    expect(changesLines(PATCH('src/a.ts', 9, 2), 'src/a.ts', '10-12')).toBe(true)
-    expect(changesLines(PATCH('src/a.ts', 12, 1), 'src/a.ts', '12')).toBe(true)
-  })
-
-  test('lines outside the range, another file or no lines do not overlap', () => {
-    expect(changesLines(PATCH('src/a.ts', 13, 2), 'src/a.ts', '10-12')).toBe(false)
-    expect(changesLines(PATCH('src/a.ts', 1, 9), 'src/a.ts', '10-12')).toBe(false)
-    expect(changesLines(PATCH('src/b.ts', 11, 1), 'src/a.ts', '10-12')).toBe(false)
-    expect(changesLines(PATCH('src/a.ts', 11, 1), 'src/a.ts', undefined)).toBe(false)
-  })
-})
-
-describe('line mapping', () => {
-  const MOVE = [
-    'diff --git a/src/a.ts b/src/a.ts',
-    '--- a/src/a.ts',
-    '+++ b/src/a.ts',
-    '@@ -2,0 +3,5 @@',
-    ...Array.from({ length: 5 }, () => '+ins'),
-    '@@ -20,2 +25,1 @@',
-    ' keep',
-    '-gone',
-    '',
-  ].join('\n')
-
-  test('shifts lines by the hunks before them and drops changed lines', () => {
-    expect(mapLines(MOVE, 'src/a.ts', [1, 2, 3, 10, 20, 21, 30])).toEqual([1, 2, 8, 15, 25, 34])
-    expect(mapLines(MOVE, 'src/b.ts', [4])).toEqual([4])
-    expect(mapLines(MOVE.replace('+++ b/src/a.ts', '+++ /dev/null'), 'src/a.ts', [4])).toEqual([])
+    expect(keepsExisting({ source: 'test' }, 'manual')).toBe(false)
+    expect(keepsExisting(undefined, 'xxx-220')).toBe(false)
   })
 })
 
@@ -208,52 +163,6 @@ describe('review labeller', () => {
     expect(s.example(1)?.label).toBe('real')
   })
 
-  test('a SUGGESTION whose lines a later fix commit changes is real-minor, a BLOCKER is not', async () => {
-    const s = setup()
-    const { event } = await s.review([SUGGESTION, { ...BLOCKER, lines: '11' }])
-    const at = new Date(Date.parse(event.ts) + 86_400_000).toISOString()
-    s.commits.push(
-      { sha: 'f1', at, subject: 'fix(a): bound the loop', patch: PATCH('src/a.ts', 11, 1) },
-      { sha: 'f2', at, subject: 'feat: other', patch: PATCH('src/a.ts', 10, 1) },
-    )
-    await s.h.sup.start()
-    await s.label()
-    expect(s.example(1)).toMatchObject({ label: 'real-minor', source: 'fix-commit' })
-    expect(s.example(2)).toBeUndefined()
-  })
-
-  test('a fix commit after seven days or before the review labels nothing', async () => {
-    const s = setup()
-    const { event } = await s.review([SUGGESTION])
-    const patch = PATCH('src/a.ts', 11, 1)
-    const at = (ms: number) => new Date(Date.parse(event.ts) + ms).toISOString()
-    s.commits.push(
-      { sha: 'f0', at: at(-1000), subject: 'fix: early', patch },
-      { sha: 'f9', at: at(8 * 86_400_000), subject: 'fix: late', patch },
-    )
-    await s.h.sup.start()
-    await s.label()
-    expect(s.example(1)).toBeUndefined()
-  })
-
-  test('a reaction overrides the automatic label, and a later reaction overwrites it', async () => {
-    const s = setup()
-    const { event, replies } = await s.review([SUGGESTION])
-    const at = new Date(Date.parse(event.ts) + 1000).toISOString()
-    s.commits.push({ sha: 'f1', at, subject: 'fix: loop', patch: PATCH('src/a.ts', 10, 1) })
-    await s.h.sup.start()
-    await s.label()
-    expect(s.example(1)).toMatchObject({ label: 'real-minor', source: 'fix-commit' })
-
-    s.h.linear.react('FOR-1', replies[0]?.id as string, '👎')
-    await s.label()
-    expect(s.example(1)).toMatchObject({ label: 'false', source: 'reaction' })
-
-    s.h.linear.react('FOR-1', replies[0]?.id as string, '+1')
-    await s.label()
-    expect(s.example(1)).toMatchObject({ label: 'real', source: 'reaction' })
-  })
-
   test('a reaction by someone other than the owner labels nothing', async () => {
     const s = setup()
     const { replies } = await s.review([SUGGESTION])
@@ -274,28 +183,6 @@ describe('review labeller', () => {
     expect(s.example(1)).toMatchObject({ label: 'false', source: 'reaction' })
   })
 
-  test('review lines are mapped through commits between the review head and the fix', async () => {
-    const shift = [
-      'diff --git a/src/a.ts b/src/a.ts',
-      '--- a/src/a.ts',
-      '+++ b/src/a.ts',
-      '@@ -1,0 +2,20 @@',
-      ...Array.from({ length: 20 }, () => '+ins'),
-      '',
-    ].join('\n')
-    const s = setup({ between: { 'f1^': shift, 'f2^': shift } })
-    const { event } = await s.review([SUGGESTION, { ...SUGGESTION, lines: '31' }])
-    const at = new Date(Date.parse(event.ts) + 1000).toISOString()
-    s.commits.push(
-      { sha: 'f1', at, subject: 'fix: shifted', patch: PATCH('src/a.ts', 31, 1) },
-      { sha: 'f2', at, subject: 'fix: unrelated', patch: PATCH('src/a.ts', 11, 1) },
-    )
-    await s.h.sup.start()
-    await s.label()
-    expect(s.example(1)).toMatchObject({ label: 'real-minor', source: 'fix-commit' })
-    expect(s.example(2)).toBeUndefined()
-  })
-
   test('reactions on reviews older than 30 days are not read', async () => {
     const s = setup()
     const { replies } = await s.review([SUGGESTION])
@@ -313,175 +200,39 @@ describe('review labeller', () => {
     expect(reads).toBe(0)
   })
 
-  test('a passing, merged review whose added lines a fix commit changes yields a missed example', async () => {
+  test('a merged pass writes no example and posts no comment until the owner reacts', async () => {
     const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-    const { event } = await s.review([], 'pass')
+    const { replies } = await s.review([SUGGESTION], 'pass')
     s.h.sup.log.append({
       type: 'MERGED',
       issue: 'FOR-1',
       run: s.run.id,
       data: { url: 'https://github.test/pr/1', branch: 'ns/FOR-1-1' },
     })
-    const at = new Date(Date.parse(event.ts) + 1000).toISOString()
-    s.commits.push({ sha: 'f1', at, subject: 'fix: b was wrong', patch: PATCH('src/b.ts', 5, 1) })
+    const before = (await s.h.linear.comments('FOR-1')).length
     await s.h.sup.start()
     await s.label()
-    expect(s.example(1)).toMatchObject({
-      file: 'src/b.ts',
-      lines: '5',
-      message: 'fix: b was wrong',
-      label: 'missed',
-      source: 'fix-commit',
-    })
+    await s.label()
+    expect(existsSync(join(dir, 'reviewer'))).toBe(false)
+    expect(await s.h.linear.comments('FOR-1')).toHaveLength(before)
+
+    s.h.linear.react('FOR-1', replies[0]?.id as string, '🤏')
+    await s.label()
+    expect(readdirSync(join(dir, 'reviewer'))).toEqual([`${s.run.id}-1.json`])
+    expect(s.example(1)).toMatchObject({ label: 'real-minor', source: 'reaction' })
   })
 
-  describe('missed bugs', () => {
-    const merge = (s: ReturnType<typeof setup>) =>
-      s.h.sup.log.append({
-        type: 'MERGED',
-        issue: 'FOR-1',
-        run: s.run.id,
-        data: { url: 'https://github.test/pr/1', branch: 'ns/FOR-1-1' },
-      })
-    const possible = async (s: ReturnType<typeof setup>) =>
-      (await s.h.linear.comments('FOR-1')).filter((c) => c.body.startsWith('Possible missed bug'))
-    const after = (event: { ts: string }, ms = 1000) => new Date(Date.parse(event.ts) + ms).toISOString()
+  test('a reaction replaces an earlier reaction label', async () => {
+    const s = setup()
+    const { replies } = await s.review([SUGGESTION])
+    s.h.linear.react('FOR-1', replies[0]?.id as string, '👎')
+    await s.h.sup.start()
+    await s.label()
+    expect(s.example(1)).toMatchObject({ label: 'false', source: 'reaction' })
 
-    test('a nightshift attempt commit on the same issue is never labelled missed', async () => {
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-      const { event } = await s.review([], 'pass')
-      merge(s)
-      s.commits.push({
-        sha: 'f1',
-        at: after(event),
-        subject: 'fix(supervisor): keep the commits of runs',
-        author: 'nightshift',
-        patch: PATCH('src/b.ts', 5, 1),
-      })
-      await s.h.sup.start()
-      await s.label()
-      expect(s.example(1)).toBeUndefined()
-      expect((await possible(s)).map((c) => c.body.split('\n')[0])).toEqual([
-        'Possible missed bug: fix(supervisor): keep the commits of runs (f1)',
-      ])
-    })
-
-    test('a fix commit naming another issue is never labelled missed', async () => {
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-      const { event } = await s.review([], 'pass')
-      merge(s)
-      s.commits.push({
-        sha: 'f1',
-        at: after(event),
-        subject: 'fix(ROU-676): other work',
-        patch: PATCH('src/b.ts', 5, 1),
-      })
-      await s.h.sup.start()
-      await s.label()
-      expect(s.example(1)).toBeUndefined()
-      expect(await possible(s)).toHaveLength(1)
-    })
-
-    test('added lines are mapped through commits between the run head and the fix', async () => {
-      const shift = [
-        'diff --git a/src/b.ts b/src/b.ts',
-        '--- a/src/b.ts',
-        '+++ b/src/b.ts',
-        '@@ -1,0 +2,20 @@',
-        ...Array.from({ length: 20 }, () => '+ins'),
-        '',
-      ].join('\n')
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1), between: { 'f1^': shift } })
-      const { event } = await s.review([], 'pass')
-      merge(s)
-      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 25, 1) })
-      await s.h.sup.start()
-      await s.label()
-      expect(s.example(1)).toMatchObject({
-        file: 'src/b.ts',
-        lines: '25',
-        label: 'missed',
-        source: 'fix-commit',
-      })
-    })
-
-    test('a failed review never produces a missed example', async () => {
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-      const { event } = await s.review([], 'fail')
-      merge(s)
-      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 5, 1) })
-      await s.h.sup.start()
-      await s.label()
-      expect(s.example(1)).toBeUndefined()
-      expect(await possible(s)).toEqual([])
-    })
-
-    test('a fix before the merge is not labelled missed', async () => {
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-      const { event } = await s.review([], 'pass')
-      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 5, 1) })
-      s.h.advance(60_000)
-      merge(s)
-      await s.h.sup.start()
-      await s.label()
-      expect(s.example(1)).toBeUndefined()
-    })
-
-    test('a near-match is posted once and labelled only after an owner reaction', async () => {
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-      const { event } = await s.review([], 'pass')
-      merge(s)
-      s.commits.push({
-        sha: 'f1',
-        at: after(event),
-        subject: 'fix: b elsewhere',
-        patch: PATCH('src/b.ts', 40, 1),
-      })
-      await s.h.sup.start()
-      await s.label()
-      await s.label()
-      const posts = await possible(s)
-      expect(posts).toHaveLength(1)
-      expect(posts[0]?.body.startsWith('Possible missed bug: fix: b elsewhere (f1)')).toBe(true)
-      expect(posts[0]?.body.endsWith(REACTION_LEGEND)).toBe(true)
-      expect(existsSync(join(dir, 'reviewer'))).toBe(false)
-
-      s.h.linear.react('FOR-1', posts[0]?.id as string, '+1', { user: 'u-other' })
-      await s.label()
-      expect(existsSync(join(dir, 'reviewer'))).toBe(false)
-
-      s.h.linear.react('FOR-1', posts[0]?.id as string, '-1')
-      await s.label()
-      expect(existsSync(join(dir, 'reviewer'))).toBe(false)
-
-      s.h.linear.react('FOR-1', posts[0]?.id as string, '+1')
-      await s.label()
-      const written = readdirSync(join(dir, 'reviewer')).map((f) =>
-        JSON.parse(readFileSync(join(dir, 'reviewer', f), 'utf8')),
-      )
-      expect(written).toEqual([
-        expect.objectContaining({
-          file: 'src/b.ts',
-          lines: '40',
-          message: 'fix: b elsewhere',
-          label: 'missed',
-          source: 'reaction',
-        }),
-      ])
-    })
-
-    test('an automatic example already quarantined is not written again', async () => {
-      const s = setup({ diff: PATCH('src/b.ts', 5, 1) })
-      const { event } = await s.review([], 'pass')
-      merge(s)
-      s.commits.push({ sha: 'f1', at: after(event), subject: 'fix: b', patch: PATCH('src/b.ts', 5, 1) })
-      const q = join(dir, 'reviewer-autolabel-quarantine')
-      mkdirSync(q, { recursive: true })
-      writeFileSync(join(q, `${s.run.id}-1.json`), '{}')
-      await s.h.sup.start()
-      await s.label()
-      expect(s.example(1)).toBeUndefined()
-    })
+    s.h.linear.react('FOR-1', replies[0]?.id as string, '+1')
+    await s.label()
+    expect(s.example(1)).toMatchObject({ label: 'real', source: 'reaction' })
   })
 
   test('secrets in a finding are redacted before they are stored', async () => {

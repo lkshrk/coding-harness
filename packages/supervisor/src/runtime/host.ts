@@ -32,52 +32,6 @@ export function gitRepos(
       if (r.exitCode !== 1) throw new Error(`git merge-tree ${base} ${head}: ${r.stderr.toString().trim()}`)
       return r.stdout.toString().trim().split('\n').slice(1).filter(Boolean)
     },
-    async baseCommits(repository, since) {
-      const { repo, git } = await hostGit(config, auth, repository)
-      git('fetch', '--quiet', repo.remote, repo.base)
-      const log = git(
-        'log',
-        '--reverse',
-        '--no-merges',
-        `--since=${since}`,
-        '--format=%x1e%H%x1f%cI%x1f%s%x1f%an%x1f',
-        '-p',
-        '-U0',
-        '--no-renames',
-        '--no-color',
-        `${repo.remote}/${repo.base}`,
-      )
-      const branches = new Map<string, string>()
-      const merges = git(
-        'log',
-        '--merges',
-        `--since=${since}`,
-        '--format=%H%x1f%s',
-        `${repo.remote}/${repo.base}`,
-      )
-      for (const line of merges.split('\n').filter(Boolean)) {
-        const [merge = '', subject = ''] = line.split('\x1f')
-        const branch = /^Merge pull request #\d+ from [^/\s]+\/(\S+)/.exec(subject)?.[1]
-        if (!branch) continue
-        for (const sha of git('rev-list', `${merge}^1..${merge}^2`).split('\n').filter(Boolean))
-          branches.set(sha, branch)
-      }
-      return log
-        .split('\x1e')
-        .filter(Boolean)
-        .map((entry) => {
-          const [sha = '', at = '', subject = '', author = '', patch = ''] = entry.split('\x1f')
-          const branch = branches.get(sha)
-          return {
-            sha,
-            at: new Date(at).toISOString(),
-            subject,
-            author,
-            ...(branch ? { branch } : {}),
-            patch: patch.trim(),
-          }
-        })
-    },
     async diff(repository, base, head) {
       const { git } = await hostGit(config, auth, repository)
       return git('diff', '--no-color', '--no-renames', base, head)
