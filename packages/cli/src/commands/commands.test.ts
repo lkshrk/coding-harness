@@ -483,6 +483,51 @@ describe('control commands', () => {
     })
   })
 
+  test('review-miss splits <file>:<lines>, joins the note and prints the written path', async () => {
+    const s = seeded()
+    const rec = recording({ path: '/cache/eval/reviewer/R1-m1.json' })
+    expect(
+      await cli(['review-miss', '#7', 'src/a b.ts:10-12', 'leaks', 'the fd', '--repo', 'omni'], {
+        ...s.deps,
+        control: rec.control,
+      }),
+    ).toEqual({ code: 0, out: ['/cache/eval/reviewer/R1-m1.json'], err: [] })
+    await cli(['review-miss', 'https://github.com/o/r/pull/7', 'x.ts:3', 'n'], {
+      ...s.deps,
+      control: rec.control,
+    })
+    expect(rec.calls).toEqual([
+      [
+        'POST',
+        '/review-miss',
+        { pr: '7', file: 'src/a b.ts', lines: '10-12', description: 'leaks the fd', repository: 'omni' },
+      ],
+      [
+        'POST',
+        '/review-miss',
+        { pr: 'https://github.com/o/r/pull/7', file: 'x.ts', lines: '3', description: 'n' },
+      ],
+    ])
+    for (const bad of [
+      [],
+      ['7'],
+      ['7', 'a.ts', 'n'],
+      ['7', 'a.ts:x', 'n'],
+      ['pr', 'a.ts:1', 'n'],
+      ['7', 'a.ts:1'],
+    ])
+      expect((await cli(['review-miss', ...bad], { ...s.deps, control: rec.control })).code).toBe(2)
+    expect(rec.calls).toHaveLength(2)
+    const refused = recording(new ControlFailure(5, 'run R1 did not add src/a.ts:20-25', 'refused'))
+    expect(
+      await cli(['review-miss', '7', 'src/a.ts:20-25', 'n'], { ...s.deps, control: refused.control }),
+    ).toEqual({
+      code: 5,
+      out: [],
+      err: ['run R1 did not add src/a.ts:20-25'],
+    })
+  })
+
   test('answer and pause per issue', async () => {
     const s = seeded()
     const rec = recording()

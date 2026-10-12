@@ -25,6 +25,7 @@ describe('ssh command builder', () => {
   test('the default host comes from cli.host for remote-capable commands; --host local overrides it', () => {
     const load = () => ({ ok: true as const, config: { cli: { host: 'towerr-dev' } } as Config, sources: [] })
     expect(remoteHost(flags, { load }, 'watch')).toBe('towerr-dev')
+    expect(remoteHost(flags, { load }, 'review-miss')).toBe('towerr-dev')
     expect(remoteHost(flags, { load }, 'supervise')).toBeNull()
     expect(remoteHost({ ...flags, host: 'local' }, { load }, 'watch')).toBeNull()
     expect(remoteHost({ ...flags, host: 'other' }, { load }, 'doctor')).toBe('other')

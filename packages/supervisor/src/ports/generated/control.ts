@@ -20,6 +20,8 @@ export interface ControlApi {
   stop?: StopRequest
   retry?: RetryRequest
   ingest?: IngestRequest
+  reviewMiss?: ReviewMissRequest
+  reviewMissResult?: ReviewMissResponse
   run?: RunResponse
   attach?: AttachInfo
   [k: string]: unknown
@@ -76,6 +78,22 @@ export interface RetryRequest {
 }
 export interface IngestRequest {
   issue: Issue
+}
+export interface ReviewMissRequest {
+  /**
+   * PR URL or number
+   */
+  pr: string
+  file: string
+  lines: string
+  description: string
+  repository?: string
+}
+export interface ReviewMissResponse {
+  /**
+   * the example file written
+   */
+  path: string
 }
 export interface RunResponse {
   run: string

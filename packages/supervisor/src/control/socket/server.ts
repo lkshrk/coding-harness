@@ -17,6 +17,8 @@ import type {
   IngestRequest,
   PauseRequest,
   RetryRequest,
+  ReviewMissRequest,
+  ReviewMissResponse,
   SendRequest,
   StopRequest,
 } from '../../ports/generated/control'
@@ -142,6 +144,15 @@ export function controlHandler(
     'POST /ingest': async (req) => {
       const { issue } = await body<IngestRequest>(req, 'ingestRequest')
       return { run: (await sup.retryIngest(issue)).id }
+    },
+    'POST /review-miss': async (req): Promise<ReviewMissResponse> => {
+      const { pr, file, lines, description, repository } = await body<ReviewMissRequest>(
+        req,
+        'reviewMissRequest',
+      )
+      return {
+        path: await sup.recordMiss({ pr, file, lines, description, ...(repository ? { repository } : {}) }),
+      }
     },
   }
   const attach = async (target: string): Promise<AttachInfo> => {

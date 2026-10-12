@@ -17,6 +17,7 @@ const REMOTE_BY_DEFAULT = new Set([
   'stop',
   'retry',
   'ingest',
+  'review-miss',
   'pause',
   'resume',
   'implement',

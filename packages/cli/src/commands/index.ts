@@ -8,6 +8,7 @@ import { answer, CONTROL_USAGE, cover, ingest, pause, retry, send, stop } from '
 import { LOGS_USAGE, logs } from './logs'
 import { QUESTIONS_USAGE, questions, TASKS_USAGE, tasks, WORKERS_USAGE, workers } from './read'
 import { DIFF_USAGE, diff, TESTS_USAGE, tests } from './results'
+import { REVIEW_MISS_USAGE, reviewMiss } from './review-miss'
 import { SIGNAL_USAGE, signal } from './signal'
 import { STATUS_USAGE, status } from './status'
 import { STATUS_LINE_USAGE, statusLineCommand } from './statusline'
@@ -44,6 +45,10 @@ export const COMMAND_HELP: Record<string, { usage: string; description: string }
   resume: { usage: CONTROL_USAGE.resume, description: 'Resume dispatch or release a held issue.' },
   implement: { usage: CONTROL_USAGE.implement, description: 'Cover an issue for implementation.' },
   release: { usage: CONTROL_USAGE.release, description: 'Remove implementation coverage.' },
+  'review-miss': {
+    usage: REVIEW_MISS_USAGE,
+    description: 'Record a bug the reviewer missed on a nightshift PR.',
+  },
   signal: { usage: SIGNAL_USAGE, description: 'Test or pair Signal notifications.' },
   'status-line': { usage: STATUS_LINE_USAGE, description: 'Print a compact worker status line.' },
 }
@@ -68,6 +73,7 @@ export const COMMANDS: Record<string, Command> = {
   resume: (ctx, args) => pause(ctx, args, false),
   implement: (ctx, args) => cover(ctx, args, true),
   release: (ctx, args) => cover(ctx, args, false),
+  'review-miss': reviewMiss,
   signal,
   'status-line': statusLineCommand,
 }
