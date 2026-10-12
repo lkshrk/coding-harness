@@ -178,6 +178,7 @@ export async function recordMiss(rt: SupervisorRuntime, evalDir: string, miss: M
     throw new ControlError('refused', `run ${run.id} has no diff to check ${miss.file}:${miss.lines} against`)
   const diff = await rt.deps.repos.diff(run.repository, run.baseSha, run.headSha)
   const added = addedLines(diff).get(miss.file)
+  // A reported range may span context around the bug; one added line ties it to the run.
   let hit = false
   for (let n = from; n <= to && !hit; n++) hit = added?.has(n) ?? false
   if (!hit) throw new ControlError('refused', `run ${run.id} did not add ${miss.file}:${miss.lines}`)

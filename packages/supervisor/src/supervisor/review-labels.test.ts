@@ -360,6 +360,13 @@ describe('recording a missed bug by hand', () => {
     expect(existsSync(join(dir, 'reviewer'))).toBe(false)
   })
 
+  test('accepts a range that includes context lines around an added line', async () => {
+    const s = setup({ diff: PATCH('src/a.ts', 10, 1) })
+    opened(s)
+    const path = await s.h.sup.recordMiss({ pr: '7', file: 'src/a.ts', lines: '8-14', description: 'x' })
+    expect(JSON.parse(readFileSync(path, 'utf8')).lines).toBe('8-14')
+  })
+
   test('refuses a PR no nightshift run produced', async () => {
     const s = setup()
     opened(s)
