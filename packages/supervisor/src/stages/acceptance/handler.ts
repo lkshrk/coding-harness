@@ -108,6 +108,22 @@ function verdictComment(verdicts: Verdict[]): string {
   ].join('\n')
 }
 
+const norm = (text: string) => text.replace(/\s+/g, ' ').trim()
+
+// Every input criterion gets exactly one verdict; one the acceptor skipped cannot count as met.
+function judged(list: string[], output: Verdict[]): Verdict[] {
+  const byText = new Map<string, Verdict>()
+  for (const v of output) if (!byText.has(norm(v.criterion))) byText.set(norm(v.criterion), v)
+  return list.map(
+    (criterion) =>
+      byText.get(norm(criterion)) ?? {
+        criterion,
+        verdict: 'unverifiable',
+        evidence: 'the acceptor gave no verdict for this criterion',
+      },
+  )
+}
+
 const listed = (verdicts: Verdict[]) => verdicts.map((v) => `- ${v.criterion}: ${v.evidence}`).join('\n')
 
 /** Judges a parent issue against its acceptance criteria with one acceptor call and holds it for you. */
@@ -140,7 +156,7 @@ export class AcceptanceHandler implements StageHandler {
       { profile: activeProfile(this.d.config().profiles), gateway: await this.d.gateway() },
     )
     if (!result.ok) throw new Error(`acceptor ${result.reason}: ${result.detail}`)
-    const verdicts = result.output.criteria
+    const verdicts = judged(list, result.output.criteria)
     await this.d.linear.comment(id, verdictComment(verdicts))
     const notMet = verdicts.filter((v) => v.verdict === 'not_met')
     const unverifiable = verdicts.filter((v) => v.verdict === 'unverifiable')

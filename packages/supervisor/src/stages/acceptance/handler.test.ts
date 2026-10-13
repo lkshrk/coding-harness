@@ -136,6 +136,26 @@ describe('acceptance stage handler', () => {
     expect(s.calls[0]?.args[2]).toBe('not_met')
   })
 
+  test('a criterion the acceptor did not judge holds the issue as unverifiable', async () => {
+    const s = setup(verdicts('met'))
+    await s.go()
+    expect(s.calls.map((c) => c.args.slice(0, 3))).toEqual([['FOR-1', 'acceptance', 'unverifiable']])
+    expect(s.calls[0]?.args[3]).toContain('- exports are logged: the acceptor gave no verdict')
+    expect(s.comments[0]?.body).toContain('| exports are logged | unverifiable |')
+  })
+
+  test('verdicts for criteria not in the list do not count as met', async () => {
+    const s = setup({
+      criteria: [
+        { criterion: 'invoices export as PDF', verdict: 'met', evidence: 'e0' },
+        { criterion: 'something else', verdict: 'met', evidence: 'e1' },
+      ],
+    })
+    await s.go()
+    expect(s.calls[0]?.args.slice(0, 3)).toEqual(['FOR-1', 'acceptance', 'unverifiable'])
+    expect(s.comments[0]?.body).not.toContain('something else')
+  })
+
   test('no criteria holds with no_criteria and calls nothing', async () => {
     const s = setup(verdicts('met'), '## Goal\nExport invoices.\n')
     await s.go()
