@@ -12,7 +12,7 @@ import { RetryQueue } from '../policy/retry'
 import { decide, type IssueView, VERIFICATION, viewIssue } from '../policy/stages'
 import type { Awaiting, GateResult, IssueSnapshot } from '../ports'
 import { type By, ControlError, type MissReport } from '../ports/control'
-import type { DependentsResponse } from '../ports/generated/control'
+import type { DependentsResponse, ImplementRequest, ImplementResponse } from '../ports/generated/control'
 import type {
   FinishRejectedInfo,
   NoProgressInfo,
@@ -33,6 +33,7 @@ import { createUlid } from '../state/ulid'
 import { Dispatcher } from './dispatch'
 import { type Modules, runFlow } from './flow'
 import { Holds } from './holds'
+import { implementProject } from './implement'
 import { Ingest } from './ingest'
 import { Leases } from './leases'
 import { LinearSync } from './linear-sync'
@@ -475,6 +476,19 @@ export class Supervisor {
     by: By,
   ): Promise<Run> => this.m.dispatcher.retryRun(target, o, by)
   retryIngest = (issue: string): Promise<Run> => this.m.ingest.retryIngest(issue)
+
+  implementProject(req: ImplementRequest, by: By = 'cli'): Promise<ImplementResponse> {
+    return implementProject(
+      this.rt,
+      {
+        cover: (issue, who) => this.m.holds.cover(issue, who),
+        refresh: (identifier) => this.m.linearSync.refresh(identifier),
+        applyIntent: (identifier, intent) => this.m.linearSync.applyIntent(identifier, intent),
+      },
+      req,
+      by,
+    )
+  }
 
   async recordMiss(miss: MissReport): Promise<string> {
     if (this.d.evalDir === undefined) throw new ControlError('refused', 'no evaluation directory configured')

@@ -106,6 +106,8 @@ export type {
   DependentsResponse,
   ErrorResponse,
   Health,
+  ImplementRequest,
+  ImplementResponse,
   IngestRequest,
   Ok,
   PauseRequest,

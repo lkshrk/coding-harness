@@ -1,4 +1,4 @@
-import type { DependentsResponse, ErrorCode } from './generated/control'
+import type { DependentsResponse, ErrorCode, ImplementRequest, ImplementResponse } from './generated/control'
 import type { Event, Run } from './records'
 
 export type { ErrorCode }
@@ -38,6 +38,8 @@ export interface ControlSupervisor extends InboxSupervisor {
   retryIngest(issue: string): Promise<Run>
   useProfile(name: string, by?: By): { active: string; previous: string }
   recordMiss(miss: MissReport): Promise<string>
+  /** Validates a project's plan, records its merge mode and profile, and releases its issues. */
+  implementProject(req: ImplementRequest, by?: By): Promise<ImplementResponse>
 }
 
 export type MissReport = {

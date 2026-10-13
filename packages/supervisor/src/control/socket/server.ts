@@ -16,6 +16,8 @@ import type {
   DependentsRequest,
   DependentsResponse,
   Health,
+  ImplementRequest,
+  ImplementResponse,
   IngestRequest,
   PauseRequest,
   ProfileRequest,
@@ -152,6 +154,10 @@ export function controlHandler(
     'POST /profile': async (req): Promise<ProfileResponse> => {
       const { use } = await body<ProfileRequest>(req, 'profileRequest')
       return sup.useProfile(use, by)
+    },
+    'POST /implement': async (req): Promise<ImplementResponse> => {
+      const { project, merge_mode, profile } = await body<ImplementRequest>(req, 'implementRequest')
+      return sup.implementProject({ project, merge_mode, ...(profile ? { profile } : {}) }, by)
     },
     'POST /ingest': async (req) => {
       const { issue } = await body<IngestRequest>(req, 'ingestRequest')
