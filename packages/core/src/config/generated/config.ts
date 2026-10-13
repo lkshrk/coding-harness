@@ -12,6 +12,7 @@ export type Id = string
 export type Ids = Id[]
 export type Duration = string
 export type Glob = string
+export type TokenCount = string
 export type TeamKey = string
 export type OneOrManyIds = Id | Ids
 export type FailureClass =
@@ -24,7 +25,6 @@ export type FailureClass =
   | 'capability_limit'
   | 'unknown'
 export type ModelAlias = string
-export type TokenCount = string
 export type Path = string
 
 /**
@@ -215,6 +215,35 @@ export interface Config {
      * how long a stopped worker has to commit and hand off before it is killed
      */
     handoff_grace_seconds: number
+    /**
+     * stall thresholds and progress cadence of the worker watcher; read when a run starts
+     */
+    watch: {
+      /**
+       * steps without any tool call before a no_tool_calls stall
+       */
+      no_tool_call_steps: number
+      /**
+       * identical tool calls in a row before a repeated_tool_call stall
+       */
+      repeated_tool_calls: number
+      /**
+       * time without harness events while executing before an idle stall
+       */
+      idle: string
+      /**
+       * steps with an unchanged diff before a no_diff_growth stall
+       */
+      no_diff_growth_steps: number
+      /**
+       * steps between progress reports
+       */
+      progress_steps: number
+      /**
+       * longest time between progress reports
+       */
+      progress_interval: string
+    }
   }
   policies: Policy
   sandbox: {
@@ -353,6 +382,16 @@ export interface Repository {
    * GitHub account for this repository instead of github.default
    */
   github?: string
+  /**
+   * overlaid on limits.worker for this repository's runs; a profile's limits still win
+   */
+  limits?: {
+    wall_clock?: Duration
+    tokens?: TokenCount
+    steps?: number
+    no_diff_steps?: number
+    no_diff_tokens?: TokenCount
+  }
 }
 export interface Check {
   name: Id
