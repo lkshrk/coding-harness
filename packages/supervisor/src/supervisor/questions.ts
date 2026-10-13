@@ -101,7 +101,16 @@ export class Questions {
         .ask({ issue: q.issue, question: q.question, ...(q.options ? { options: q.options } : {}) })
         .catch(() => null)
       if (reply && 'answer' in reply) {
-        await this.rt.deps.linear.comment(q.issue, reply.answer, { parentId: q.comment })
+        try {
+          await this.rt.deps.linear.comment(q.issue, reply.answer, { parentId: q.comment })
+        } catch (e) {
+          await this.notifyOwner(
+            'lead',
+            q,
+            `the lead answered but posting it failed (${(e as Error).message}): ${reply.answer}`,
+          )
+          return
+        }
         this.rt.log.append({
           type: 'MESSAGE_SENT',
           issue: q.issue,
@@ -126,7 +135,10 @@ export class Questions {
       .find((e) => e.data.comment === q.comment)?.data as
       | { question?: string; options?: string[] }
       | undefined
-    if (!run || !data?.question) return
+    if (!run || !data?.question) {
+      this.forwarded.add(q.comment)
+      return
+    }
     this.forward({
       comment: q.comment,
       issue: q.issue,

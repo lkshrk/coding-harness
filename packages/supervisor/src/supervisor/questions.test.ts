@@ -120,6 +120,21 @@ describe('questions', () => {
     expect(questionsSent(h)[0]?.context?.join('\n')).toContain('needs a product call')
   })
 
+  test('when posting the lead answer fails the owner is notified with the answer', async () => {
+    const lead = fakeLead()
+    const h = harness({ lead: lead.advisor })
+    const { comment } = await askLead(h)
+    h.linear.comment = async () => {
+      throw new Error('rate limited')
+    }
+    await lead.reply({ answer: 'Use v2.' })
+    expect(h.of('MESSAGE_SENT')).toEqual([])
+    expect(questionsSent(h)).toHaveLength(1)
+    expect(questionsSent(h)[0]?.question?.comment).toBe(comment)
+    expect(questionsSent(h)[0]?.context?.join('\n')).toContain('rate limited')
+    expect(questionsSent(h)[0]?.context?.join('\n')).toContain('Use v2.')
+  })
+
   test('a decision question is never sent to the lead', async () => {
     const lead = fakeLead()
     const h = harness({ lead: lead.advisor })

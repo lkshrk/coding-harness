@@ -24,8 +24,14 @@ export function parseReply(text: string): LeadReply | null {
 
 type RawEvent = { type?: string; data?: { sessionID?: unknown; text?: unknown } }
 
-async function converse(client: OpenCodeClient, q: LeadQuestion, signal: AbortSignal) {
+async function converse(
+  client: OpenCodeClient,
+  q: LeadQuestion,
+  signal: AbortSignal,
+  started: (id: string) => void,
+) {
   const session = await client.createSession()
+  started(session.id)
   const stream = client.events(signal)[Symbol.asyncIterator]()
   const first = stream.next()
   first.catch(() => undefined)
@@ -57,13 +63,21 @@ export function leadAdvisor(o: {
       }
       const controller = new AbortController()
       const client = new OpenCodeClient(o.url, password, o.fetch ?? fetch)
-      const consult = async () => ((await client.ready()) ? converse(client, q, controller.signal) : null)
+      let session: string | undefined
+      const consult = async () =>
+        (await client.ready())
+          ? converse(client, q, controller.signal, (id) => {
+              session = id
+            })
+          : null
       let timer: ReturnType<typeof setTimeout> | undefined
       const timeout = new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), o.timeoutMs ?? 600_000)
       })
       try {
-        return await Promise.race([consult(), timeout])
+        const reply = await Promise.race([consult(), timeout])
+        if (reply === null && session) await client.interrupt(session).catch(() => undefined)
+        return reply
       } catch {
         return null
       } finally {
