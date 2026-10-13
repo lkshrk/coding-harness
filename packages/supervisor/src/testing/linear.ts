@@ -226,6 +226,15 @@ export class FakeLinear implements LinearPort {
     return `https://uploads.linear.test/${this.uploads.length}/${name}`
   }
 
+  async setProjectLabel(projectId: string, group: string, name: string): Promise<void> {
+    const prefix = `${group.toLowerCase()}:`
+    for (const [id, issue] of this.store) {
+      if (issue.project?.id !== projectId) continue
+      const labels = [...issue.project.labels.filter((l) => !l.startsWith(prefix)), `${prefix}${name}`]
+      this.store.set(id, { ...issue, project: { ...issue.project, labels } })
+    }
+  }
+
   reply(identifier: string, parentId: string, body: string, by = 'you'): void {
     this.ids += 1
     const c = { id: `c${this.ids}`, body, createdAt: this.now().toISOString(), parentId, by }

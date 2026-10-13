@@ -486,3 +486,89 @@ describe('LinearWriter.createChild and addBlocks', () => {
     ])
   })
 })
+
+describe('LinearWriter.setProjectLabel', () => {
+  const withProjectLabels = (): LinearWorkspace => ({
+    ...workspace(),
+    projectLabels: [
+      group('pg-merge', 'ai-merge'),
+      child('pl-manual', 'manual', 'pg-merge'),
+      child('pl-auto', 'auto', 'pg-merge'),
+      group('pg-area', 'area'),
+      child('pl-x', 'x', 'pg-area'),
+    ],
+  })
+  const projectLabels = (labels: ReturnType<typeof rawLabel>[], endCursor: string | null = null) => ({
+    project: { labels: conn(labels, endCursor) },
+  })
+  const updates = (calls: Call[]) => calls.filter((c) => c.operation === 'nsProjectUpdate')
+
+  test('replaces the label within its group and keeps other groups', async () => {
+    const { writer, calls } = fakeLinear(
+      {
+        nsProjectLabels: (v) =>
+          v.after === 'c1'
+            ? projectLabels([rawLabel('pl-x', 'x', 'area')])
+            : projectLabels([rawLabel('pl-manual', 'manual', 'ai-merge')], 'c1'),
+        nsProjectUpdate: () => ({ projectUpdate: { success: true } }),
+      },
+      withProjectLabels,
+    )
+    expect(await writer.setProjectLabel('p-1', 'ai-merge', 'auto')).toBe(true)
+    expect(updates(calls).map((c) => c.variables)).toEqual([
+      { id: 'p-1', input: { labelIds: ['pl-x', 'pl-auto'] } },
+    ])
+  })
+
+  test('sends nothing when the label is already set', async () => {
+    const { writer, calls } = fakeLinear(
+      {
+        nsProjectLabels: () =>
+          projectLabels([rawLabel('pl-auto', 'auto', 'ai-merge'), rawLabel('pl-x', 'x', 'area')]),
+      },
+      withProjectLabels,
+    )
+    expect(await writer.setProjectLabel('p-1', 'ai-merge', 'auto')).toBe(false)
+    expect(updates(calls)).toEqual([])
+  })
+
+  test('an unknown label fails after one workspace refresh', async () => {
+    const { writer, calls, workspaceReads } = fakeLinear(
+      { nsProjectLabels: () => projectLabels([]) },
+      withProjectLabels,
+    )
+    await expect(writer.setProjectLabel('p-1', 'ai-merge', 'feature-branch')).rejects.toThrow(
+      'linear: no project label ai-merge/feature-branch',
+    )
+    expect(workspaceReads()).toBe(2)
+    expect(updates(calls)).toEqual([])
+  })
+
+  test('a label added since the last workspace read is found after the refresh', async () => {
+    let ws = withProjectLabels()
+    const { writer, calls } = fakeLinear(
+      {
+        nsProjectLabels: () => projectLabels([]),
+        nsProjectUpdate: () => ({ projectUpdate: { success: true } }),
+      },
+      () => ws,
+    )
+    await writer.setProjectLabel('p-1', 'ai-merge', 'auto')
+    ws = { ...ws, projectLabels: [...ws.projectLabels, child('pl-fb', 'feature-branch', 'pg-merge')] }
+    await writer.setProjectLabel('p-1', 'ai-merge', 'feature-branch')
+    expect(updates(calls)[1]?.variables).toEqual({ id: 'p-1', input: { labelIds: ['pl-fb'] } })
+  })
+
+  test('an unconfirmed mutation fails', async () => {
+    const { writer } = fakeLinear(
+      {
+        nsProjectLabels: () => projectLabels([]),
+        nsProjectUpdate: () => ({ projectUpdate: { success: false } }),
+      },
+      withProjectLabels,
+    )
+    await expect(writer.setProjectLabel('p-1', 'ai-merge', 'auto')).rejects.toThrow(
+      'linear: projectUpdate p-1 not confirmed',
+    )
+  })
+})

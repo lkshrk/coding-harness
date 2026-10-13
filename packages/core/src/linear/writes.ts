@@ -7,8 +7,10 @@ import {
   type LinearIssueReader,
   notFound,
   type Page,
+  PROJECT_LABELS,
   type RawComment,
   type RawLabel,
+  rest,
   toComment,
 } from './issues'
 import type { LinearLabel, LinearWorkspace } from './workspace'
@@ -73,6 +75,10 @@ const CREATE_ISSUE = `mutation nsIssueCreate($input: IssueCreateInput!) {
 
 const CREATE_RELATION = `mutation nsIssueRelationCreate($input: IssueRelationCreateInput!) {
   issueRelationCreate(input: $input) { success }
+}`
+
+const UPDATE_PROJECT = `mutation nsProjectUpdate($id: String!, $input: ProjectUpdateInput!) {
+  projectUpdate(id: $id, input: $input) { success }
 }`
 
 class UnknownName extends Error {}
@@ -260,6 +266,43 @@ export class LinearWriter {
     return true
   }
 
+  /** Replaces the project's label in `group` with `name`, keeping other groups; false when already set. */
+  async setProjectLabel(projectId: string, group: string, name: string): Promise<boolean> {
+    const current = await this.projectLabels(projectId)
+    let wanted: LinearLabel
+    try {
+      wanted = findProjectLabel((await this.workspace()).projectLabels, group, name)
+    } catch (e) {
+      if (!(e instanceof UnknownName)) throw e
+      wanted = findProjectLabel((await this.workspace(true)).projectLabels, group, name)
+    }
+    const inGroup = (l: RawLabel) => l.parent?.name.toLowerCase() === group.toLowerCase()
+    if (current.some((l) => l.id === wanted.id) && current.filter(inGroup).length === 1) return false
+    const labelIds = [...current.filter((l) => !inGroup(l)).map((l) => l.id), wanted.id]
+    const data = await this.request<
+      { projectUpdate: { success: boolean } },
+      { id: string; input: { labelIds: string[] } }
+    >(UPDATE_PROJECT, { id: projectId, input: { labelIds } })
+    if (!data.projectUpdate.success) throw new Error(`linear: projectUpdate ${projectId} not confirmed`)
+    return true
+  }
+
+  private async projectLabels(projectId: string): Promise<RawLabel[]> {
+    const page = async (after: string | null) => {
+      try {
+        const data = await this.request<
+          { project: { labels: Page<RawLabel> } },
+          { id: string; after: string | null }
+        >(PROJECT_LABELS, { id: projectId, after })
+        return data.project.labels
+      } catch (e) {
+        if (notFound(e)) throw new Error(`linear: no project ${projectId}`)
+        throw e
+      }
+    }
+    return rest(await page(null), page)
+  }
+
   private workspace(refresh = false): Promise<LinearWorkspace> {
     if (refresh || !this.ws) {
       const loading = this.loadWorkspace()
@@ -325,4 +368,13 @@ function findLabel(labels: LinearLabel[], group: string, name: string, teamId: s
     if (hit) return hit
   }
   throw new UnknownName(`linear: no label ${group}:${name} in workspace (run nightshift doctor)`)
+}
+
+function findProjectLabel(labels: LinearLabel[], group: string, name: string): LinearLabel {
+  const g = labels.find(
+    (l) => l.isGroup && l.parentId === null && l.name.toLowerCase() === group.toLowerCase(),
+  )
+  const hit = g && labels.find((l) => l.parentId === g.id && l.name === name)
+  if (!hit) throw new UnknownName(`linear: no project label ${group}/${name}`)
+  return hit
 }
