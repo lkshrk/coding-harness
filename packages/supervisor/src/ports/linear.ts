@@ -83,4 +83,6 @@ export interface LinearPort {
   /** Makes `blocker` block `blocked`; a no-op when the relation exists. */
   addBlocks(blocker: string, blocked: string): Promise<void>
   uploadFile(name: string, contentType: string, bytes: Uint8Array): Promise<string>
+  /** Replaces the project's label in `group` with `name`, keeping other groups; a no-op when already set. */
+  setProjectLabel(projectId: string, group: string, name: string): Promise<void>
 }
