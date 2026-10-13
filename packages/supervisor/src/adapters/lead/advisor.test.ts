@@ -105,6 +105,18 @@ test('a lead that does not finish in time returns null', async () => {
   expect(await advisor.ask(Q)).toBeNull()
 })
 
+test('a lead that stalls on the readiness probe returns null within the timeout', async () => {
+  const stalled = (async () => new Promise<Response>(() => {})) as unknown as typeof fetch
+  const advisor = leadAdvisor({
+    url: 'http://lead.test',
+    passwordFile: passwordFile(),
+    fetch: stalled,
+    timeoutMs: 20,
+  })
+  const outcome = await Promise.race([advisor.ask(Q), Bun.sleep(500).then(() => 'hung')])
+  expect(outcome).toBeNull()
+})
+
 test('a failed execution returns null', async () => {
   const lead = fakeLead({
     events: [text('ses_q', 'partial'), { type: 'session.execution.failed', data: { sessionID: 'ses_q' } }],

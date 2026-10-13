@@ -55,15 +55,15 @@ export function leadAdvisor(o: {
       } catch {
         return null
       }
-      const client = new OpenCodeClient(o.url, password, o.fetch ?? fetch)
-      if (!(await client.ready())) return null
       const controller = new AbortController()
+      const client = new OpenCodeClient(o.url, password, o.fetch ?? fetch)
+      const consult = async () => ((await client.ready()) ? converse(client, q, controller.signal) : null)
       let timer: ReturnType<typeof setTimeout> | undefined
       const timeout = new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), o.timeoutMs ?? 600_000)
       })
       try {
-        return await Promise.race([converse(client, q, controller.signal), timeout])
+        return await Promise.race([consult(), timeout])
       } catch {
         return null
       } finally {
