@@ -745,7 +745,17 @@ describe('pull request watching', () => {
 
       await h.first.tick()
       expect(h.gh.gh('merge').map((c) => c.cmd)).toEqual([
-        ['gh', 'pr', 'merge', '1', '--repo', 'lkshrk/omni', '--squash'],
+        [
+          'gh',
+          'pr',
+          'merge',
+          '1',
+          '--repo',
+          'lkshrk/omni',
+          '--squash',
+          '--match-head-commit',
+          h.run.headSha ?? '',
+        ],
       ])
       expect(h.gh.gh('update-branch').map((c) => c.cmd[3])).toEqual(['1'])
       expect(h.of('MERGED').map((e) => [e.issue, e.data.mode])).toEqual([['FOR-1', 'auto']])
@@ -761,6 +771,19 @@ describe('pull request watching', () => {
       expect(h.gh.gh('merge').map((c) => c.cmd[3])).toEqual(['1', '2'])
       expect(h.of('MERGED').map((e) => e.issue)).toEqual(['FOR-1', 'FOR-2'])
       expect(h.gh.prs.map((p) => p.state)).toEqual(['MERGED', 'MERGED'])
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a head pushed after CI passed is not merged until CI passes on it', async () => {
+    const h = await queued()
+    try {
+      h.opened.headSha = 'pu5hed'
+      await h.first.tick()
+      expect(h.gh.gh('update-branch')).toEqual([])
+      expect(h.gh.gh('merge')).toEqual([])
+      expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ headSha: 'pu5hed', ci: 'pending' })
     } finally {
       h.cleanup()
     }

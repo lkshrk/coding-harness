@@ -428,11 +428,26 @@ export class GhGitHost implements GitHost {
     return { headSha: after.headSha }
   }
 
-  async merge(pr: PullRequest, method: 'squash' | 'merge' | 'rebase'): Promise<{ sha: string }> {
+  async merge(
+    pr: PullRequest,
+    method: 'squash' | 'merge' | 'rebase',
+    expectedHead: string,
+  ): Promise<{ sha: string }> {
     await this.o.tokens.withToken(pr.repository, async (token) => {
-      const r = await this.run(['gh', 'pr', 'merge', String(pr.number), '--repo', pr.repo, `--${method}`], {
-        env: gitAuthEnv(token),
-      })
+      const r = await this.run(
+        [
+          'gh',
+          'pr',
+          'merge',
+          String(pr.number),
+          '--repo',
+          pr.repo,
+          `--${method}`,
+          '--match-head-commit',
+          expectedHead,
+        ],
+        { env: gitAuthEnv(token) },
+      )
       this.check(r, 'gh pr merge')
     })
     const merged = await this.state(pr)

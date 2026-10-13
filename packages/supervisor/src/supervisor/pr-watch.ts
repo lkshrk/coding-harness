@@ -103,12 +103,16 @@ export class PullRequestWatch {
       try {
         const state = await host.state(pr)
         if (state.state !== 'open' || state.mergeable !== 'mergeable') continue
+        if (state.headSha && state.headSha !== pr.headSha) {
+          this.rt.pullRequests.put({ ...pr, headSha: state.headSha, ci: 'pending' })
+          continue
+        }
         const { headSha } = await host.updateBranch(pr)
-        if (headSha !== (state.headSha ?? pr.headSha)) {
+        if (headSha !== pr.headSha) {
           this.rt.pullRequests.put({ ...pr, headSha, ci: 'pending' })
           continue
         }
-        const { sha } = await host.merge(pr, 'squash')
+        const { sha } = await host.merge(pr, 'squash', pr.headSha)
         await this.pullRequestMerged({ ...pr, mergeSha: sha })
       } catch (e) {
         console.error(`merge queue ${pr.url} (${pr.issue}): ${(e as Error).message}`)

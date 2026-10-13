@@ -80,7 +80,11 @@ export interface GitHost {
   state(pr: PullRequest): Promise<PullRequestState>
   // Rebases the PR branch onto its base on the host; returns the head afterwards.
   updateBranch(pr: PullRequest): Promise<{ headSha: string }>
-  merge(pr: PullRequest, method: 'squash' | 'merge' | 'rebase'): Promise<{ sha: string }>
+  merge(
+    pr: PullRequest,
+    method: 'squash' | 'merge' | 'rebase',
+    expectedHead: string,
+  ): Promise<{ sha: string }>
   reviewThreads(pr: PullRequest): Promise<ReviewThread[]>
   replyToThread(pr: PullRequest, commentId: number, body: string): Promise<{ id: number }>
   resolveThread(pr: PullRequest, threadId: string): Promise<void>

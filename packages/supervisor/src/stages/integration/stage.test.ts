@@ -422,6 +422,15 @@ describe('integration stage (screenshots)', () => {
     expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
   })
 
+  test('an auto change whose screenshots fail is a draft recorded as manual', async () => {
+    const h = integrationHarness(root, withUi(['src/**'], 'exit 3'))
+    await h.integrated({
+      project: { id: 'p-omni', name: 'Omni', initiatives: [], labels: ['ai-merge:auto'] },
+    })
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ mode: 'manual', draft: true })
+    expect(h.out).toContain('FOR-1: merge mode auto overridden (no screenshots); using manual')
+  })
+
   test('a command that yields no images opens a draft PR that says why', async () => {
     const h = integrationHarness(root, withUi(['src/**'], writeManifest([])))
     await h.integrated()

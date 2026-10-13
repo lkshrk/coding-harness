@@ -190,6 +190,13 @@ export class FakeGh {
       const pr = this.prs.find((p) => String(p.number) === cmd[3])
       if (pr?.state !== 'OPEN') return { exitCode: 1, stdout: '', stderr: `no open PR ${cmd[3]}` }
       if (verb === 'merge') {
+        const expected = cmd.includes('--match-head-commit') ? arg('--match-head-commit') : ''
+        if (expected && expected !== pr.headSha)
+          return {
+            exitCode: 1,
+            stdout: '',
+            stderr: `Head branch was modified. Review and try the merge again.`,
+          }
         pr.state = 'MERGED'
         return ok('')
       }

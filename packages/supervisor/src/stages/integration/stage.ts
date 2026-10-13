@@ -112,11 +112,10 @@ export class IntegrationHandler implements StageHandler {
     const ui = riskPathsTouched(changed, repo.ui_paths ?? [])
     const requested = viewIssue(work.issue, config, { covered: true })?.mergeMode ?? 'manual'
     const unreviewed = cb.forcedManual(id) !== null
-    const mode = requested === 'auto' && risk.length === 0 && !unreviewed ? 'auto' : 'manual'
-    if (requested === 'auto' && mode === 'manual')
-      this.d.out?.(
-        `${id}: merge mode auto overridden (${risk.length ? `risk paths: ${risk.join(', ')}` : 'unreviewed'}); using manual`,
-      )
+    const override = risk.length ? `risk paths: ${risk.join(', ')}` : unreviewed ? 'unreviewed' : null
+    let mode: 'auto' | 'manual' = requested === 'auto' && override === null ? 'auto' : 'manual'
+    if (requested === 'auto' && override)
+      this.d.out?.(`${id}: merge mode auto overridden (${override}); using manual`)
     else if (requested === 'feature-branch')
       this.d.out?.(`${id}: merge mode ${requested} is not supported yet; using manual`)
     const branch = prBranch(id)
@@ -158,6 +157,10 @@ export class IntegrationHandler implements StageHandler {
         : { reason: 'screenshots are not available in this supervisor' }
     if (shots && 'reason' in shots) this.d.out?.(`${id}: no screenshots: ${shots.reason}`)
     const draft = risk.length > 0 || (shots !== undefined && 'reason' in shots)
+    if (draft && mode === 'auto') {
+      mode = 'manual'
+      this.d.out?.(`${id}: merge mode auto overridden (no screenshots); using manual`)
+    }
     const body = this.body(work, run, cb, risk, config, attempts, shots)
     const pr = await this.d.host.openPullRequest({
       repository: run.repository,
