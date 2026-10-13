@@ -305,6 +305,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
     notifier: signal?.notifier ?? logNotifier(out),
     outbox: outboxDirs(join(cache, 'outbox')),
     evalDir: join(cache, 'eval'),
+    artifactDirs: [artifacts, join(cache, 'artifacts')],
     classifier: agentClassifier({
       config: current,
       agents,

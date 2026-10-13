@@ -54,6 +54,7 @@ export type SupervisorDeps = {
   secretsLocked?: () => Promise<boolean>
   gatewayProbe?: () => Promise<{ ok: boolean; reason: string }>
   evalDir?: string
+  artifactDirs?: string[]
   now?: () => Date
   instanceId?: string
   leaseTtlMs?: number

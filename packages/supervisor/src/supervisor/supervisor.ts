@@ -25,7 +25,7 @@ import type { ReviewOutcome } from '../stages/gates/review'
 import { type PullRequestRecord, PullRequestStore } from '../stages/integration/records'
 import { EventLog } from '../state/events'
 import { LeaseStore } from '../state/leases'
-import { retain } from '../state/retention'
+import { retain, retainArtifacts } from '../state/retention'
 import { type Run, RunStore } from '../state/runs'
 import { readStatus, type SupervisorStatus, type Waiting } from '../state/status'
 import { resolveRun } from '../state/targets'
@@ -145,6 +145,8 @@ export class Supervisor {
     this.rt.setMeta('linear_org', workspace.organization.urlKey)
     this.rt.setMeta('restart_required', 'false')
     this.paused = this.rt.meta('dispatch') === 'paused'
+    // Artifacts first: run retention drops rows whose ended_at decides artifact age.
+    retainArtifacts(this.d.db, this.d.artifactDirs ?? [], this.now())
     retain(this.d.db, this.now())
     this.log.append({ type: 'SUPERVISOR_STARTED', data: { version: NIGHTSHIFT_VERSION } })
     if (this.d.evalDir !== undefined) {
