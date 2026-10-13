@@ -1,4 +1,9 @@
-import type { DependentsResponse, RunResponse } from '@nightshift/supervisor'
+import type {
+  DependentsResponse,
+  ImplementRequest,
+  ImplementResponse,
+  RunResponse,
+} from '@nightshift/supervisor'
 import { CliError, type Ctx, EXIT, parseArgs, printJson, requireArg } from '../cli'
 import { call } from './shared'
 
@@ -7,7 +12,8 @@ const ISSUE = /^[A-Z][A-Z0-9]{1,6}-[1-9][0-9]*$/
 export const CONTROL_USAGE = {
   pause: 'ns pause [<issue>]',
   resume: 'ns resume [<issue>]',
-  implement: 'ns implement <issue> [--with-dependents]',
+  implement:
+    'ns implement <issue> [--with-dependents] | ns implement <project> --merge manual|auto [--profile P]',
   release: 'ns release <issue>',
   send: 'ns send <target> <message>',
   answer: 'ns answer <issue> <text>',
@@ -40,7 +46,17 @@ export async function pause(ctx: Ctx, args: string[], on: boolean): Promise<numb
 
 export async function cover(ctx: Ctx, args: string[], on: boolean): Promise<number> {
   const usage = CONTROL_USAGE[on ? 'implement' : 'release']
-  const { positionals, bools } = parseArgs(args, on ? { bools: ['--with-dependents'] } : {}, usage)
+  const { positionals, values, bools } = parseArgs(
+    args,
+    on ? { values: ['--merge', '--profile'], bools: ['--with-dependents'] } : {},
+    usage,
+  )
+  if (on && positionals.length === 1 && !ISSUE.test(positionals[0] as string)) {
+    if (bools.has('--with-dependents')) throw new CliError(EXIT.usage, `usage: ${usage}`)
+    return implementProject(ctx, positionals[0] as string, values['--merge'], values['--profile'], usage)
+  }
+  if (values['--merge'] !== undefined || values['--profile'] !== undefined)
+    throw new CliError(EXIT.usage, `usage: ${usage}`)
   const issue = issueArg(positionals[0], usage)
   if (!on) {
     const res = await call(ctx, 'POST', '/cover', { issue, covered: false })
@@ -71,6 +87,37 @@ export async function cover(ctx: Ctx, args: string[], on: boolean): Promise<numb
         ? `${issue} is covered; the supervisor picks it up on its next tick`
         : `${list} are covered; the supervisor picks them up on its next tick`,
       ...uncovered,
+    ].join('\n'),
+  )
+}
+
+async function implementProject(
+  ctx: Ctx,
+  name: string,
+  merge: string | undefined,
+  profile: string | undefined,
+  usage: string,
+): Promise<number> {
+  const project = requireArg(name, usage)
+  if (merge !== 'manual' && merge !== 'auto') throw new CliError(EXIT.usage, `usage: ${usage}`)
+  const how = profile ? `merge mode ${merge} and profile ${profile}` : `merge mode ${merge}`
+  if (
+    !(await ctx.confirm(
+      `Let nightshift implement project ${project} with ${how}? This changes Linear state of its issues.`,
+    ))
+  ) {
+    ctx.io.err('aborted')
+    return EXIT.error
+  }
+  const req: ImplementRequest = { project, merge_mode: merge, ...(profile ? { profile } : {}) }
+  const res = await call<ImplementResponse>(ctx, 'POST', '/implement', req)
+  return done(
+    ctx,
+    res,
+    [
+      `ready now: ${res.ready.join(', ')}`,
+      ...(res.waiting.length ? [`waiting on blockers: ${res.waiting.join(', ')}`] : []),
+      ...res.warnings.map((w) => `warning: ${w}`),
     ].join('\n'),
   )
 }
