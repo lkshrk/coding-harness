@@ -145,8 +145,9 @@ export class Supervisor {
     this.rt.setMeta('linear_org', workspace.organization.urlKey)
     this.rt.setMeta('restart_required', 'false')
     this.paused = this.rt.meta('dispatch') === 'paused'
-    retain(this.d.db, this.now())
+    // Artifacts first: run retention drops rows whose ended_at decides artifact age.
     retainArtifacts(this.d.db, this.d.artifactDirs ?? [], this.now())
+    retain(this.d.db, this.now())
     this.log.append({ type: 'SUPERVISOR_STARTED', data: { version: NIGHTSHIFT_VERSION } })
     if (this.d.evalDir !== undefined) {
       try {

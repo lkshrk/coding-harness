@@ -89,4 +89,25 @@ describe('Supervisor.start', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  test('deletes artifacts of a terminal run before run retention prunes its row', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'retention-'))
+    try {
+      const h = harness({ artifactDirs: [root] })
+      const start = Date.parse('2026-10-04T10:00:00.000Z')
+      const ago = (days: number) => new Date(start - days * 24 * 3600_000).toISOString()
+      h.db
+        .query(
+          `INSERT INTO runs (id, issue, agent, profile, model, repository, base_sha, attempt, state, started_at, ended_at)
+           VALUES ('ancient', 'FOR-1', 'implementer', 'default', 'm', 'omni', 'base1', 1, 'done', ?, ?)`,
+        )
+        .run(ago(100), ago(95))
+      const dir = join(root, 'ancient')
+      mkdirSync(dir)
+      await h.sup.start()
+      expect(existsSync(dir)).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
