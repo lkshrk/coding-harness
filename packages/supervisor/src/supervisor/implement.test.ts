@@ -69,6 +69,30 @@ describe('POST /implement', () => {
     expect(h.of('COVERAGE_CHANGED')).toHaveLength(3)
   })
 
+  test('an issue already in a later stage keeps its stage on a re-run', async () => {
+    const h = harness()
+    h.linear.put({ ...backlog('FOR-1'), status: 'In Review', labels: ['ai-stage:verification'] })
+    const res = await post(h.sup, { project: 'Omni', merge_mode: 'auto' })
+    expect(res.status).toBe(200)
+    expect(h.linear.get('FOR-1').labels).toEqual(['ai-stage:verification'])
+  })
+
+  test('a project no repository config names is refused before any write', async () => {
+    const h = harness()
+    h.linear.workspaceValue.projects.push({
+      id: 'p-other',
+      name: 'Other',
+    } as (typeof h.linear.workspaceValue.projects)[number])
+    h.linear.put({
+      ...backlog('FOR-1'),
+      project: { id: 'p-other', name: 'Other', initiatives: [], labels: [] },
+    })
+    const res = await post(h.sup, { project: 'Other', merge_mode: 'auto' })
+    expect(res.status).toBe(409)
+    expect(h.linear.updates).toEqual([])
+    expect(choices(h)).toEqual([])
+  })
+
   test('the profile is recorded and used by the next dispatch', async () => {
     const h = harness()
     withProfile(h.config, 'fast')

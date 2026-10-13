@@ -58,7 +58,7 @@ export async function implementProject(
   for (const id of [...plan.ready, ...plan.waiting]) {
     peers.cover(id, by)
     await peers.refresh(id)
-    if (labelValue(byId.get(id)?.labels ?? [], LABEL_GROUPS.stage) !== IMPLEMENTATION)
+    if (labelValue(byId.get(id)?.labels ?? [], LABEL_GROUPS.stage) === null)
       await peers.applyIntent(id, { kind: 'stageEntered', stage: IMPLEMENTATION })
     // Only a Backlog issue moves to Todo; one already queued or running keeps its status.
     if (ready.has(id)) await peers.applyIntent(id, { kind: 'unblocked' })
