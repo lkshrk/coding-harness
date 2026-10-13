@@ -26,11 +26,17 @@ describe('probeCommands', () => {
       'lsp_initialize() {',
       '  local cmd=("$@")',
       '}',
-      '  lsp_initialize indented',
       'echo lsp_initialize gopls',
       'lsp_initialize ruff server',
     ].join('\n')
     expect(probeCommands(sh)).toEqual([['ruff', 'server']])
+  })
+
+  test('parses indented probes', () => {
+    expect(probeCommands('if true; then\n  lsp_initialize gopls\n\tlsp_initialize ty server\nfi\n')).toEqual([
+      ['gopls'],
+      ['ty', 'server'],
+    ])
   })
 })
 
@@ -58,6 +64,32 @@ describe('lspProbeGaps', () => {
     expect(lspProbeGaps(ts, 'lsp_initialize tsc --lsp\n')).toEqual([
       "stack bun: language server 'ts' (tsc --lsp --stdio) has no lsp_initialize probe in test.sh",
       "stack bun: test.sh probes 'tsc --lsp' which no lsp entry declares",
+    ])
+  })
+
+  test('compares literal argument values', () => {
+    const py = {
+      id: 'python',
+      addon: false,
+      lsp: { python: { command: ['ty', 'server'], extensions: ['.py'] } },
+    }
+    expect(lspProbeGaps(py, 'lsp_initialize ty check\n')).toEqual([
+      "stack python: language server 'python' (ty server) has no lsp_initialize probe in test.sh",
+      "stack python: test.sh probes 'ty check' which no lsp entry declares",
+    ])
+  })
+
+  test('a variable-expanding argument must still match its literal parts', () => {
+    const wow = {
+      id: 'wow',
+      addon: false,
+      lsp: { lua: { command: ['lua-language-server', '--configpath=/x/luarc.json'], extensions: ['.lua'] } },
+    }
+    expect(
+      lspProbeGaps(wow, 'lsp_initialize lua-language-server --logpath="$WOW_HOME/luarc.json"\n'),
+    ).toEqual([
+      "stack wow: language server 'lua' (lua-language-server --configpath=/x/luarc.json) has no lsp_initialize probe in test.sh",
+      'stack wow: test.sh probes \'lua-language-server --logpath="$WOW_HOME/luarc.json"\' which no lsp entry declares',
     ])
   })
 

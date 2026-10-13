@@ -1,6 +1,6 @@
 import type { Stack } from './load'
 
-const PROBE = /^lsp_initialize\s+(.+)$/
+const PROBE = /^\s*lsp_initialize\s+(.+)$/
 
 function unquote(token: string): string {
   const q = token[0]
@@ -14,8 +14,24 @@ export function probeCommands(testSh: string): string[][] {
   })
 }
 
+const VARIABLE = /\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g
+
+function argMatches(declared: string, probed: string): boolean {
+  if (!probed.includes('$')) return declared === probed
+  const literal = probed.replace(/["']/g, '')
+  const pattern = literal
+    .split(VARIABLE)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*')
+  return new RegExp(`^${pattern}$`).test(declared)
+}
+
 function matches(command: string[], probe: string[]): boolean {
-  return command[0] === probe[0] && command.length === probe.length
+  return (
+    command[0] === probe[0] &&
+    command.length === probe.length &&
+    command.every((arg, i) => argMatches(arg, probe[i] ?? ''))
+  )
 }
 
 export function lspProbeGaps(
