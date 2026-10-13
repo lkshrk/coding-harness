@@ -88,34 +88,50 @@ export class Replan {
     this.rt.setMeta(PROPOSALS, JSON.stringify(map))
   }
 
-  /** Runs the replanner and posts its proposal; false leaves the failure to the usual escalation. */
+  /** Runs the replanner and posts its proposal or a lead question; false leaves the failure to the usual escalation. */
   async propose(run: Run, c: Classification, detail?: string): Promise<boolean> {
-    const replanner = this.rt.deps.replanner
-    if (!replanner || !REPLANNED.includes(c.action)) return false
+    if (!REPLANNED.includes(c.action)) return false
     const issue: IssueSnapshot | null =
       this.rt.cache.get(run.issue) ?? (await this.rt.deps.linear.issue(run.issue))
-    if (!issue) return false
-    let report: ReplanReport | null
+    const report = issue ? await this.replan(run, issue, c, detail) : null
+    if (issue && report && report.action !== 'escalate_lead') {
+      const errors = proposalErrors(issue.description, report)
+      if (!errors.length) return this.proposeReport(run, issue, report)
+      console.error(`${run.issue}: replan not proposed: ${errors.join('; ')}`)
+    }
+    if (report?.action === 'escalate_lead' || c.action === 'escalate_lead')
+      return this.askLead(run, c, report?.action === 'escalate_lead' ? report.reason : undefined, detail)
+    return false
+  }
+
+  private async replan(
+    run: Run,
+    issue: IssueSnapshot,
+    c: Classification,
+    detail?: string,
+  ): Promise<ReplanReport | null> {
+    const replanner = this.rt.deps.replanner
+    if (!replanner) return null
     try {
-      report = await replanner.replan({ run, issue, classification: c, ...(detail ? { detail } : {}) })
+      return await replanner.replan({ run, issue, classification: c, ...(detail ? { detail } : {}) })
     } catch (e) {
       console.error(`${run.issue}: replanner failed: ${(e as Error).message}`)
-      return false
+      return null
     }
-    if (!report) return false
-    if (report.action === 'escalate_lead') {
-      await this.rt.postOnce(
-        run.issue,
-        `replan:${run.id}`,
-        `Replanner: escalate to the lead. ${report.reason}`,
-      )
-      return false
-    }
-    const errors = proposalErrors(issue.description, report)
-    if (errors.length) {
-      console.error(`${run.issue}: replan not proposed: ${errors.join('; ')}`)
-      return false
-    }
+  }
+
+  private async askLead(run: Run, c: Classification, reason?: string, detail?: string): Promise<boolean> {
+    const cause = this.rt.log.since(null, { run: run.id, types: ['FAILURE_CLASSIFIED'] }).at(-1)
+    if (!cause) return false
+    const why = reason || detail || c.class
+    const question = `Design question after attempt ${run.attempt} (${c.class}): ${why}. How should ${run.issue} proceed?`
+    // The failure comment already carries the event's own marker, so the question gets a derived one.
+    await this.flow.askQuestion(run, { ...cause, id: `${cause.id}:lead` }, { needs: 'context', question })
+    return true
+  }
+
+  private async proposeReport(run: Run, issue: IssueSnapshot, report: ReplanReport): Promise<boolean> {
+    if (report.action === 'escalate_lead') return false
     const issues = report.action === 'split' ? (report.sub_issues ?? []) : [report.blocker as ReplanIssue]
     const comment = await this.rt.postOnce(run.issue, `replan:${run.id}`, proposalComment(run.issue, report))
     const stage = viewIssue(issue, this.rt.config())?.stage ?? ''
@@ -182,11 +198,13 @@ export class Replan {
       `replan-created:${p.run}`,
       `Created ${created.join(', ')}; each blocks ${issue}.`,
     )
-    await this.flow.holdForYou(issue, {
-      kind: 'escalated',
-      stage: p.stage,
-      reason: `replanned into ${created.join(', ')}`,
-    })
+    if (p.action === 'create_blocker') await this.flow.applyIntent(issue, { kind: 'parked' })
+    else
+      await this.flow.holdForYou(issue, {
+        kind: 'escalated',
+        stage: p.stage,
+        reason: `replanned into ${created.join(', ')}`,
+      })
     this.store(issue, null)
     await this.flow.refresh(issue)
   }
