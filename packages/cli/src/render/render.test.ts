@@ -339,6 +339,68 @@ describe('wrapping to the live width', () => {
     for (const l of lines) expect(visible(`${prefix}${l}`)).toBeLessThanOrEqual(60)
   })
 
+  test('double-width characters never push a line past its width', () => {
+    for (const [text, width, indent] of [
+      ['界界界界界', 4, 3],
+      ['aaaa 界界 bb', 3, 2],
+      ['界界界', 1, 0],
+      [`${color('red', '界界界')} 界`, 3, 1],
+    ] as const) {
+      const lines = wrap(text, width, indent)
+      for (const l of lines) expect(visible(l)).toBeLessThanOrEqual(Math.max(width, 2))
+    }
+    expect(wrap('界界界界界', 4, 3)).toEqual(['界界', '界界', '界'])
+    expect(wrap('aaaa 界界 bb', 3, 2)).toEqual(['aaa', '  a', '界', '界', '  b', '  b'])
+  })
+
+  test('an indent at or above the width still leaves room for content', () => {
+    expect(wrap('aaa bbb ccc', 4, 4)).toEqual(['aaa', '   b', '   b', '   b', '   c', '   c', '   c'])
+    for (const l of wrap('aaa bbb ccc', 3, 9)) expect(visible(l)).toBeLessThanOrEqual(3)
+  })
+
+  test('styles carry across breaks, each SGR parameter tracked on its own', () => {
+    expect(wrap('\x1b[1;31maaa\x1b[22m bbb', 4)).toEqual(['\x1b[1;31maaa\x1b[22m\x1b[0m', '\x1b[31mbbb'])
+    expect(wrap('\x1b[0;31maaa bbb', 4)).toEqual(['\x1b[0;31maaa\x1b[0m', '\x1b[31mbbb'])
+    expect(wrap('\x1b[01;34maaa bbb\x1b[0m', 4)).toEqual([
+      '\x1b[01;34maaa\x1b[0m',
+      '\x1b[01m\x1b[34mbbb\x1b[0m',
+    ])
+    expect(wrap('\x1b[1;38;5;196maaa bbb', 4)).toEqual([
+      '\x1b[1;38;5;196maaa\x1b[0m',
+      '\x1b[1m\x1b[38;5;196mbbb',
+    ])
+    expect(wrap('\x1b[31maaa\x1b[0;1m bbb', 4)).toEqual(['\x1b[31maaa\x1b[0;1m\x1b[0m', '\x1b[1mbbb'])
+  })
+
+  test('diff lines with wide characters are clipped to the width', () => {
+    const r = new SessionRenderer('s1', plain, () => 30)
+    r.feed(ev('session.tool.input.started', { name: 'edit' }))
+    r.feed(
+      ev('session.tool.called', {
+        input: { filePath: 'a.md', oldString: 'a\n', newString: `${'界'.repeat(40)}\n` },
+      }),
+    )
+    const lines = r.feed(ev('session.tool.success', { content: 'Edited a.md' }))
+    expect(lines[3]).toBe(`    +${'界'.repeat(12)}…`)
+    for (const l of lines) expect(visible(l)).toBeLessThanOrEqual(30)
+  })
+
+  test('a diff line clipped to one column or less keeps within the limit', () => {
+    for (const [width, expected] of [
+      [6, '    +…'],
+      [5, '    …'],
+      [4, '    '],
+    ] as const) {
+      const r = new SessionRenderer('s1', plain, () => width)
+      r.feed(ev('session.tool.input.started', { name: 'edit' }))
+      r.feed(
+        ev('session.tool.called', { input: { filePath: 'a.md', oldString: 'a\n', newString: '界界\n' } }),
+      )
+      const lines = r.feed(ev('session.tool.success', { content: 'Edited a.md' }))
+      expect(lines.at(-1)).toBe(expected)
+    }
+  })
+
   test('diff lines are clipped, not wrapped', () => {
     const r = new SessionRenderer('s1', plain, () => 60)
     r.feed(ev('session.tool.input.started', { name: 'edit' }))
