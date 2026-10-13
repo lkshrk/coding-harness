@@ -26,6 +26,8 @@ export interface ControlApi {
   reviewMissResult?: ReviewMissResponse
   profile?: ProfileRequest
   profileResult?: ProfileResponse
+  implement?: ImplementRequest
+  implementResult?: ImplementResponse
   run?: RunResponse
   attach?: AttachInfo
   [k: string]: unknown
@@ -121,6 +123,25 @@ export interface ProfileRequest {
 export interface ProfileResponse {
   active: string
   previous: string
+}
+export interface ImplementRequest {
+  /**
+   * Linear project name
+   */
+  project: string
+  merge_mode: 'manual' | 'auto'
+  profile?: string
+}
+export interface ImplementResponse {
+  /**
+   * moved to Todo
+   */
+  ready: string[]
+  /**
+   * waiting for blockers
+   */
+  waiting: string[]
+  warnings: string[]
 }
 export interface RunResponse {
   run: string

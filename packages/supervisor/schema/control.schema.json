@@ -21,6 +21,8 @@
     "reviewMissResult": { "$ref": "#/$defs/reviewMissResponse" },
     "profile": { "$ref": "#/$defs/profileRequest" },
     "profileResult": { "$ref": "#/$defs/profileResponse" },
+    "implement": { "$ref": "#/$defs/implementRequest" },
+    "implementResult": { "$ref": "#/$defs/implementResponse" },
     "run": { "$ref": "#/$defs/runResponse" },
     "attach": { "$ref": "#/$defs/attachInfo" }
   },
@@ -185,6 +187,26 @@
       "additionalProperties": false,
       "required": ["active", "previous"],
       "properties": { "active": { "type": "string" }, "previous": { "type": "string" } }
+    },
+    "implementRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "merge_mode"],
+      "properties": {
+        "project": { "type": "string", "minLength": 1, "description": "Linear project name" },
+        "merge_mode": { "enum": ["manual", "auto"] },
+        "profile": { "type": "string", "minLength": 1 }
+      }
+    },
+    "implementResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "waiting", "warnings"],
+      "properties": {
+        "ready": { "type": "array", "items": { "type": "string" }, "description": "moved to Todo" },
+        "waiting": { "type": "array", "items": { "type": "string" }, "description": "waiting for blockers" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
     },
     "runResponse": {
       "type": "object",
