@@ -19,6 +19,8 @@
     "ingest": { "$ref": "#/$defs/ingestRequest" },
     "reviewMiss": { "$ref": "#/$defs/reviewMissRequest" },
     "reviewMissResult": { "$ref": "#/$defs/reviewMissResponse" },
+    "profile": { "$ref": "#/$defs/profileRequest" },
+    "profileResult": { "$ref": "#/$defs/profileResponse" },
     "run": { "$ref": "#/$defs/runResponse" },
     "attach": { "$ref": "#/$defs/attachInfo" }
   },
@@ -171,6 +173,18 @@
       "additionalProperties": false,
       "required": ["path"],
       "properties": { "path": { "type": "string", "description": "the example file written" } }
+    },
+    "profileRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["use"],
+      "properties": { "use": { "type": "string", "minLength": 1 } }
+    },
+    "profileResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active", "previous"],
+      "properties": { "active": { "type": "string" }, "previous": { "type": "string" } }
     },
     "runResponse": {
       "type": "object",

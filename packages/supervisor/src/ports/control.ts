@@ -36,6 +36,7 @@ export interface ControlSupervisor extends InboxSupervisor {
   dependents(issue: string): Promise<DependentsResponse>
   resolveRun(target: string): Run | undefined
   retryIngest(issue: string): Promise<Run>
+  useProfile(name: string, by?: By): { active: string; previous: string }
   recordMiss(miss: MissReport): Promise<string>
 }
 
