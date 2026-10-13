@@ -76,8 +76,21 @@ const OUTPUT_LIMIT = 64 * 1024
 const TAIL_LINES = 200
 const OUTBOX_LABEL = 'nightshift.outbox'
 
-function tail(text: string): string {
+export function tail(text: string): string {
   return text.split('\n').slice(-TAIL_LINES).join('\n')
+}
+
+export function writeArtifact(
+  artifactsDir: string | undefined,
+  h: SandboxHandle,
+  res: CommandResult,
+): string {
+  if (res.stdout.length <= OUTPUT_LIMIT && res.stderr.length <= OUTPUT_LIMIT) return ''
+  const dir = join(artifactsDir ?? join(tmpdir(), 'nightshift-artifacts'), h.name)
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, `exec-${Date.now()}.log`)
+  writeFileSync(path, `--- stdout ---\n${res.stdout}\n--- stderr ---\n${res.stderr}\n`)
+  return path
 }
 
 export function memoryMb(memory: string | undefined, fallback = 8192): number {
@@ -190,7 +203,7 @@ export class DockerSandbox implements SandboxDriver {
       durationMs: res.durationMs,
       stdoutTail: tail(res.stdout),
       stderrTail: tail(res.stderr),
-      artifact: this.artifact(h, res),
+      artifact: writeArtifact(this.o.artifactsDir, h, res),
       timedOut,
     }
   }
@@ -286,14 +299,5 @@ export class DockerSandbox implements SandboxDriver {
   private async outbox(id: string): Promise<string | undefined> {
     const res = await this.cli.run(['inspect', '--format', `{{index .Config.Labels "${OUTBOX_LABEL}"}}`, id])
     return res.exitCode === 0 && res.stdout.trim() ? res.stdout.trim() : undefined
-  }
-
-  private artifact(h: SandboxHandle, res: CommandResult): string {
-    if (res.stdout.length <= OUTPUT_LIMIT && res.stderr.length <= OUTPUT_LIMIT) return ''
-    const dir = join(this.o.artifactsDir ?? join(tmpdir(), 'nightshift-artifacts'), h.name)
-    mkdirSync(dir, { recursive: true })
-    const path = join(dir, `exec-${Date.now()}.log`)
-    writeFileSync(path, `--- stdout ---\n${res.stdout}\n--- stderr ---\n${res.stderr}\n`)
-    return path
   }
 }

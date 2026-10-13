@@ -42,6 +42,7 @@ export {
   WORKER_HOME,
 } from './opencode'
 export { OpenCodeClient, OpenCodeError } from './opencode-client'
+export { type SbxCli, SbxSandbox, type SbxSandboxOptions } from './sbx'
 export {
   type CapReason,
   type Progress,
