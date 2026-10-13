@@ -109,6 +109,8 @@ export type {
   IngestRequest,
   Ok,
   PauseRequest,
+  ProfileRequest,
+  ProfileResponse,
   RetryRequest,
   ReviewMissRequest,
   ReviewMissResponse,

@@ -18,6 +18,8 @@ import type {
   Health,
   IngestRequest,
   PauseRequest,
+  ProfileRequest,
+  ProfileResponse,
   RetryRequest,
   ReviewMissRequest,
   ReviewMissResponse,
@@ -146,6 +148,10 @@ export function controlHandler(
         by,
       )
       return { run: run.id }
+    },
+    'POST /profile': async (req): Promise<ProfileResponse> => {
+      const { use } = await body<ProfileRequest>(req, 'profileRequest')
+      return sup.useProfile(use, by)
     },
     'POST /ingest': async (req) => {
       const { issue } = await body<IngestRequest>(req, 'ingestRequest')

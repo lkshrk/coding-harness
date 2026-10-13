@@ -24,6 +24,8 @@ export interface ControlApi {
   ingest?: IngestRequest
   reviewMiss?: ReviewMissRequest
   reviewMissResult?: ReviewMissResponse
+  profile?: ProfileRequest
+  profileResult?: ProfileResponse
   run?: RunResponse
   attach?: AttachInfo
   [k: string]: unknown
@@ -112,6 +114,13 @@ export interface ReviewMissResponse {
    * the example file written
    */
   path: string
+}
+export interface ProfileRequest {
+  use: string
+}
+export interface ProfileResponse {
+  active: string
+  previous: string
 }
 export interface RunResponse {
   run: string
