@@ -2,11 +2,12 @@
   "id": "stack-go",
   "version": "0.1.0",
   "name": "nightshift go stack",
-  "description": "Go with a C toolchain for cgo, gopls and golangci-lint, installed at build time for offline workers.",
+  "description": "Go with a C toolchain for cgo, gopls, gofumpt and golangci-lint, installed at build time for offline workers.",
   "options": {},
   "containerEnv": {
     "GOMODCACHE": "/var/cache/nightshift-deps/go/mod",
     "GOCACHE": "/var/cache/nightshift-deps/go/build",
+    "GOLANGCI_LINT_CACHE": "/var/cache/nightshift-deps/go/golangci-lint",
     "GOTOOLCHAIN": "local",
     "CGO_ENABLED": "1"
   },

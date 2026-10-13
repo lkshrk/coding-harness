@@ -2,7 +2,7 @@
 id: go
 markers:
   - file: go.mod
-version_files: [go.mod, .tool-versions]
+version_files: [go.mod, .go-version, .tool-versions]
 lsp:
   go:
     command: [gopls]
@@ -20,6 +20,7 @@ egress: [proxy.golang.org, sum.golang.org]
 env:
   GOMODCACHE: /var/cache/nightshift-deps/go/mod
   GOCACHE: /var/cache/nightshift-deps/go/build
+  GOLANGCI_LINT_CACHE: /var/cache/nightshift-deps/go/golangci-lint
   GOTOOLCHAIN: local
   CGO_ENABLED: "1"
 nested_docker: false
