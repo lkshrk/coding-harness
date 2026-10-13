@@ -7,6 +7,7 @@ import type {
   Classifier,
   GitHost,
   IssueSnapshot,
+  LeadAdvisor,
   LinearComment,
   LinearPort,
   Notification,
@@ -47,6 +48,7 @@ export type SupervisorDeps = {
   replanner?: Replanner
   stageHandler?: StageHandler
   gitHost?: GitHost
+  lead?: LeadAdvisor
   ingest?: VaultIngest
   syncVault?: () => Promise<void>
   secretsLocked?: () => Promise<boolean>
