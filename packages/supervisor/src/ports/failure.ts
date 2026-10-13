@@ -27,9 +27,10 @@ export type Classification = {
   action: Remediation
   evidence?: string
   fallback?: boolean
+  errors?: string[]
 }
 
-export type FailureSignal = { run: Run; reason: string; detail?: string }
+export type FailureSignal = { run: Run; reason: string; detail?: string; files?: string[] }
 
 export interface Classifier {
   classify(f: FailureSignal): Promise<Classification>

@@ -24,7 +24,9 @@ Classifies one failure into a failure class and quotes the evidence for it.
 The task message holds blocks between `--- BEGIN <NAME> ---` and `--- END <NAME> ---`; a missing block had no content:
 
 - `EVENT`: the failure: `WORKER_FAILED`, `WORKER_NO_FINISH`, `GATE_FAILED`, `CI_FAILED`, a review with verdict `fail`, or a finish with `BLOCKED` or `NEEDS_CONTEXT`.
+- `FILES`: the files the issue names, one per line.
 - `GATES`: output tail of the failed gates or CI.
+- `PROGRESS`: the worker's last progress: tool counts, last tool, diff lines.
 - `FINISH`: the worker's finish payload.
 - `HISTORY`: earlier attempts with their classes.
 
@@ -34,9 +36,9 @@ The task message holds blocks between `--- BEGIN <NAME> ---` and `--- END <NAME>
 2. Take the first class that fits:
    - `environment`: tooling, network, registry, sandbox or timeout outside the code.
    - `missing_dependency`: needs code or a decision from another unfinished issue.
-   - `insufficient_context`: a fact was missing or misread: `NEEDS_CONTEXT`, wrong file, misunderstood interface.
+   - `insufficient_context`: a fact was missing or misread: `NEEDS_CONTEXT`, wrong file, misunderstood interface, or `PROGRESS` shows wide search with few edits.
    - `architectural_conflict`: the issue contradicts the design or the existing structure.
-   - `task_too_large`: steps or time ran out with partial progress, or the change spans far more than the issue's files.
+   - `task_too_large`: steps or time ran out with partial progress (`PROGRESS` near the caps), or the change spans far more than `FILES`.
    - `implementation_defect`: the code is wrong: failing test, type or lint error, review `BLOCKER`.
    - `capability_limit`: `HISTORY` shows the same defect after repairs with enough context.
 3. Nothing fits: `unknown`.

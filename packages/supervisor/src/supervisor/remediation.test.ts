@@ -91,6 +91,53 @@ describe('failures and retries', () => {
     expect(h.sup.escalationCount('FOR-1')).toBe(1)
   })
 
+  test('an invalid classifier reply logs SINGLE_CALL_INVALID before the fallback classification', async () => {
+    const h = harness({
+      classifier: {
+        classify: async () => ({
+          class: 'unknown',
+          action: 'escalate_user',
+          fallback: true,
+          errors: ['class: invalid'],
+        }),
+      },
+    })
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    const events = h.sup.log
+      .since(null, { run: run.id, types: ['SINGLE_CALL_INVALID', 'FAILURE_CLASSIFIED'] })
+      .map((e) => [e.type, e.data])
+    expect(events).toEqual([
+      ['SINGLE_CALL_INVALID', { agent: 'classifier', errors: ['class: invalid'] }],
+      ['FAILURE_CLASSIFIED', { class: 'unknown', action: 'escalate_user', fallback: true }],
+    ])
+  })
+
+  test('a classification without errors logs no SINGLE_CALL_INVALID', async () => {
+    const h = harness({
+      classifier: { classify: async () => ({ class: 'unknown', action: 'escalate_user', fallback: true }) },
+    })
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    expect(h.of('SINGLE_CALL_INVALID')).toEqual([])
+    expect(h.of('FAILURE_CLASSIFIED').length).toBe(1)
+  })
+
+  test("the classifier receives the cached issue's Files entries", async () => {
+    const seen: (string[] | undefined)[] = []
+    const h = harness({
+      classifier: {
+        classify: async (f) => {
+          seen.push(f.files)
+          return { class: 'unknown', action: 'escalate_user' }
+        },
+      },
+    })
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    expect(seen).toEqual([['src/a.ts']])
+  })
+
   test('a failed review is an implementation defect: the repairer continues from the failed commit on the current base', async () => {
     let bases = 0
     let classifications = 0
