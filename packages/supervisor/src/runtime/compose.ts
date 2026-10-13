@@ -43,6 +43,7 @@ import {
 } from '../adapters/worker'
 import type { GateRunner, GitHost, LinearPort, SandboxDriver, WorkerDriver } from '../ports'
 import type { AttachInfo } from '../ports/generated/control'
+import { AcceptanceHandler } from '../stages/acceptance/handler'
 import {
   contextSelector,
   contextTaskMessage,
@@ -323,6 +324,15 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
     }),
     stageHandler: new StageRouter({
       intake: new IntakeHandler({
+        config: current,
+        agents,
+        linear,
+        gateway: hostGateway,
+        call: singleCall,
+        callbacks,
+        out,
+      }),
+      acceptance: new AcceptanceHandler({
         config: current,
         agents,
         linear,
