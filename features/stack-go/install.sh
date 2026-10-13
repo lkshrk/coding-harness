@@ -34,7 +34,7 @@ ensure_packages() {
 }
 
 prepare_cache() {
-  mkdir -p "$deps/go/mod" "$deps/go/build"
+  mkdir -p "$deps/go/mod" "$deps/go/build" "$deps/go/golangci-lint"
   chmod 1777 "$deps"
   chmod -R a+rwX "$deps/go"
 }
@@ -42,5 +42,5 @@ prepare_cache() {
 ensure_packages
 # Building gopls must not fill the image's copy of the runtime cache paths, which the shared mount hides.
 export GOMODCACHE="$tmp/gomod" GOCACHE="$tmp/gobuild" GOPATH="$tmp/gopath" GOTOOLCHAIN=local GOFLAGS=-modcacherw
-"$mise_install" "$here" go gofmt gopls golangci-lint
+"$mise_install" "$here" go gofmt gofumpt gopls golangci-lint
 prepare_cache

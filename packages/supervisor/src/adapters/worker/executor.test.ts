@@ -136,7 +136,7 @@ let steps: Run[]
 
 function executor(over: Partial<ConstructorParameters<typeof WorkerExecutor>[0]> = {}) {
   const ex = new WorkerExecutor({
-    config,
+    config: () => config,
     sandbox,
     worker,
     agents: new Map([['fixer', fixer]]),
@@ -337,6 +337,39 @@ describe('WorkerExecutor.start', () => {
     ])
   })
 
+  test('sandbox egress is the worker profile list with the OTel host', async () => {
+    config = {
+      ...config,
+      gateway: { ...config.gateway, otel_endpoint: 'https://otel.lan:4318/v1/traces' },
+    }
+    await started()
+    expect(sandbox.created[0]?.egress).toEqual({
+      allow: ['gateway.test', 'otel.lan:4318', 'registry.npmjs.org'],
+    })
+  })
+
+  test('a nested-Docker image adds the Docker Hub hosts to the sandbox egress', async () => {
+    await started({
+      image: async () => ({
+        image: 'nightshift/omni:1',
+        lsp: {},
+        egress: ['registry.npmjs.org'],
+        stacks: ['node', 'docker'],
+        nestedDocker: true,
+      }),
+    })
+    expect(sandbox.created[0]?.egress).toEqual({
+      allow: [
+        'auth.docker.io',
+        'gateway.test',
+        'production.cloudflare.docker.com',
+        'production.cloudfront.docker.com',
+        'registry-1.docker.io',
+        'registry.npmjs.org',
+      ],
+    })
+  })
+
   test("run limits come from the run's profile overlaid on limits.worker", async () => {
     const base = config.profiles.default as Profile
     config = {
@@ -359,6 +392,58 @@ describe('WorkerExecutor.start', () => {
       noDiff: { steps: 5, tokens: 40_000 },
     })
     expect(worker.starts[0]?.agent.files[0]?.content).toContain('steps: 60')
+  })
+
+  test("a repository's limits apply only to its runs and a profile's limits win over them", async () => {
+    const base = config.profiles.default as Profile
+    const omni = config.repositories.omni as Repo
+    config = {
+      ...config,
+      repositories: { ...config.repositories, omni: { ...omni, limits: { wall_clock: '90m', steps: 300 } } },
+      profiles: { ...config.profiles, local: { ...base, limits: { wall_clock: '20m' } } },
+    }
+    const ex = executor()
+    const issue = snapshot({ identifier: 'FOR-1' })
+    await ex.start({ run, issue, files: [] })
+    await ex.start({ run: { ...run, id: 'web-run', repository: 'web' }, issue, files: [] })
+    await ex.start({ run: { ...run, id: 'local-run', profile: 'local' }, issue, files: [] })
+    expect(worker.starts.map((s) => [s.limits.wallClockMs, s.limits.steps])).toEqual([
+      [5_400_000, 300],
+      [2_700_000, 200],
+      [1_200_000, 300],
+    ])
+  })
+
+  test('a config change between two starts reaches the second run', async () => {
+    const ex = executor()
+    const issue = snapshot({ identifier: 'FOR-1' })
+    await ex.start({ run, issue, files: [] })
+    config = {
+      ...config,
+      limits: {
+        ...config.limits,
+        worker: { ...config.limits.worker, steps: 50 },
+        watch: { ...config.limits.watch, no_tool_call_steps: 2 },
+      },
+    }
+    worker.stream = new Channel<HarnessEvent>()
+    await ex.start({ run: { ...run, id: 'second-run' }, issue, files: [] })
+    expect(worker.starts.map((s) => s.limits.steps)).toEqual([200, 50])
+    for (let i = 0; i < 2; i++) worker.stream.push(step)
+    await until(() => cb.of('stalled').length === 1)
+    expect(cb.of('stalled')[0]?.slice(1, 3)).toEqual(['second-run', 'no_tool_calls'])
+  })
+
+  test('a config without the watch and repository limits keys keeps the default thresholds', () => {
+    expect(config.limits.watch).toEqual({
+      no_tool_call_steps: 3,
+      repeated_tool_calls: 4,
+      idle: '5m',
+      no_diff_growth_steps: 40,
+      progress_steps: 5,
+      progress_interval: '60s',
+    })
+    expect(config.repositories.omni?.limits).toBeUndefined()
   })
 
   test("ships the agent's skills into the config dir and points OpenCode at them", async () => {
@@ -580,6 +665,28 @@ describe('WorkerExecutor watching', () => {
     for (let i = 0; i < 3; i++) worker.stream.push(step)
     await until(() => cb.of('stalled').length === 1)
     expect(cb.of('stalled')[0]?.[2]).toBe('no_tool_calls')
+  })
+
+  test('limits.watch.no_tool_call_steps: 2 reports a stall after two steps', async () => {
+    config = {
+      ...config,
+      limits: { ...config.limits, watch: { ...config.limits.watch, no_tool_call_steps: 2 } },
+    }
+    await started()
+    for (let i = 0; i < 2; i++) worker.stream.push(step)
+    await until(() => cb.of('stalled').length === 1)
+    expect(cb.of('stalled')[0]?.[2]).toBe('no_tool_calls')
+  })
+
+  test('limits.watch.idle: 1m reports an idle stall after one minute without events', async () => {
+    config = { ...config, limits: { ...config.limits, watch: { ...config.limits.watch, idle: '1m' } } }
+    await started()
+    clock = 59_000
+    await Bun.sleep(20)
+    expect(cb.of('stalled')).toEqual([])
+    clock = 60_000
+    await until(() => cb.of('stalled').length === 1)
+    expect(cb.of('stalled')[0]?.[2]).toBe('idle')
   })
 
   test('the same tool call four times in a row reports a stall', async () => {

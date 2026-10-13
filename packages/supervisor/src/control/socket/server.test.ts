@@ -310,6 +310,22 @@ describe('control socket', () => {
     })
   })
 
+  test('POST /profile switches the profile, refuses unknown names and validates the body', async () => {
+    const h = harness()
+    await h.sup.start()
+    expect(await h.req('POST', '/profile', { use: 'quality' })).toEqual({
+      status: 200,
+      body: { active: 'quality', previous: 'default' },
+    })
+    expect(h.sup.status().activeProfile).toBe('quality')
+    expect(await h.req('POST', '/profile', { use: 'nope' })).toEqual({
+      status: 409,
+      body: { error: { code: 'refused', message: "no profile 'nope'" } },
+    })
+    expect((await h.req('POST', '/profile', {})).status).toBe(400)
+    expect((await h.req('POST', '/profile', { use: '' })).status).toBe(400)
+  })
+
   test('POST /review-miss validates the request and refuses an unknown PR', async () => {
     const evalDir = mkdtempSync(join(tmpdir(), 'ns-eval-'))
     dirs.push(evalDir)

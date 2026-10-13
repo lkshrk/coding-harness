@@ -179,6 +179,94 @@ describe('config reload', () => {
   })
 })
 
+describe('profile switch', () => {
+  const reloaded = (config: Config) => ({ ok: true as const, config, sources: [] })
+  const withProfiles = (config: Config, ...names: string[]) => {
+    for (const name of names)
+      (config.profiles as Record<string, unknown>)[name] = structuredClone(config.profiles.default)
+    return config
+  }
+
+  test('new dispatches use the switched profile; a running run keeps its own', async () => {
+    const h = harness()
+    withProfiles(h.config, 'fast')
+    const first = await dispatchOne(h)
+    expect(h.sup.useProfile('fast')).toEqual({ active: 'fast', previous: 'default' })
+    h.linear.put(snapshot({ identifier: 'FOR-2', description: files('b') }))
+    expect((await h.sup.tick()).dispatched).toEqual(['FOR-2'])
+    expect(h.of('DISPATCHED').map((e) => [e.issue, e.data.profile])).toEqual([
+      ['FOR-1', 'default'],
+      ['FOR-2', 'fast'],
+    ])
+    expect(h.sup.runs.get(first.id)).toMatchObject({ profile: 'default', model: 'default/implementer' })
+    expect(h.sup.status().activeProfile).toBe('fast')
+  })
+
+  test('the override survives a restart on the same database', async () => {
+    const h = harness()
+    withProfiles(h.config, 'fast')
+    await h.sup.start()
+    h.sup.useProfile('fast')
+    const next = h.make({ instanceId: 'inst-2' })
+    await next.start()
+    expect(next.config.profiles.active).toBe('fast')
+    expect(next.status().activeProfile).toBe('fast')
+  })
+
+  test('an unknown profile is refused', async () => {
+    const h = harness()
+    await h.sup.start()
+    expect(() => h.sup.useProfile('nope')).toThrow("no profile 'nope'")
+    try {
+      h.sup.useProfile('nope')
+    } catch (e) {
+      expect((e as { code: string }).code).toBe('refused')
+    }
+    expect(h.sup.config.profiles.active).toBe('default')
+  })
+
+  test('a reload that changes profiles.active clears the override', async () => {
+    const h = harness()
+    withProfiles(h.config, 'fast', 'quality')
+    await h.sup.start()
+    h.sup.useProfile('fast')
+    const next = withProfiles(testConfig(), 'fast', 'quality')
+    next.profiles.active = 'quality'
+    await h.sup.reloadConfig(reloaded(next))
+    expect(h.sup.config.profiles.active).toBe('quality')
+    expect(h.sup.status().activeProfile).toBe('quality')
+    await h.make({ instanceId: 'inst-2' }).start()
+    expect(h.sup.status().activeProfile).toBe('default')
+  })
+
+  test('a reload that removes the override profile clears it', async () => {
+    const h = harness()
+    withProfiles(h.config, 'fast')
+    await h.sup.start()
+    h.sup.useProfile('fast')
+    await h.sup.reloadConfig(reloaded(testConfig()))
+    expect(h.sup.config.profiles.active).toBe('default')
+    expect(h.sup.status().activeProfile).toBe('default')
+  })
+
+  test('a reload of other settings keeps the override', async () => {
+    const h = harness()
+    withProfiles(h.config, 'fast')
+    await h.sup.start()
+    h.sup.useProfile('fast')
+    const next = withProfiles(testConfig(), 'fast')
+    next.limits.concurrency = 1
+    await h.sup.reloadConfig(reloaded(next))
+    expect(h.of('CONFIG_RELOADED')[0]?.data).toEqual({
+      changed: ['limits.concurrency'],
+      restart_required: false,
+    })
+    expect(h.sup.config.profiles.active).toBe('fast')
+    expect(h.sup.config.limits.concurrency).toBe(1)
+    expect(h.sup.status().activeProfile).toBe('fast')
+  })
+})
+
 describe('gateway reachability', () => {
   test('ordinary dispatch has a run cause and no gateway events', async () => {
     const h = harness()

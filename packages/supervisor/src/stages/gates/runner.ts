@@ -1,5 +1,6 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { gateEgress } from '../../policy/egress'
 import type { Check, GateResult, GateRunner, Mount, SandboxDriver, SandboxHandle } from '../../ports'
 
 export const GATE_REPO_MOUNT = '/mnt/repo.git'
@@ -12,8 +13,10 @@ export type SandboxGateRunnerOptions = {
   outbox: string
   artifacts: string
   resources: { cpus: number; memoryMb: number }
-  egress?: string[]
-}
+} & (
+  | { egress?: undefined; gatewayUrl?: string }
+  | { egress: (repository: string) => Promise<string[]>; gatewayUrl: string }
+)
 
 export function outputTail(text: string): string {
   return text.split('\n').slice(-TAIL_LINES).join('\n').slice(-OUTPUT_TAIL_CHARS)
@@ -41,6 +44,9 @@ export class SandboxGateRunner implements GateRunner {
     if (bundle) mounts.push({ hostPath: bundle, guestPath: GATE_BUNDLE_MOUNT, readOnly: true })
     // Docker Desktop keeps a deleted bind-mount path stale, so each gate gets a fresh outbox path.
     const outbox = join(this.o.outbox, `${name}-${Date.now().toString(36)}`)
+    const allow = this.o.egress
+      ? gateEgress({ gatewayUrl: this.o.gatewayUrl, stackHosts: await this.o.egress(repo.name) })
+      : []
     const handle = await this.o.sandbox.create({
       name,
       image: repo.image,
@@ -48,7 +54,7 @@ export class SandboxGateRunner implements GateRunner {
       outbox,
       mounts,
       env: {},
-      egress: { allow: this.o.egress ?? [] },
+      egress: { allow },
       workdir: '/work',
       labels: { nightshift: '1', run: opts.run ?? name, gate: name },
     })

@@ -13,6 +13,7 @@ export type Intent =
   | { kind: 'retryScheduled' }
   | { kind: 'stageEntered'; stage: string; from?: string }
   | { kind: 'unblocked' }
+  | { kind: 'parked' }
   | { kind: 'lost' }
   | { kind: 'humanChanged'; to: LifecycleState }
   | { kind: 'done' }
@@ -144,6 +145,7 @@ export const RULES: Table = {
     }
   }),
   unblocked: cells(() => ({ status: 'ready', log: 'blockers done' }), ['backlog']),
+  parked: cells(() => ({ status: 'backlog', awaiting: null, log: 'parked until its blockers are done' })),
   lost: cells(() => ({ status: 'ready', log: 'runtime state lost; dispatched again' }), ['running']),
   humanChanged: cells((current, intent) => humanChange(current, intent.to), ['running']),
   done: cells(

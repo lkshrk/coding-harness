@@ -46,6 +46,9 @@ export function createLinearPort(opts: LinearPortOptions): LinearPort {
       await writer.addBlocks(blocker, blocked)
     },
     uploadFile: (name, contentType, bytes) => writer.uploadFile(name, contentType, bytes),
+    async setProjectLabel(projectId, group, name) {
+      await writer.setProjectLabel(projectId, group, name)
+    },
   }
 }
 

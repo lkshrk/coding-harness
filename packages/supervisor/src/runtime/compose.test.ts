@@ -3,7 +3,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { activeProfile, GatewayError, loadAgents, runSingleCall, WORKER_BLOCKS } from '@nightshift/core'
-import { type CommandResult, type DockerCli, OpenCodeDriver } from '../adapters/worker'
+import {
+  type CommandResult,
+  type DockerCli,
+  DockerSandbox,
+  OpenCodeDriver,
+  SbxSandbox,
+} from '../adapters/worker'
 import { FakeSandboxDriver } from '../adapters/worker/testing'
 import type { HarnessEvent, WorkerDriver, WorkerStart } from '../ports'
 import { coveredIssues, setCovered } from '../state/coverage'
@@ -16,6 +22,7 @@ import {
   hostSkills,
   logNotifier,
   outboxDirs,
+  sandboxDriver,
   skillFiles,
 } from './compose'
 
@@ -454,6 +461,23 @@ describe('composeSupervisor', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('sandboxDriver', () => {
+  test('picks the driver from sandbox.driver', () => {
+    const base = testConfig()
+    const sbx = sandboxDriver(
+      { ...base, sandbox: { ...base.sandbox, driver: 'sbx' } },
+      { artifactsDir: '/tmp/a' },
+    )
+    expect(sbx).toBeInstanceOf(SbxSandbox)
+    expect(sbx.capabilities()).toEqual({ nestedDocker: true, egressPolicy: true, credentialInjection: true })
+    const docker = sandboxDriver(
+      { ...base, sandbox: { ...base.sandbox, driver: 'docker' } },
+      { artifactsDir: '/tmp/a' },
+    )
+    expect(docker).toBeInstanceOf(DockerSandbox)
   })
 })
 

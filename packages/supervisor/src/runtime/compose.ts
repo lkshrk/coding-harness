@@ -37,6 +37,8 @@ import {
   memoryMb,
   OPENCODE_PORT,
   OpenCodeDriver,
+  type SbxCli,
+  SbxSandbox,
   WorkerExecutor,
 } from '../adapters/worker'
 import type { GateRunner, GitHost, LinearPort, SandboxDriver, WorkerDriver } from '../ports'
@@ -69,6 +71,7 @@ export type ComposeOptions = {
   out?: (line: string) => void
   linear?: LinearPort
   docker?: DockerCli
+  sbx?: SbxCli
   sandbox?: SandboxDriver
   gates?: GateRunner
   worker?: WorkerDriver
@@ -87,6 +90,16 @@ export type Composed = {
   attach: (run: Run) => AttachInfo | undefined
   signal?: SignalInbox
   close: () => void
+}
+
+export function sandboxDriver(
+  config: Config,
+  o: { docker?: DockerCli; sbx?: SbxCli; publish?: number[]; artifactsDir: string },
+): SandboxDriver {
+  const base = { ...(o.publish ? { publish: o.publish } : {}), artifactsDir: o.artifactsDir }
+  return config.sandbox.driver === 'sbx'
+    ? new SbxSandbox({ ...(o.sbx ? { cli: o.sbx } : {}), ...base })
+    : new DockerSandbox({ ...(o.docker ? { cli: o.docker } : {}), ...base })
 }
 
 export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
@@ -121,25 +134,23 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       config: current,
       auth: createTokenProvider(config.linear.auth, (ref) => secrets.resolve(ref)),
     })
+  const clis = { ...(o.docker ? { docker: o.docker } : {}), ...(o.sbx ? { sbx: o.sbx } : {}) }
   const sandbox =
     o.sandbox ??
-    new DockerSandbox({
-      ...(o.docker ? { cli: o.docker } : {}),
-      publish: [OPENCODE_PORT],
-      artifactsDir: join(cache, 'artifacts'),
-    })
+    sandboxDriver(config, { ...clis, publish: [OPENCODE_PORT], artifactsDir: join(cache, 'artifacts') })
   const artifacts = join(state, 'artifacts')
   const gates =
     o.gates ??
     new SandboxGateRunner({
-      sandbox:
-        o.sandbox ?? new DockerSandbox({ ...(o.docker ? { cli: o.docker } : {}), artifactsDir: artifacts }),
+      sandbox: o.sandbox ?? sandboxDriver(config, { ...clis, artifactsDir: artifacts }),
       outbox: join(cache, 'outbox'),
       artifacts,
       resources: {
         cpus: config.sandbox.resources.cpus ?? 4,
         memoryMb: memoryMb(config.sandbox.resources.memory),
       },
+      egress: async (repository) => (await images(repository)).egress,
+      gatewayUrl: config.gateway.base_url,
     })
   const hostGateway = async () => {
     const gw = current().gateway
@@ -195,7 +206,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       ? new DshDriver({ sandbox, sessions, finishMcp: await buildFinishMcp() })
       : (opencode as OpenCodeDriver))
   const executor = new WorkerExecutor({
-    config: workerConfig(),
+    config: workerConfig,
     sandbox,
     worker,
     agents,

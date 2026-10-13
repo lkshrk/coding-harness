@@ -37,7 +37,10 @@ export function finishErrors(text: string | undefined): string {
   return (lines.length ? lines.join('\n') : t).slice(0, FINISH_ERRORS_MAX)
 }
 
-export type RunLimits = ConstructorParameters<typeof Watcher>[0] & { graceTurns: number }
+export type RunLimits = ConstructorParameters<typeof Watcher>[0] & {
+  graceTurns: number
+  thresholds?: Partial<WatchThresholds>
+}
 
 type Active = {
   run: Run
@@ -99,7 +102,7 @@ export class RunWatch {
       session,
       sandbox,
       workdir,
-      watcher: new Watcher(limits, this.d.thresholds, startedAt),
+      watcher: new Watcher(limits, { ...this.d.thresholds, ...limits.thresholds }, startedAt),
       graceLeft: limits.graceTurns,
       invalidFinish: 0,
       done: false,

@@ -3,6 +3,7 @@ import {
   formatError,
   type LoadResult,
   NIGHTSHIFT_VERSION,
+  profileEntries,
   validateAgainstWorkspace,
 } from '@nightshift/core'
 import { changedPaths, restartRequired } from '../policy/config'
@@ -54,6 +55,7 @@ const LEASE_TTL_MS = 180_000
 const RBW_LOCKED = 'rbw locked'
 const GATEWAY_UNAVAILABLE = 'gateway unavailable'
 const GATEWAY_FAILURES = 2
+const PROFILE_OVERRIDE = 'profile_override'
 
 export type TickReport = { dispatched: string[]; unblocked: string[]; stopped: string[]; waiting: Waiting[] }
 
@@ -64,6 +66,7 @@ export class Supervisor {
   readonly pullRequests: PullRequestStore
   readonly instanceId: string
   private cfg: Config
+  private base: Config
   private readonly d: SupervisorDeps
   private readonly now: () => Date
   private readonly retry: RetryQueue
@@ -78,6 +81,7 @@ export class Supervisor {
 
   constructor(deps: SupervisorDeps) {
     this.d = deps
+    this.base = deps.config
     this.cfg = deps.config
     this.now = deps.now ?? (() => new Date())
     const ulid = createUlid(() => this.now().getTime())
@@ -133,12 +137,12 @@ export class Supervisor {
   }
 
   async start(): Promise<RecoveryReport> {
+    this.applyOverride(this.rt.meta(PROFILE_OVERRIDE) || undefined)
     const workspace = await this.d.linear.workspace()
     const errors = validateAgainstWorkspace(this.cfg, workspace)
     if (errors.length) throw new Error(errors.map(formatError).join('\n'))
     this.rt.setMeta('instance', this.instanceId)
     this.rt.setMeta('linear_org', workspace.organization.urlKey)
-    this.rt.setMeta('active_profile', this.cfg.profiles.active)
     this.rt.setMeta('restart_required', 'false')
     this.paused = this.rt.meta('dispatch') === 'paused'
     retain(this.d.db, this.now())
@@ -154,6 +158,23 @@ export class Supervisor {
     await this.m.linearSync.sync()
     const report = await this.m.recovery.recover()
     return report
+  }
+
+  useProfile(name: string): { active: string; previous: string } {
+    if (!profileEntries(this.base.profiles).some(([n]) => n === name))
+      throw new ControlError('refused', `no profile '${name}'`)
+    const previous = this.cfg.profiles.active
+    this.rt.setMeta(PROFILE_OVERRIDE, name)
+    this.applyOverride(name)
+    return { active: name, previous }
+  }
+
+  // An override naming a profile the base config lacks is dropped.
+  private applyOverride(override: string | undefined): void {
+    const known = override !== undefined && profileEntries(this.base.profiles).some(([n]) => n === override)
+    if (override !== undefined && !known) this.rt.setMeta(PROFILE_OVERRIDE, '')
+    this.cfg = known ? { ...this.base, profiles: { ...this.base.profiles, active: override } } : this.base
+    this.rt.setMeta('active_profile', this.cfg.profiles.active)
   }
 
   async stop(reason = 'stopped'): Promise<void> {
@@ -349,19 +370,20 @@ export class Supervisor {
       await this.rt.notify(`config rejected: ${errors.join('; ')}`)
       return
     }
-    const changed = changedPaths(this.cfg, result.config)
+    const changed = changedPaths(this.base, result.config)
     if (!changed.length) return
     const restart = restartRequired(changed)
-    this.cfg = restart
+    this.base = restart
       ? {
           ...result.config,
-          paths: this.cfg.paths,
-          sandbox: { ...result.config.sandbox, driver: this.cfg.sandbox.driver },
+          paths: this.base.paths,
+          sandbox: { ...result.config.sandbox, driver: this.base.sandbox.driver },
         }
       : result.config
+    if (changed.includes('profiles.active')) this.rt.setMeta(PROFILE_OVERRIDE, '')
+    this.applyOverride(this.rt.meta(PROFILE_OVERRIDE) || undefined)
     this.log.append({ type: 'CONFIG_RELOADED', data: { changed, restart_required: restart } })
     if (restart) this.rt.setMeta('restart_required', 'true')
-    this.rt.setMeta('active_profile', this.cfg.profiles.active)
     this.m.verification.rescheduleRefused()
   }
 
