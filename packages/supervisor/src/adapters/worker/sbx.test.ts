@@ -117,8 +117,10 @@ describe('SbxSandbox', () => {
     const link = cli.last('exec')
     expect(link.slice(0, 6)).toEqual(['exec', '-u', 'root', 'nightshift-01RUN', 'sh', '-c'])
     expect(link[6]).toContain('rm -rf')
+    expect(link[6]).toContain('chmod 0777')
     expect(link.slice(7)).toEqual([
       'sh',
+      '/work',
       '/src/omni/.git',
       '/mnt/repo.git',
       cache,
@@ -135,7 +137,7 @@ describe('SbxSandbox', () => {
     expect(cli.calls.map((c) => c.args[0])).toEqual(['ls', 'create', 'exec', 'policy'])
   })
 
-  test('create with no egress and matching guest paths adds no rule and no link script', async () => {
+  test('create with no egress and matching guest paths adds no rule and only creates the workdir', async () => {
     await sbx.create(
       spec({
         egress: { allow: [] },
@@ -143,7 +145,11 @@ describe('SbxSandbox', () => {
       }),
     )
     expect(cli.all('policy')).toEqual([])
-    expect(cli.all('exec')).toEqual([])
+    const execs = cli.all('exec')
+    expect(execs).toHaveLength(1)
+    expect(execs[0]?.slice(0, 6)).toEqual(['exec', '-u', 'root', 'nightshift-01RUN', 'sh', '-c'])
+    expect(execs[0]?.[6]).toContain('mkdir -p "$1"')
+    expect(execs[0]?.slice(7)).toEqual(['sh', '/work'])
   })
 
   test('create is idempotent by name and rejects writable mounts', async () => {
@@ -163,6 +169,7 @@ describe('SbxSandbox', () => {
   test('create reports a failed sbx create', async () => {
     cli.replies.push((a) => (a[0] === 'create' ? { exitCode: 1, stderr: 'boom\n' } : undefined))
     await expect(sbx.create(spec())).rejects.toThrow('sbx create failed: boom')
+    expect(existsSync(join(dir, 'outbox', '01RUN'))).toBe(false)
   })
 
   test('a failing egress rule destroys the sandbox and throws', async () => {
@@ -305,6 +312,15 @@ describe('SbxSandbox', () => {
     await sbx.destroy(h)
     cli.replies = [(a) => (a[0] === 'rm' ? { exitCode: 1, stderr: 'daemon down' } : undefined)]
     await expect(sbx.destroy(h)).rejects.toThrow('sbx rm failed: daemon down')
+  })
+
+  test('destroy still forces removal when sbx ls fails', async () => {
+    await sbx.create(spec())
+    const outbox = join(dir, 'outbox', '01RUN')
+    cli.replies.push((a) => (a[0] === 'ls' ? { exitCode: 1, stderr: 'ls broke' } : undefined))
+    await sbx.destroy(h)
+    expect(cli.last('rm')).toEqual(['rm', '--force', 'nightshift-01RUN'])
+    expect(existsSync(outbox)).toBe(false)
   })
 
   test('destroy removes the outbox of a sandbox that is already gone, also after a restart', async () => {

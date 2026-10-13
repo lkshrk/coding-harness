@@ -324,6 +324,34 @@ describe('GhGitHost pull requests', () => {
     expect(gh.gh('view')[0]?.env.GH_TOKEN).toBe(PERSONAL_TOKEN)
   })
 
+  test('updateBranch rebases the PR on GitHub under the account token and returns the head after it', async () => {
+    const { gh, host } = setup()
+    const pr: PullRequest = {
+      url: 'https://github.com/lkshrk/omni/pull/1',
+      number: 1,
+      repository: 'litellm',
+      repo: 'lkshrk/omni',
+      branch: 'ns/FOR-1',
+      base: 'main',
+      account: 'personal',
+    }
+    gh.prs.push({
+      number: 1,
+      url: pr.url,
+      head: 'ns/FOR-1',
+      state: 'OPEN',
+      headSha: 'old',
+      rebaseTo: 'r3based',
+    })
+    expect(await host.updateBranch(pr)).toEqual({ headSha: 'r3based' })
+    const [update] = gh.gh('update-branch')
+    expect(update?.cmd).toEqual(['gh', 'pr', 'update-branch', '1', '--repo', 'lkshrk/omni', '--rebase'])
+    expect(update?.env.GH_TOKEN).toBe(PERSONAL_TOKEN)
+    expect(await host.updateBranch(pr)).toEqual({ headSha: 'r3based' })
+    await expect(host.updateBranch({ ...pr, branch: 'feature/x' })).rejects.toThrow('refusing to rebase')
+    expect(gh.gh('update-branch')).toHaveLength(2)
+  })
+
   const ciPr: PullRequest = {
     url: 'https://github.com/lkshrk/omni/pull/1',
     number: 1,

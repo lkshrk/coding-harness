@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { Config } from '@nightshift/core'
 import { importBundle } from '../../adapters/git/host'
 import type { Run } from '../../state/runs'
-import { snapshot } from '../../testing/testing'
+import { FakeNotifier, snapshot } from '../../testing/testing'
 import { git } from '../gates/testing'
 import { SCREENSHOT_MARKER } from './screenshots'
 import {
@@ -306,6 +306,56 @@ describe('integration stage (manual)', () => {
   })
 })
 
+describe('integration stage (auto merge mode)', () => {
+  const auto = { project: { id: 'p-omni', name: 'Omni', initiatives: [], labels: ['ai-merge:auto'] } }
+
+  test('an ai-merge:auto project records an auto PR that is not a draft', async () => {
+    const notifier = new FakeNotifier()
+    const h = integrationHarness(root, undefined, { notifier })
+    await h.integrated(auto)
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ mode: 'auto', draft: false })
+    expect(h.of('PR_CREATED')[0]?.data).toMatchObject({ mode: 'auto' })
+    expect(h.gh.gh('create')[0]?.cmd).not.toContain('--draft')
+    expect(h.out.join('\n')).not.toContain('overridden')
+    expect(notifier.sent.find((n) => n.kind === 'pr')?.action).toBe('nightshift merges PR #1 when CI passes')
+  })
+
+  test('an auto change touching a risk path opens a draft PR recorded as manual', async () => {
+    const h = integrationHarness(root, (c) => ({
+      ...c,
+      repositories: {
+        ...c.repositories,
+        omni: { ...(c.repositories.omni as Config['repositories'][string]), risk_paths: ['src/b.ts'] },
+      },
+    }))
+    await h.integrated(auto)
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ mode: 'manual', draft: true })
+    expect(h.out).toContain('FOR-1: merge mode auto overridden (risk paths: src/b.ts); using manual')
+  })
+
+  test('an unreviewed auto change is recorded as manual', async () => {
+    const h = integrationHarness(root)
+    h.linear.put(snapshot({ identifier: 'FOR-1', title: 'Trim names', ...auto }))
+    await h.first.start()
+    await h.first.tick()
+    const run = h.first.runs.forIssue('FOR-1').at(-1) as Run
+    await h.first.workerStarted(run.id, { sandbox: 'sb-1', session: 's-1' })
+    await h.first.workerFinished(run.id, FINISH)
+    await h.first.headImported(run.id, importBundle(h.fx.checkout, h.fx.bundle().bundle, h.fx.branch, run.id))
+    await h.first.gatesFinished(run.id, [gate('test')])
+    await h.first.reviewFinished(run.id, {
+      kind: 'unreviewed',
+      reason: 'invalid_output',
+      model: 'glm',
+      detail: 'bad',
+    })
+    await h.first.tick()
+    await until(() => h.linear.get('FOR-1').status === 'In Review', 'status In Review')
+    expect(h.first.pullRequests.get('FOR-1')?.mode).toBe('manual')
+    expect(h.out).toContain('FOR-1: merge mode auto overridden (unreviewed); using manual')
+  })
+})
+
 describe('integration stage (screenshots)', () => {
   const withUi =
     (ui: string[], run = SHOTS_COMMAND) =>
@@ -370,6 +420,15 @@ describe('integration stage (screenshots)', () => {
       '## Screenshots\nDraft: this change touches UI paths, but no screenshots were taken: the screenshots command failed on the base commit (exit 3).',
     )
     expect(h.first.pullRequests.get('FOR-1')?.draft).toBe(true)
+  })
+
+  test('an auto change whose screenshots fail is a draft recorded as manual', async () => {
+    const h = integrationHarness(root, withUi(['src/**'], 'exit 3'))
+    await h.integrated({
+      project: { id: 'p-omni', name: 'Omni', initiatives: [], labels: ['ai-merge:auto'] },
+    })
+    expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ mode: 'manual', draft: true })
+    expect(h.out).toContain('FOR-1: merge mode auto overridden (no screenshots); using manual')
   })
 
   test('a command that yields no images opens a draft PR that says why', async () => {
