@@ -1,5 +1,5 @@
 [tools]
-"aqua:rtk-ai/rtk" = "0.51.0"
+"aqua:rtk-ai/rtk" = "0.52.0"
 "aqua:cli/cli" = "2.102.0"
 "aqua:BurntSushi/ripgrep" = "15.2.0"
 "aqua:ast-grep/ast-grep" = "0.50.0"
