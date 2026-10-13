@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type {
   ExecResult,
@@ -17,6 +18,7 @@ export type SbxCli = DockerCli
 export const SBX_LOG = '/tmp/nightshift.log'
 
 const LABELS_FILE = '.labels.json'
+const OUTBOX_INDEX = join(tmpdir(), 'nightshift-sbx-outboxes')
 const LINK_SCRIPT =
   'while [ $# -gt 0 ]; do mkdir -p "$(dirname "$2")" && rm -rf "$2" && ln -s "$1" "$2" || exit 1; shift 2; done'
 
@@ -45,6 +47,8 @@ export class SbxSandbox implements SandboxDriver {
     const h: SandboxHandle = { driver: 'sbx', id: name, name: spec.name }
     if (await this.entry(name)) return h
     mkdirSync(spec.outbox, { recursive: true })
+    mkdirSync(OUTBOX_INDEX, { recursive: true })
+    writeFileSync(join(OUTBOX_INDEX, name), spec.outbox)
     writeFileSync(join(spec.outbox, LABELS_FILE), JSON.stringify({ ...spec.labels, nightshift: '1' }))
     const caches = spec.mounts.filter((m) => !m.readOnly)
     for (const m of caches) writableCache(m.hostPath)
@@ -217,11 +221,15 @@ export class SbxSandbox implements SandboxDriver {
   }
 
   async destroy(h: SandboxHandle): Promise<void> {
-    const outbox = (await this.entry(h.id))?.workspaces?.[0]
+    const indexed = join(OUTBOX_INDEX, h.id)
+    const outbox =
+      (await this.entry(h.id))?.workspaces?.[0] ??
+      (existsSync(indexed) ? readFileSync(indexed, 'utf8').trim() : undefined)
     const res = await this.cli.run(['rm', '--force', h.id])
     if (res.exitCode !== 0 && !/not found/i.test(res.stderr))
       throw new Error(`sbx rm failed: ${res.stderr.trim()}`)
     if (outbox) rmSync(outbox, { recursive: true, force: true })
+    rmSync(indexed, { force: true })
   }
 
   private async entries(): Promise<SbxEntry[]> {

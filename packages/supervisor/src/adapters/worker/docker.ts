@@ -85,7 +85,8 @@ export function writeArtifact(
   h: SandboxHandle,
   res: CommandResult,
 ): string {
-  if (res.stdout.length <= OUTPUT_LIMIT && res.stderr.length <= OUTPUT_LIMIT) return ''
+  if (Buffer.byteLength(res.stdout) <= OUTPUT_LIMIT && Buffer.byteLength(res.stderr) <= OUTPUT_LIMIT)
+    return ''
   const dir = join(artifactsDir ?? join(tmpdir(), 'nightshift-artifacts'), h.name)
   mkdirSync(dir, { recursive: true })
   const path = join(dir, `exec-${Date.now()}.log`)

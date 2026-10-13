@@ -207,6 +207,12 @@ describe('SbxSandbox', () => {
     expect(res.artifact.startsWith(join(dir, 'artifacts', '01RUN'))).toBe(true)
   })
 
+  test('exec measures the artifact threshold in bytes', async () => {
+    cli.replies.push(() => ({ stdout: 'ä'.repeat(40_000) }))
+    const res = await sbx.exec(h, ['cat', 'log'])
+    expect(res.artifact.startsWith(join(dir, 'artifacts', '01RUN'))).toBe(true)
+  })
+
   test('spawn detaches into the log file and logs tails it', async () => {
     cli.replies.push((a) => (a[0] === 'exec' ? { stdout: '77\n' } : undefined))
     expect(await sbx.spawn(h, ['opencode-worker', 'serve'], { env: { K: 'v' } })).toEqual({
@@ -299,5 +305,16 @@ describe('SbxSandbox', () => {
     await sbx.destroy(h)
     cli.replies = [(a) => (a[0] === 'rm' ? { exitCode: 1, stderr: 'daemon down' } : undefined)]
     await expect(sbx.destroy(h)).rejects.toThrow('sbx rm failed: daemon down')
+  })
+
+  test('destroy removes the outbox of a sandbox that is already gone, also after a restart', async () => {
+    await sbx.create(spec())
+    const outbox = join(dir, 'outbox', '01RUN')
+    cli.sandboxes = []
+    cli.replies.push((a) =>
+      a[0] === 'rm' ? { exitCode: 1, stderr: "error: sandbox 'nightshift-01RUN' not found" } : undefined,
+    )
+    await new SbxSandbox({ cli, artifactsDir: join(dir, 'artifacts') }).destroy(h)
+    expect(existsSync(outbox)).toBe(false)
   })
 })
