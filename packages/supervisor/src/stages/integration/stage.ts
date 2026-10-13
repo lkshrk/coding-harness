@@ -93,7 +93,8 @@ export class IntegrationHandler implements StageHandler {
     }
     const title = pullRequestTitle(work.issue)
     const existing = cb.pullRequests.get(id)
-    if (existing && existing.headSha === run.headSha) {
+    // The merge queue may have rebased this run's head on the host; pushing it again would undo that.
+    if (existing && (existing.headSha === run.headSha || existing.run === run.id)) {
       if (lifecycleOf(config, work.issue.team, work.issue.status) !== 'review')
         await cb.pullRequestOpened(existing, title)
       return
@@ -110,7 +111,12 @@ export class IntegrationHandler implements StageHandler {
     const risk = riskPathsTouched(changed, repo.risk_paths)
     const ui = riskPathsTouched(changed, repo.ui_paths ?? [])
     const requested = viewIssue(work.issue, config, { covered: true })?.mergeMode ?? 'manual'
-    if (requested !== 'manual')
+    const unreviewed = cb.forcedManual(id) !== null
+    const override = risk.length ? `risk paths: ${risk.join(', ')}` : unreviewed ? 'unreviewed' : null
+    let mode: 'auto' | 'manual' = requested === 'auto' && override === null ? 'auto' : 'manual'
+    if (requested === 'auto' && override)
+      this.d.out?.(`${id}: merge mode auto overridden (${override}); using manual`)
+    else if (requested === 'feature-branch')
       this.d.out?.(`${id}: merge mode ${requested} is not supported yet; using manual`)
     const branch = prBranch(id)
     const expected = existing ? (cb.continuedFrom(run) ?? existing.headSha) : undefined
@@ -151,6 +157,10 @@ export class IntegrationHandler implements StageHandler {
         : { reason: 'screenshots are not available in this supervisor' }
     if (shots && 'reason' in shots) this.d.out?.(`${id}: no screenshots: ${shots.reason}`)
     const draft = risk.length > 0 || (shots !== undefined && 'reason' in shots)
+    if (draft && mode === 'auto') {
+      mode = 'manual'
+      this.d.out?.(`${id}: merge mode auto overridden (no screenshots); using manual`)
+    }
     const body = this.body(work, run, cb, risk, config, attempts, shots)
     const pr = await this.d.host.openPullRequest({
       repository: run.repository,
@@ -168,7 +178,7 @@ export class IntegrationHandler implements StageHandler {
         headSha,
         title,
         body,
-        mode: 'manual',
+        mode,
         draft,
         ci: 'pending',
       },

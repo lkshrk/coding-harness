@@ -411,11 +411,43 @@ export class GhGitHost implements GitHost {
     })
   }
 
-  async merge(pr: PullRequest, method: 'squash' | 'merge' | 'rebase'): Promise<{ sha: string }> {
+  async updateBranch(pr: PullRequest): Promise<{ headSha: string }> {
+    if (!pr.branch.startsWith(BRANCH_PREFIX))
+      throw new Error(
+        `refusing to rebase ${pr.branch}: nightshift rebases only its own ${BRANCH_PREFIX} branches`,
+      )
     await this.o.tokens.withToken(pr.repository, async (token) => {
-      const r = await this.run(['gh', 'pr', 'merge', String(pr.number), '--repo', pr.repo, `--${method}`], {
-        env: gitAuthEnv(token),
-      })
+      const r = await this.run(
+        ['gh', 'pr', 'update-branch', String(pr.number), '--repo', pr.repo, '--rebase'],
+        { env: gitAuthEnv(token) },
+      )
+      this.check(r, 'gh pr update-branch')
+    })
+    const after = await this.state(pr)
+    if (!after.headSha) throw new Error(`${pr.url} has no head after update-branch`)
+    return { headSha: after.headSha }
+  }
+
+  async merge(
+    pr: PullRequest,
+    method: 'squash' | 'merge' | 'rebase',
+    expectedHead: string,
+  ): Promise<{ sha: string }> {
+    await this.o.tokens.withToken(pr.repository, async (token) => {
+      const r = await this.run(
+        [
+          'gh',
+          'pr',
+          'merge',
+          String(pr.number),
+          '--repo',
+          pr.repo,
+          `--${method}`,
+          '--match-head-commit',
+          expectedHead,
+        ],
+        { env: gitAuthEnv(token) },
+      )
       this.check(r, 'gh pr merge')
     })
     const merged = await this.state(pr)

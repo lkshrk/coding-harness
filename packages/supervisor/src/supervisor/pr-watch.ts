@@ -1,3 +1,4 @@
+import { BRANCH_PREFIX } from '../policy/naming'
 import { INTEGRATION, lifecycleOf, viewIssue } from '../policy/stages'
 import type { CiState, GitHost, ReviewThread } from '../ports'
 import { CiFailureStore, type PullRequestRecord, ReviewRoundStore } from '../stages/integration/records'
@@ -45,7 +46,10 @@ export class PullRequestWatch {
         kind: 'pr',
         url: record.url,
         context: this.runContext(record.run),
-        action: `Review and merge PR #${record.number}${this.forcedManual(record.issue) ? ' (unreviewed, check carefully)' : ''}`,
+        action:
+          record.mode === 'auto'
+            ? `nightshift merges PR #${record.number} when CI passes`
+            : `Review and merge PR #${record.number}${this.forcedManual(record.issue) ? ' (unreviewed, check carefully)' : ''}`,
       })
     }
   }
@@ -75,6 +79,43 @@ export class PullRequestWatch {
         }
       } catch (e) {
         console.error(`watch ${pr.url} (${pr.issue}): ${(e as Error).message}`)
+      }
+    }
+    await this.advanceMergeQueue()
+  }
+
+  // Per repository and base, the open auto PR with the lowest number merges first; the others wait.
+  async advanceMergeQueue(): Promise<void> {
+    const host = this.rt.deps.gitHost
+    if (!host) return
+    const heads = new Map<string, PullRequestRecord>()
+    for (const pr of this.rt.pullRequests.all()) {
+      if (pr.mode !== 'auto') continue
+      const key = `${pr.repository}:${pr.base}`
+      const head = heads.get(key)
+      if (!head || pr.number < head.number) heads.set(key, pr)
+    }
+    const rounds = new ReviewRoundStore(this.rt.deps.db)
+    for (const pr of heads.values()) {
+      if (pr.ci !== 'passed' || !pr.branch.startsWith(BRANCH_PREFIX)) continue
+      if (this.rt.runs.active().some((r) => r.issue === pr.issue)) continue
+      if (this.flow.awaiting(pr.issue) !== null || rounds.get(pr.issue).pending) continue
+      try {
+        const state = await host.state(pr)
+        if (state.state !== 'open' || state.mergeable !== 'mergeable') continue
+        if (state.headSha && state.headSha !== pr.headSha) {
+          this.rt.pullRequests.put({ ...pr, headSha: state.headSha, ci: 'pending' })
+          continue
+        }
+        const { headSha } = await host.updateBranch(pr)
+        if (headSha !== pr.headSha) {
+          this.rt.pullRequests.put({ ...pr, headSha, ci: 'pending' })
+          continue
+        }
+        const { sha } = await host.merge(pr, 'squash', pr.headSha)
+        await this.pullRequestMerged({ ...pr, mergeSha: sha })
+      } catch (e) {
+        console.error(`merge queue ${pr.url} (${pr.issue}): ${(e as Error).message}`)
       }
     }
   }

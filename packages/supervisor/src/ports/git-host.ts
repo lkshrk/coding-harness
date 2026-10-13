@@ -78,7 +78,13 @@ export interface GitHost {
   // Check results of the latest completed CI run on the PR's base sha; null when there is none.
   baseCi(pr: PullRequest): Promise<CiState | null>
   state(pr: PullRequest): Promise<PullRequestState>
-  merge(pr: PullRequest, method: 'squash' | 'merge' | 'rebase'): Promise<{ sha: string }>
+  // Rebases the PR branch onto its base on the host; returns the head afterwards.
+  updateBranch(pr: PullRequest): Promise<{ headSha: string }>
+  merge(
+    pr: PullRequest,
+    method: 'squash' | 'merge' | 'rebase',
+    expectedHead: string,
+  ): Promise<{ sha: string }>
   reviewThreads(pr: PullRequest): Promise<ReviewThread[]>
   replyToThread(pr: PullRequest, commentId: number, body: string): Promise<{ id: number }>
   resolveThread(pr: PullRequest, threadId: string): Promise<void>
