@@ -8,12 +8,14 @@ export HOME="$work/home"
 mkdir -p "$HOME" "$work/demo" "$work/cgo"
 test "${GOMODCACHE:?}" = /var/cache/nightshift-deps/go/mod
 test "${GOCACHE:?}" = /var/cache/nightshift-deps/go/build
+test "${GOLANGCI_LINT_CACHE:?}" = /var/cache/nightshift-deps/go/golangci-lint
 test "${GOTOOLCHAIN:?}" = local
 test "${CGO_ENABLED:?}" = 1
 test -w "$GOMODCACHE"
 test -w "$GOCACHE"
+test -w "$GOLANGCI_LINT_CACHE"
 test -z "${GOFLAGS:-}"
-for tool in go gofmt gopls golangci-lint gcc; do
+for tool in go gofmt gofumpt gopls golangci-lint gcc; do
   command -v "$tool"
 done
 if command -v mise >/dev/null; then
@@ -181,11 +183,13 @@ GO
 
 go version
 gopls version
+gofumpt --version
 golangci-lint version
 gcc --version | head -1
 
 (cd "$work/demo" && go build ./... && go vet ./... && go test ./...)
 (cd "$work/demo" && test -z "$(gofmt -l .)")
+(cd "$work/demo" && test -z "$(gofumpt -l .)")
 (cd "$work/demo" && golangci-lint run)
 (cd "$work/cgo" && go build ./... && go test -race ./...)
 

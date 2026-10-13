@@ -156,7 +156,7 @@ describe('loadStacks', () => {
     expect(python?.checks.map((c) => c.name)).toEqual(['sync', 'lint', 'test'])
     const go = stacks.get('go')
     expect(go?.markers).toEqual([{ file: 'go.mod' }])
-    expect(go?.versionFiles).toEqual(['go.mod', '.tool-versions'])
+    expect(go?.versionFiles).toEqual(['go.mod', '.go-version', '.tool-versions'])
     expect(go?.lsp.go).toEqual({ command: ['gopls'], extensions: ['.go'] })
     expect(go?.checks.map((c) => c.run)).toEqual([
       'go build ./...',
@@ -168,6 +168,7 @@ describe('loadStacks', () => {
     expect(go?.env).toEqual({
       GOMODCACHE: '/var/cache/nightshift-deps/go/mod',
       GOCACHE: '/var/cache/nightshift-deps/go/build',
+      GOLANGCI_LINT_CACHE: '/var/cache/nightshift-deps/go/golangci-lint',
       GOTOOLCHAIN: 'local',
       CGO_ENABLED: '1',
     })
