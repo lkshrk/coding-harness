@@ -4,7 +4,7 @@ import type { ReplanReport } from '../ports'
 import { TaskTooLargeError } from '../stages/context'
 import { issueBody, snapshot } from '../testing/testing'
 import { proposalErrors } from './replan'
-import { harness } from './testing'
+import { dispatchOne, harness } from './testing'
 
 const part = (file: string) => issueBody([file])
 
@@ -140,6 +140,134 @@ describe('replan proposals', () => {
     expect([...h.linear.store.values()].filter((i) => i.parent === 'FOR-1').map((i) => i.title)).toEqual([
       'Missing API',
     ])
+  })
+
+  test('an approved create_blocker parks the issue in Backlog, then Todo once the blocker is Done', async () => {
+    const { h, proposal } = await proposed({
+      action: 'create_blocker',
+      blocker: { title: 'Missing API', description: part('src/api.ts') },
+      reason: 'needs the API',
+    })
+    h.linear.reply('FOR-1', proposal.id, 'approve')
+    await h.sup.tick()
+    const blockers = [...h.linear.store.values()].filter((i) => i.parent === 'FOR-1')
+    expect(blockers.length).toBe(1)
+    const blocker = blockers[0]?.identifier as string
+    expect(h.linear.get('FOR-1').blockedBy.map((b) => b.identifier)).toEqual([blocker])
+    expect(h.linear.get('FOR-1').status).toBe('Backlog')
+    expect(h.sup.awaiting('FOR-1')).toBeNull()
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').status).toBe('Backlog')
+    h.linear.patch(blocker, { status: 'Done' })
+    await h.sup.tick()
+    expect(h.linear.get('FOR-1').status).toBe('Todo')
+  })
+
+  test('a retried create_blocker completion creates no duplicate issue or relation', async () => {
+    const { h, proposal } = await proposed({
+      action: 'create_blocker',
+      blocker: { title: 'Missing API', description: part('src/api.ts') },
+      reason: 'needs the API',
+    })
+    const addBlocks = h.linear.addBlocks.bind(h.linear)
+    let linkFailures = 1
+    h.linear.addBlocks = async (blocker, blocked) => {
+      if (linkFailures-- > 0) throw new Error('linear: 502')
+      return addBlocks(blocker, blocked)
+    }
+    h.linear.reply('FOR-1', proposal.id, 'approve')
+    await h.sup.tick()
+    await h.sup.tick()
+    await h.sup.tick()
+    expect(linkFailures).toBeLessThan(0)
+    expect([...h.linear.store.values()].filter((i) => i.parent === 'FOR-1').length).toBe(1)
+    expect(h.linear.get('FOR-1').blockedBy.length).toBe(1)
+    expect(h.linear.get('FOR-1').status).toBe('Backlog')
+    expect((await h.linear.comments('FOR-1')).filter((c) => c.body.startsWith('Created ')).length).toBe(1)
+  })
+})
+
+describe('escalate_lead', () => {
+  const lead = (over: Parameters<typeof harness>[0] = {}) =>
+    harness({
+      classifier: { classify: async () => ({ class: 'architectural_conflict', action: 'escalate_lead' }) },
+      ...over,
+    })
+
+  async function expectLeadQuestion(h: ReturnType<typeof harness>, reason: string) {
+    expect(h.of('QUESTION_ASKED').map((e) => e.data.to)).toEqual(['lead'])
+    const bodies = (await h.linear.comments('FOR-1')).map((c) => c.body)
+    const questions = bodies.filter((b) => b.startsWith('Question for the lead'))
+    expect(questions.length).toBe(1)
+    expect(questions[0]).toContain(
+      `Design question after attempt 1 (architectural_conflict): ${reason}. How should FOR-1 proceed?`,
+    )
+    expect(h.db.query('SELECT asked_to FROM questions').all()).toEqual([{ asked_to: 'lead' }])
+    expect(h.linear.get('FOR-1').status).toBe('Blocked')
+    expect(h.sup.awaiting('FOR-1')?.kind).not.toBe('escalated')
+    expect(bodies.some((b) => b.startsWith('Replanner:'))).toBe(false)
+  }
+
+  test('a replanner escalate_lead asks the lead instead of escalating to you', async () => {
+    const h = lead({
+      replanner: { replan: async () => ({ action: 'escalate_lead', reason: 'design open' }) },
+    })
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    await expectLeadQuestion(h, 'design open')
+  })
+
+  test('a classified escalate_lead without a replanner asks the lead', async () => {
+    const h = lead()
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash', 'two modules disagree')
+    await expectLeadQuestion(h, 'two modules disagree')
+  })
+
+  test('a classified escalate_lead with a null replanner report asks the lead', async () => {
+    const h = lead({ replanner: { replan: async () => null } })
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    await expectLeadQuestion(h, 'architectural_conflict')
+  })
+
+  test('a reply to the lead question resumes the issue', async () => {
+    const h = lead()
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    const comment = String(h.of('QUESTION_ASKED')[0]?.data.comment)
+    h.linear.reply('FOR-1', comment, 'Keep the module boundary.')
+    await h.sup.tick()
+    expect(h.of('QUESTION_ANSWERED')[0]?.data).toMatchObject({ comment, answer: 'Keep the module boundary.' })
+    expect(h.linear.get('FOR-1').status).not.toBe('Blocked')
+  })
+
+  test('the lead question is posted once per failure event', async () => {
+    const h = lead()
+    const run = await dispatchOne(h)
+    await h.sup.workerFailed(run.id, 'crash')
+    await h.sup.tick()
+    const bodies = (await h.linear.comments('FOR-1')).map((c) => c.body)
+    expect(bodies.filter((b) => b.startsWith('Question for the lead')).length).toBe(1)
+  })
+
+  test('an invalid split proposal still escalates to you', async () => {
+    const h = harness({
+      replanner: {
+        replan: async () => ({
+          action: 'split',
+          sub_issues: [
+            { title: 'a', description: 'no template' },
+            { title: 'b', description: 'no template' },
+          ],
+          reason: 'r',
+        }),
+      },
+    })
+    h.executor.failStart = new TaskTooLargeError('too big')
+    await dispatchOne(h)
+    expect(h.sup.awaiting('FOR-1')).toEqual({ kind: 'escalated', stage: 'implementation' })
+    expect(h.of('QUESTION_ASKED')).toEqual([])
   })
 })
 
