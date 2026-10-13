@@ -145,9 +145,9 @@ export async function generate(): Promise<Generated[]> {
       content: await types(FINISH_SCHEMA, readSchema(FINISH_SCHEMA), 'FinishPayload'),
     },
     ...(await Promise.all(
-      ['duplicate-judge', 'intake'].map(async (agent) => {
+      ['acceptor', 'duplicate-judge', 'intake'].map(async (agent) => {
         const source = join(ROOT, 'schemas', `${agent}.json`)
-        const name = agent === 'duplicate-judge' ? 'DuplicateJudgeOutput' : 'IntakeOutput'
+        const name = `${agent.replace(/(^|-)(\w)/g, (_, __, c: string) => c.toUpperCase())}Output`
         return {
           path: join(import.meta.dir, 'agents/generated', `${agent}.ts`),
           content: await types(source, readSchema(source), name),

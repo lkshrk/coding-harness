@@ -402,6 +402,10 @@ export class Supervisor {
     return readStatus(this.d.db)
   }
 
+  children(identifier: string): IssueSnapshot[] {
+    return [...this.cache.values()].filter((i) => i.parent === identifier)
+  }
+
   resolveRun(target: string): Run | undefined {
     return resolveRun(this.runs, target)
   }

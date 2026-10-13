@@ -26,6 +26,7 @@ export {
   splitFrontmatter,
   validateFrontmatter,
 } from './frontmatter'
+export type { AcceptorOutput } from './generated/acceptor'
 export type { DuplicateJudgeOutput } from './generated/duplicate-judge'
 export type { IntakeOutput } from './generated/intake'
 export { lintAgent } from './lint'
