@@ -7,6 +7,7 @@ import { ATTACH_USAGE, attach } from './attach'
 import { answer, CONTROL_USAGE, cover, ingest, pause, retry, send, stop } from './control'
 import { LEAD_USAGE, lead } from './lead'
 import { LOGS_USAGE, logs } from './logs'
+import { PROFILE_USAGE, profile } from './profile'
 import { QUESTIONS_USAGE, questions, TASKS_USAGE, tasks, WORKERS_USAGE, workers } from './read'
 import { DIFF_USAGE, diff, TESTS_USAGE, tests } from './results'
 import { REVIEW_MISS_USAGE, reviewMiss } from './review-miss'
@@ -32,6 +33,7 @@ export const COMMAND_HELP: Record<string, { usage: string; description: string }
   tasks: { usage: TASKS_USAGE, description: 'List managed issues.' },
   workers: { usage: WORKERS_USAGE, description: 'List active workers.' },
   logs: { usage: LOGS_USAGE, description: 'Show or follow supervisor events.' },
+  profile: { usage: PROFILE_USAGE, description: 'Show or switch the model profile.' },
   questions: { usage: QUESTIONS_USAGE, description: 'List unanswered questions.' },
   diff: { usage: DIFF_USAGE, description: 'Show a run’s code changes.' },
   tests: { usage: TESTS_USAGE, description: 'Show gate and review results.' },
@@ -62,6 +64,7 @@ export const COMMANDS: Record<string, Command> = {
   workers,
   logs,
   questions,
+  profile,
   diff,
   tests,
   tail,
