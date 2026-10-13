@@ -44,7 +44,12 @@ function criteria(issue: IssueSnapshot): string[] {
   const section = /^##\s*Acceptance criteria\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/im.exec(issue.description)?.[1]
   return (section ?? '')
     .split('\n')
-    .map((l) => /^\s{0,3}(?:[-*+]|\d+[.)])\s+(.*)$/.exec(l)?.[1]?.trim())
+    .map((l) =>
+      /^\s{0,3}(?:[-*+]|\d+[.)])\s+(.*)$/
+        .exec(l)?.[1]
+        ?.replace(/^\[[ xX]\]\s+/, '')
+        .trim(),
+    )
     .filter((l): l is string => !!l)
 }
 
@@ -98,23 +103,41 @@ export function acceptanceInput(issue: IssueSnapshot, list: string[], cb: Accept
 
 const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ')
 
-function verdictComment(verdicts: Verdict[]): string {
+function verdictComment(verdicts: Verdict[], ignored: Verdict[]): string {
   return [
     'Acceptance verdict:',
     '',
     '| criterion | verdict | evidence |',
     '| --- | --- | --- |',
     ...verdicts.map((v) => `| ${cell(v.criterion)} | ${v.verdict} | ${cell(v.evidence)} |`),
+    ...(ignored.length > 0
+      ? ['', `Ignored: ${ignored.map((v) => `${cell(v.criterion)} (${v.verdict})`).join('; ')}`]
+      : []),
   ].join('\n')
 }
 
-const norm = (text: string) => text.replace(/\s+/g, ' ').trim()
+const norm = (text: string) =>
+  text
+    .replace(/^\s*\[[ xX]\]\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
 
-// Every input criterion gets exactly one verdict; one the acceptor skipped cannot count as met.
-function judged(list: string[], output: Verdict[]): Verdict[] {
+const severity: Record<Verdict['verdict'], number> = { met: 0, unverifiable: 1, not_met: 2 }
+
+// Every input criterion gets exactly one verdict, the worst given; one the acceptor skipped cannot count as met.
+function judged(list: string[], output: Verdict[]): { verdicts: Verdict[]; ignored: Verdict[] } {
+  const known = new Set(list.map(norm))
   const byText = new Map<string, Verdict>()
-  for (const v of output) if (!byText.has(norm(v.criterion))) byText.set(norm(v.criterion), v)
-  return list.map(
+  const ignored: Verdict[] = []
+  for (const v of output) {
+    const key = norm(v.criterion)
+    if (!known.has(key)) ignored.push(v)
+    else {
+      const seen = byText.get(key)
+      if (!seen || severity[v.verdict] > severity[seen.verdict]) byText.set(key, v)
+    }
+  }
+  const verdicts = list.map<Verdict>(
     (criterion) =>
       byText.get(norm(criterion)) ?? {
         criterion,
@@ -122,6 +145,7 @@ function judged(list: string[], output: Verdict[]): Verdict[] {
         evidence: 'the acceptor gave no verdict for this criterion',
       },
   )
+  return { verdicts, ignored }
 }
 
 const listed = (verdicts: Verdict[]) => verdicts.map((v) => `- ${v.criterion}: ${v.evidence}`).join('\n')
@@ -156,8 +180,8 @@ export class AcceptanceHandler implements StageHandler {
       { profile: activeProfile(this.d.config().profiles), gateway: await this.d.gateway() },
     )
     if (!result.ok) throw new Error(`acceptor ${result.reason}: ${result.detail}`)
-    const verdicts = judged(list, result.output.criteria)
-    await this.d.linear.comment(id, verdictComment(verdicts))
+    const { verdicts, ignored } = judged(list, result.output.criteria)
+    await this.d.linear.comment(id, verdictComment(verdicts, ignored))
     const notMet = verdicts.filter((v) => v.verdict === 'not_met')
     const unverifiable = verdicts.filter((v) => v.verdict === 'unverifiable')
     this.d.out?.(

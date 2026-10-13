@@ -153,7 +153,53 @@ describe('acceptance stage handler', () => {
     })
     await s.go()
     expect(s.calls[0]?.args.slice(0, 3)).toEqual(['FOR-1', 'acceptance', 'unverifiable'])
-    expect(s.comments[0]?.body).not.toContain('something else')
+    expect(s.comments[0]?.body).not.toContain('| something else |')
+    expect(s.comments[0]?.body).toContain('Ignored: something else (met)')
+  })
+
+  test('the fallback parser strips checkbox prefixes from criteria', async () => {
+    const s = setup(
+      {
+        criteria: [
+          { criterion: 'A', verdict: 'met', evidence: 'e0' },
+          { criterion: 'B', verdict: 'met', evidence: 'e1' },
+        ],
+      },
+      '## Acceptance criteria\n- [ ] A\n- [x] B\n',
+    )
+    await s.go()
+    expect(s.inputs[0]).toContain('--- BEGIN CRITERIA ---\nA\nB\n--- END CRITERIA ---')
+    expect(s.calls).toEqual([{ method: 'completeStage', args: ['FOR-1'] }])
+  })
+
+  test('the worst of duplicate verdicts for a criterion wins', async () => {
+    const s = setup({
+      criteria: [
+        { criterion: 'invoices export as PDF', verdict: 'met', evidence: 'e0' },
+        { criterion: 'exports are logged', verdict: 'met', evidence: 'e1' },
+        { criterion: 'invoices export as PDF', verdict: 'not_met', evidence: 'e2' },
+        { criterion: 'exports are logged', verdict: 'unverifiable', evidence: 'e3' },
+        { criterion: 'exports are logged', verdict: 'met', evidence: 'e4' },
+      ],
+    })
+    await s.go()
+    expect(s.calls[0]?.args.slice(0, 3)).toEqual(['FOR-1', 'acceptance', 'not_met'])
+    expect(s.calls[0]?.args[3]).toContain('- invoices export as PDF: e2')
+    expect(s.comments[0]?.body).toContain('| exports are logged | unverifiable | e3 |')
+  })
+
+  test('verdicts for criteria not in the list appear on an Ignored line without affecting the outcome', async () => {
+    const s = setup({
+      criteria: [
+        { criterion: 'invoices export as PDF', verdict: 'met', evidence: 'e0' },
+        { criterion: 'exports are logged', verdict: 'met', evidence: 'e1' },
+        { criterion: 'something else', verdict: 'not_met', evidence: 'e2' },
+      ],
+    })
+    await s.go()
+    expect(s.calls).toEqual([{ method: 'completeStage', args: ['FOR-1'] }])
+    expect(s.comments[0]?.body).toContain('\n\nIgnored: something else (not_met)')
+    expect(s.comments[0]?.body).not.toContain('| something else |')
   })
 
   test('no criteria holds with no_criteria and calls nothing', async () => {
