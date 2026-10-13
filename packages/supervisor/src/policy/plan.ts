@@ -22,6 +22,14 @@ export function validatePlan(issues: readonly IssueSnapshot[], config: Config): 
     for (const b of i.blockedBy)
       if (given.has(b.identifier))
         blocks.set(b.identifier, [...(blocks.get(b.identifier) ?? []), i.identifier])
+  const openIds = new Set(open.map((i) => i.identifier))
+  const openBlocks = new Map<string, string[]>()
+  for (const [from, to] of blocks)
+    if (openIds.has(from))
+      openBlocks.set(
+        from,
+        to.filter((id) => openIds.has(id)),
+      )
 
   const files = new Map<string, string[]>()
   for (const i of open) {
@@ -30,7 +38,7 @@ export function validatePlan(issues: readonly IssueSnapshot[], config: Config): 
     else for (const e of template.errors) report.errors.push(`${i.identifier}: ${e.message}`)
     if (i.estimate === null) report.errors.push(`${i.identifier}: no estimate`)
   }
-  for (const cycle of cycles(blocks)) report.errors.push(`cycle: ${cycle.join(' → ')}`)
+  for (const cycle of cycles(openBlocks)) report.errors.push(`cycle: ${cycle.join(' → ')}`)
 
   for (const i of open) {
     const done = i.blockedBy.every((b) => {

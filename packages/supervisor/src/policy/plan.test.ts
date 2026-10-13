@@ -67,6 +67,21 @@ describe('validatePlan', () => {
     expect(report).toEqual({ errors: [], warnings: [], ready: [], waiting: [] })
   })
 
+  test('a cycle through closed issues is no error', () => {
+    const report = validatePlan(
+      [
+        issue('FOR-1', { status: 'Done', blockedBy: [ref('FOR-2', 'Done')] }),
+        issue('FOR-2', { status: 'Done', blockedBy: [ref('FOR-1', 'Done')] }),
+        issue('FOR-3', { blockedBy: [ref('FOR-4', 'Canceled')] }),
+        issue('FOR-4', { status: 'Canceled', blockedBy: [ref('FOR-3')] }),
+        issue('FOR-5'),
+      ],
+      config,
+    )
+    expect(report.errors).toEqual([])
+    expect(report.ready).toEqual(['FOR-5'])
+  })
+
   test('two ready issues with overlapping files give one warning and no error', () => {
     const report = validatePlan(
       [
