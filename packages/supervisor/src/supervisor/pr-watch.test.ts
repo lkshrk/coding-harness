@@ -6,7 +6,14 @@ import { importBundle } from '../adapters/git/host'
 import type { Classifier, FailureSignal } from '../ports'
 import { attemptsOf } from '../stages/context'
 import { git } from '../stages/gates/testing'
-import { FINISH, fakeThread, gate, integrationHarness, until } from '../stages/integration/testing'
+import {
+  type FakePr,
+  FINISH,
+  fakeThread,
+  gate,
+  integrationHarness,
+  until,
+} from '../stages/integration/testing'
 import type { Run } from '../state/runs'
 import { issueBody, snapshot } from '../testing/testing'
 
@@ -709,6 +716,94 @@ describe('pull request watching', () => {
       expect(held).toHaveLength(1)
       expect(held[0]?.body).toContain('ARCHITECTURE.md')
       expect(h.of('FAILURE_CLASSIFIED')).toHaveLength(1)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  const AUTO = { project: { id: 'p-omni', name: 'Omni', initiatives: [], labels: ['ai-merge:auto'] } }
+
+  async function queued() {
+    const root = mkdtempSync(join(tmpdir(), 'ns-watch-'))
+    const h = integrationHarness(root, (c) => c, { retry: { baseMs: 0, maxMs: 0 } })
+    const run = await h.integrated(AUTO)
+    const opened = h.gh.prs[0] as FakePr
+    opened.headSha = run.headSha ?? ''
+    h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+    return { ...h, run, opened, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  test('two green auto PRs merge one after the other, the second rebased only after the first merged', async () => {
+    const h = await queued()
+    try {
+      const pr = h.first.pullRequests.get('FOR-1')
+      if (!pr) throw new Error('no PR')
+      h.linear.put(snapshot({ identifier: 'FOR-2', title: 'Trim more', status: 'In Review', ...AUTO }))
+      const url = 'https://github.com/lkshrk/omni/pull/2'
+      h.gh.prs.push({ number: 2, url, head: 'ns/FOR-2', state: 'OPEN', headSha: 'f0r2', rebaseTo: 'r3based' })
+      h.first.pullRequests.put({ ...pr, issue: 'FOR-2', url, number: 2, branch: 'ns/FOR-2', headSha: 'f0r2' })
+
+      await h.first.tick()
+      expect(h.gh.gh('merge').map((c) => c.cmd)).toEqual([
+        ['gh', 'pr', 'merge', '1', '--repo', 'lkshrk/omni', '--squash'],
+      ])
+      expect(h.gh.gh('update-branch').map((c) => c.cmd[3])).toEqual(['1'])
+      expect(h.of('MERGED').map((e) => [e.issue, e.data.mode])).toEqual([['FOR-1', 'auto']])
+      expect(h.linear.get('FOR-1').status).toBe('Done')
+      expect(h.first.pullRequests.get('FOR-1')).toBeNull()
+
+      await h.first.tick()
+      expect(h.gh.gh('update-branch').map((c) => c.cmd[3])).toEqual(['1', '2'])
+      expect(h.first.pullRequests.get('FOR-2')).toMatchObject({ headSha: 'r3based', ci: 'pending' })
+      expect(h.gh.gh('merge')).toHaveLength(1)
+
+      await h.first.tick()
+      expect(h.gh.gh('merge').map((c) => c.cmd[3])).toEqual(['1', '2'])
+      expect(h.of('MERGED').map((e) => e.issue)).toEqual(['FOR-1', 'FOR-2'])
+      expect(h.gh.prs.map((p) => p.state)).toEqual(['MERGED', 'MERGED'])
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('an auto PR waits for CI before it is rebased or merged', async () => {
+    const h = await queued()
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pending' }]
+      await h.first.tick()
+      expect(h.gh.gh('update-branch')).toEqual([])
+      expect(h.gh.gh('merge')).toEqual([])
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a rebase that leaves the PR conflicting merges nothing and starts the pr_conflict repair', async () => {
+    const h = await queued()
+    try {
+      h.opened.rebaseConflicts = true
+      await h.first.tick()
+      expect(h.gh.gh('merge')).toEqual([])
+      await h.first.tick()
+      expect(h.gh.gh('merge')).toEqual([])
+      expect(h.of('FAILURE_CLASSIFIED').map((e) => e.data.evidence)).toEqual([
+        `base ${h.fx.base} conflicts in: unknown files`,
+      ])
+      expect(h.first.runs.forIssue('FOR-1')).toHaveLength(2)
+    } finally {
+      h.cleanup()
+    }
+  })
+
+  test('a manual PR with green CI is never rebased or merged', async () => {
+    const h = await watching()
+    try {
+      h.gh.checks = [{ name: 'build', bucket: 'pass' }]
+      await h.first.tick()
+      await h.first.tick()
+      expect(h.first.pullRequests.get('FOR-1')).toMatchObject({ mode: 'manual', ci: 'passed' })
+      expect(h.gh.gh('update-branch')).toEqual([])
+      expect(h.gh.gh('merge')).toEqual([])
     } finally {
       h.cleanup()
     }

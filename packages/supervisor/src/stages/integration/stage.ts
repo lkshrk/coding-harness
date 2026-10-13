@@ -93,7 +93,8 @@ export class IntegrationHandler implements StageHandler {
     }
     const title = pullRequestTitle(work.issue)
     const existing = cb.pullRequests.get(id)
-    if (existing && existing.headSha === run.headSha) {
+    // The merge queue may have rebased this run's head on the host; pushing it again would undo that.
+    if (existing && (existing.headSha === run.headSha || existing.run === run.id)) {
       if (lifecycleOf(config, work.issue.team, work.issue.status) !== 'review')
         await cb.pullRequestOpened(existing, title)
       return
@@ -110,7 +111,13 @@ export class IntegrationHandler implements StageHandler {
     const risk = riskPathsTouched(changed, repo.risk_paths)
     const ui = riskPathsTouched(changed, repo.ui_paths ?? [])
     const requested = viewIssue(work.issue, config, { covered: true })?.mergeMode ?? 'manual'
-    if (requested !== 'manual')
+    const unreviewed = cb.forcedManual(id) !== null
+    const mode = requested === 'auto' && risk.length === 0 && !unreviewed ? 'auto' : 'manual'
+    if (requested === 'auto' && mode === 'manual')
+      this.d.out?.(
+        `${id}: merge mode auto overridden (${risk.length ? `risk paths: ${risk.join(', ')}` : 'unreviewed'}); using manual`,
+      )
+    else if (requested === 'feature-branch')
       this.d.out?.(`${id}: merge mode ${requested} is not supported yet; using manual`)
     const branch = prBranch(id)
     const expected = existing ? (cb.continuedFrom(run) ?? existing.headSha) : undefined
@@ -168,7 +175,7 @@ export class IntegrationHandler implements StageHandler {
         headSha,
         title,
         body,
-        mode: 'manual',
+        mode,
         draft,
         ci: 'pending',
       },

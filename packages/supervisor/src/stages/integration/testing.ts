@@ -36,6 +36,9 @@ export type FakePr = {
   state: 'OPEN' | 'MERGED' | 'CLOSED'
   headSha?: string
   mergeable?: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
+  // update-branch moves the head here once, or reports a conflict.
+  rebaseTo?: string
+  rebaseConflicts?: boolean
 }
 
 const ROLLUP: Record<string, { status: string; conclusion: string }> = {
@@ -183,6 +186,25 @@ export class FakeGh {
     }
     if (cmd[1] === 'api' && cmd[3] === 'PATCH') return ok('{}')
     if (verb === 'edit') return ok('')
+    if (verb === 'update-branch' || verb === 'merge') {
+      const pr = this.prs.find((p) => String(p.number) === cmd[3])
+      if (pr?.state !== 'OPEN') return { exitCode: 1, stdout: '', stderr: `no open PR ${cmd[3]}` }
+      if (verb === 'merge') {
+        pr.state = 'MERGED'
+        return ok('')
+      }
+      if (pr.rebaseConflicts) {
+        pr.mergeable = 'CONFLICTING'
+        return {
+          exitCode: 1,
+          stdout: '',
+          stderr: 'GraphQL: merge conflict between base and head (updatePullRequestBranch)',
+        }
+      }
+      if (pr.rebaseTo) pr.headSha = pr.rebaseTo
+      delete pr.rebaseTo
+      return ok('')
+    }
     if (verb === 'view' && arg('--json') === 'statusCheckRollup')
       return ok(JSON.stringify({ statusCheckRollup: this.checks.map(rollupItem) }))
     if (verb === 'view' && arg('--json') === 'baseRefOid')
@@ -448,7 +470,14 @@ export function integrationHarness(
   const of = (type: EventType, s: Supervisor = sup as Supervisor) => s.log.since(null, { types: [type] })
 
   async function integrated(over: Partial<IssueSnapshot> = {}): Promise<Run> {
-    linear.put(snapshot({ identifier: 'FOR-1', title: 'Trim names', ...over }))
+    linear.put(
+      snapshot({
+        identifier: 'FOR-1',
+        title: 'Trim names',
+        project: { id: 'p-omni', name: 'Omni', initiatives: [], labels: ['ai-merge:manual'] },
+        ...over,
+      }),
+    )
     await first.start()
     await first.tick()
     const run = first.runs.forIssue('FOR-1').at(-1)
