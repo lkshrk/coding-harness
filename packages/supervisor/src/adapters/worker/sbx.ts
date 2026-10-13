@@ -20,7 +20,7 @@ export const SBX_LOG = '/tmp/nightshift.log'
 const LABELS_FILE = '.labels.json'
 const OUTBOX_INDEX = join(tmpdir(), 'nightshift-sbx-outboxes')
 const LINK_SCRIPT =
-  'while [ $# -gt 0 ]; do mkdir -p "$(dirname "$2")" && rm -rf "$2" && ln -s "$1" "$2" || exit 1; shift 2; done'
+  'mkdir -p "$1" && chmod 0777 "$1" || exit 1; shift; while [ $# -gt 0 ]; do mkdir -p "$(dirname "$2")" && rm -rf "$2" && ln -s "$1" "$2" || exit 1; shift 2; done'
 
 type SbxEntry = { name: string; status?: string; workspaces?: string[] }
 type SbxPort = { host_ip?: string; host_port?: number; sandbox_port?: number }
@@ -72,24 +72,27 @@ export class SbxSandbox implements SandboxDriver {
       ...caches.map((m) => m.hostPath),
       ...spec.mounts.filter((m) => m.readOnly).map((m) => `${m.hostPath}:ro`),
     ])
-    if (res.exitCode !== 0) throw new Error(`sbx create failed: ${res.stderr.trim()}`)
+    if (res.exitCode !== 0) {
+      rmSync(spec.outbox, { recursive: true, force: true })
+      rmSync(join(OUTBOX_INDEX, name), { force: true })
+      throw new Error(`sbx create failed: ${res.stderr.trim()}`)
+    }
     const links = spec.mounts.filter((m) => m.guestPath !== m.hostPath)
-    if (links.length > 0) {
-      const linked = await this.cli.run([
-        'exec',
-        '-u',
-        'root',
-        name,
-        'sh',
-        '-c',
-        LINK_SCRIPT,
-        'sh',
-        ...links.flatMap((m) => [m.hostPath, m.guestPath]),
-      ])
-      if (linked.exitCode !== 0) {
-        await this.destroy(h)
-        throw new Error(`linking guest paths failed: ${linked.stderr.trim()}`)
-      }
+    const linked = await this.cli.run([
+      'exec',
+      '-u',
+      'root',
+      name,
+      'sh',
+      '-c',
+      LINK_SCRIPT,
+      'sh',
+      spec.workdir,
+      ...links.flatMap((m) => [m.hostPath, m.guestPath]),
+    ])
+    if (linked.exitCode !== 0) {
+      await this.destroy(h)
+      throw new Error(`preparing workdir and guest paths failed: ${linked.stderr.trim()}`)
     }
     if (spec.egress.allow.length > 0) {
       const policy = await this.cli.run([
@@ -222,9 +225,9 @@ export class SbxSandbox implements SandboxDriver {
 
   async destroy(h: SandboxHandle): Promise<void> {
     const indexed = join(OUTBOX_INDEX, h.id)
+    const listed = await this.entry(h.id).catch(() => undefined)
     const outbox =
-      (await this.entry(h.id))?.workspaces?.[0] ??
-      (existsSync(indexed) ? readFileSync(indexed, 'utf8').trim() : undefined)
+      listed?.workspaces?.[0] ?? (existsSync(indexed) ? readFileSync(indexed, 'utf8').trim() : undefined)
     const res = await this.cli.run(['rm', '--force', h.id])
     if (res.exitCode !== 0 && !/not found/i.test(res.stderr))
       throw new Error(`sbx rm failed: ${res.stderr.trim()}`)
