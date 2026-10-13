@@ -194,7 +194,7 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
       ? new DshDriver({ sandbox, sessions, finishMcp: await buildFinishMcp() })
       : (opencode as OpenCodeDriver))
   const executor = new WorkerExecutor({
-    config: workerConfig(),
+    config: workerConfig,
     sandbox,
     worker,
     agents,

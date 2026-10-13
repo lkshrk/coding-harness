@@ -126,13 +126,13 @@ describe('renderContext', () => {
       local,
     }),
     policies: policy,
-    limits: {
+    limits: parseConfigSection('limits', {
       concurrency: 3,
       worker: { wall_clock: '45m', tokens: '2M', steps: 120, no_diff_steps: 25, no_diff_tokens: '250k' },
       repair_rounds: 2,
       best_of: 2,
       handoff_grace_seconds: 120,
-    },
+    }),
   }
 
   test('takes the active profile, the policy and the worker step limit from the config', () => {

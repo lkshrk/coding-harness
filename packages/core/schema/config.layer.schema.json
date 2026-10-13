@@ -226,6 +226,41 @@
           "minimum": 0,
           "maximum": 3600,
           "description": "how long a stopped worker has to commit and hand off before it is killed"
+        },
+        "watch": {
+          "description": "stall thresholds and progress cadence of the worker watcher; read when a run starts",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "no_tool_call_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "steps without any tool call before a no_tool_calls stall"
+            },
+            "repeated_tool_calls": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "identical tool calls in a row before a repeated_tool_call stall"
+            },
+            "idle": {
+              "$ref": "#/$defs/duration",
+              "description": "time without harness events while executing before an idle stall"
+            },
+            "no_diff_growth_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "steps with an unchanged diff before a no_diff_growth stall"
+            },
+            "progress_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "steps between progress reports"
+            },
+            "progress_interval": {
+              "$ref": "#/$defs/duration",
+              "description": "longest time between progress reports"
+            }
+          }
         }
       }
     },
@@ -508,6 +543,18 @@
         "github": {
           "$ref": "#/$defs/id",
           "description": "GitHub account for this repository instead of github.default"
+        },
+        "limits": {
+          "description": "overlaid on limits.worker for this repository's runs; a profile's limits still win",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "wall_clock": { "$ref": "#/$defs/duration" },
+            "tokens": { "$ref": "#/$defs/tokenCount" },
+            "steps": { "type": "integer", "minimum": 1 },
+            "no_diff_steps": { "type": "integer", "minimum": 1 },
+            "no_diff_tokens": { "$ref": "#/$defs/tokenCount" }
+          }
         }
       }
     },
