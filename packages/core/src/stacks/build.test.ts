@@ -300,6 +300,7 @@ describe('DevcontainerEnvironmentBuilder', () => {
     expect(Object.keys(worker.lsp).sort()).toEqual(['eslint', 'python', 'ruff', 'typescript'])
     expect(worker.lsp.python?.command).toEqual(['ty', 'server'])
     expect(worker.egress).toEqual(['files.pythonhosted.org', 'pypi.org', 'registry.npmjs.org'])
+    expect(worker.nestedDocker).toBe(false)
   })
 })
 

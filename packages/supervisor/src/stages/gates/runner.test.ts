@@ -59,6 +59,31 @@ describe('SandboxGateRunner', () => {
     expect(results[0]?.result.artifact).toBe(join(root, 'artifacts', '01RUN', 'gate-lint.log'))
   })
 
+  test("the gate sandbox may reach the repository's stack hosts but never the gateway", async () => {
+    const asked: string[] = []
+    const sandbox = new FakeSandboxDriver()
+    const runner = new SandboxGateRunner({
+      sandbox,
+      outbox: join(root, 'outbox'),
+      artifacts: join(root, 'artifacts'),
+      resources: { cpus: 2, memoryMb: 4096 },
+      egress: async (repository) => {
+        asked.push(repository)
+        return ['pypi.org', 'gateway.test']
+      },
+      gatewayUrl: 'http://gateway.test',
+    })
+    await runner.run(repo, '', 'c0ffee', checks, { run: '01RUN' })
+    expect(asked).toEqual(['omni'])
+    expect(sandbox.created[0]?.egress).toEqual({ allow: ['pypi.org'] })
+  })
+
+  test('without an egress source the gate sandbox gets no egress', async () => {
+    const { sandbox, runner } = setup()
+    await runner.run(repo, '', 'c0ffee', checks, { run: '01RUN' })
+    expect(sandbox.created[0]?.egress).toEqual({ allow: [] })
+  })
+
   test('stops at the first failing check and still destroys the sandbox', async () => {
     const { sandbox, runner, checkRuns } = setup({ 'make lint': { exitCode: 2, stderrTail: 'E501' } })
     const results = await runner.run(repo, '', 'c0ffee', checks, { run: '01RUN' })

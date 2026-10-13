@@ -10,6 +10,7 @@ import {
   renderFinishPlugin,
   type WorkerImage,
 } from '@nightshift/core'
+import { workerEgress } from '../../policy/egress'
 import { effectiveLimits } from '../../policy/limits'
 import { branchOf, parseDuration, parseTokens, workdirOf } from '../../policy/naming'
 import type {
@@ -178,7 +179,14 @@ export class WorkerExecutor implements RunExecutor {
         ...(index ? { CBM_CACHE_DIR: GRAPH_CACHE, NS_GRAPH_PROJECT: run.repository } : {}),
         ...(known ? { KNOWLEDGE_REPOS } : {}),
       },
-      egress: { allow: [new URL(gateway.base_url).host, ...worker.egress] },
+      egress: {
+        allow: workerEgress({
+          gatewayUrl: gateway.base_url,
+          ...(gateway.otel_endpoint ? { otelEndpoint: gateway.otel_endpoint } : {}),
+          stackHosts: worker.egress,
+          ...(worker.nestedDocker ? { nestedDocker: true } : {}),
+        }),
+      },
       workdir: '/work',
       labels: { nightshift: '1', run: run.id, issue: run.issue },
     })

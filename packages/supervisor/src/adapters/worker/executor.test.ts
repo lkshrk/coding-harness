@@ -337,6 +337,39 @@ describe('WorkerExecutor.start', () => {
     ])
   })
 
+  test('sandbox egress is the worker profile list with the OTel host', async () => {
+    config = {
+      ...config,
+      gateway: { ...config.gateway, otel_endpoint: 'https://otel.lan:4318/v1/traces' },
+    }
+    await started()
+    expect(sandbox.created[0]?.egress).toEqual({
+      allow: ['gateway.test', 'otel.lan:4318', 'registry.npmjs.org'],
+    })
+  })
+
+  test('a nested-Docker image adds the Docker Hub hosts to the sandbox egress', async () => {
+    await started({
+      image: async () => ({
+        image: 'nightshift/omni:1',
+        lsp: {},
+        egress: ['registry.npmjs.org'],
+        stacks: ['node', 'docker'],
+        nestedDocker: true,
+      }),
+    })
+    expect(sandbox.created[0]?.egress).toEqual({
+      allow: [
+        'auth.docker.io',
+        'gateway.test',
+        'production.cloudflare.docker.com',
+        'production.cloudfront.docker.com',
+        'registry-1.docker.io',
+        'registry.npmjs.org',
+      ],
+    })
+  })
+
   test("run limits come from the run's profile overlaid on limits.worker", async () => {
     const base = config.profiles.default as Profile
     config = {
