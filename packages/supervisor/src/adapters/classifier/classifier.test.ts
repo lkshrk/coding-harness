@@ -32,10 +32,11 @@ const failure: FailureSignal = {
   detail: 'registry unavailable',
 }
 
-function classifier(reply: string | Error, timeoutMs?: number) {
+function classifier(reply: string | Error, timeoutMs?: number, extra: Event[] = []) {
   const calls: Record<string, unknown>[] = []
   const logs: string[] = []
   const events: Event[] = [
+    ...extra,
     {
       id: 'event',
       ts: '2026-10-05T00:00:00.000Z',
@@ -86,15 +87,40 @@ describe('agent classifier', () => {
     expect(h.logs).toEqual([])
   })
 
+  test('input holds FILES and the last WORKER_PROGRESS as PROGRESS, not in HISTORY', async () => {
+    const progress = (id: string, last: string): Event => ({
+      id,
+      ts: '2026-10-05T00:00:00.000Z',
+      type: 'WORKER_PROGRESS',
+      run: failure.run.id,
+      data: { tools: { read: 3 }, last_tool: last, diff_lines: 42 },
+    })
+    const h = classifier(
+      JSON.stringify({ class: 'task_too_large', evidence: 'diff spans many files' }),
+      undefined,
+      [progress('p1', 'first-tool'), progress('p2', 'latest-tool')],
+    )
+    await h.instance.classify({ ...failure, files: ['src/a.ts', 'src/b.ts'] })
+    const request = h.calls[1] as { messages: { content: string }[] }
+    const input = request.messages[1]?.content ?? ''
+    expect(input).toContain('--- BEGIN FILES ---\nsrc/a.ts\nsrc/b.ts\n--- END FILES ---')
+    const block = /--- BEGIN PROGRESS ---\n([\s\S]*?)\n--- END PROGRESS ---/.exec(input)?.[1] ?? ''
+    expect(JSON.parse(block)).toEqual({ tools: { read: 3 }, last_tool: 'latest-tool', diff_lines: 42 })
+    const history = /--- BEGIN HISTORY ---\n([\s\S]*?)\n--- END HISTORY ---/.exec(input)?.[1] ?? ''
+    expect(history).not.toContain('WORKER_PROGRESS')
+    const order = ['EVENT', 'FILES', 'GATES', 'PROGRESS', 'FINISH', 'HISTORY'].map((b) =>
+      input.indexOf(`--- BEGIN ${b} ---`),
+    )
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+  })
+
   test.each(['not json', '{"class":"invented","evidence":"bad"}', '{"class":"environment"}'])(
     'falls back and logs invalid output: %s',
     async (reply) => {
       const h = classifier(reply)
-      expect(await h.instance.classify(failure)).toEqual({
-        class: 'unknown',
-        action: 'escalate_user',
-        fallback: true,
-      })
+      const c = await h.instance.classify(failure)
+      expect(c).toMatchObject({ class: 'unknown', action: 'escalate_user', fallback: true })
+      expect(c.errors?.length).toBeGreaterThan(0)
       expect(h.calls).toHaveLength(3)
       expect(h.logs[0]).toContain('invalid_output')
     },

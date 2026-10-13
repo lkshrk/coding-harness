@@ -23,6 +23,7 @@ export const SINGLE_CALL_BLOCKS = [
   'ISSUES',
   'PROJECTS',
   'FAILURE',
+  'PROGRESS',
 ] as const
 
 export type WorkerBlock = (typeof WORKER_BLOCKS)[number]

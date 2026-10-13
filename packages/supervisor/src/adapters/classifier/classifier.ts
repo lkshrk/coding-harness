@@ -31,13 +31,26 @@ type ClassifierDeps = {
   timeoutMs?: number
 }
 
-function input(f: FailureSignal, events: Event[]): string {
+function input(f: FailureSignal, all: Event[]): string {
+  const progress = all.findLast((e) => e.type === 'WORKER_PROGRESS')
+  const events = all.filter((e) => e.type !== 'WORKER_PROGRESS').slice(-20)
   return [
     fence('EVENT', JSON.stringify(f)),
+    fence('FILES', (f.files ?? []).join('\n')),
     fence('GATES', JSON.stringify(events.filter((e) => e.type === 'GATE_FAILED' || e.type === 'CI_FAILED'))),
+    fence('PROGRESS', progress ? JSON.stringify(progress.data) : ''),
     fence('FINISH', JSON.stringify(f.run.finish)),
     fence('HISTORY', JSON.stringify(events)),
   ].join('\n\n')
+}
+
+class InvalidOutput extends Error {
+  constructor(
+    message: string,
+    readonly errors: string[],
+  ) {
+    super(message)
+  }
 }
 
 export function agentClassifier(d: ClassifierDeps): Classifier {
@@ -54,7 +67,7 @@ export function agentClassifier(d: ClassifierDeps): Classifier {
             const fetch = gateway.fetch ?? globalThis.fetch
             return (d.call ?? runSingleCall)<{ class: FailureClass; evidence: string }>(
               def,
-              input(f, d.events(f.run.id).slice(-20)),
+              input(f, d.events(f.run.id)),
               {
                 profile: activeProfile(d.config().profiles, f.run.profile),
                 gateway: {
@@ -72,13 +85,22 @@ export function agentClassifier(d: ClassifierDeps): Classifier {
             }, d.timeoutMs ?? 30_000)
           }),
         ])
-        if (!result.ok) throw new Error(`${result.reason}: ${result.detail}`)
+        if (!result.ok) {
+          const message = `${result.reason}: ${result.detail}`
+          if (result.reason === 'invalid_output') throw new InvalidOutput(message, result.errors ?? [])
+          throw new Error(message)
+        }
         return { ...result.output, action: ACTIONS[result.output.class], fallback: false }
       } catch (e) {
         ;(d.out ?? console.error)(
           `${f.run.issue}: classifier fallback: ${e instanceof Error ? e.message : String(e)}`,
         )
-        return { class: 'unknown', action: 'escalate_user', fallback: true }
+        return {
+          class: 'unknown',
+          action: 'escalate_user',
+          fallback: true,
+          ...(e instanceof InvalidOutput ? { errors: e.errors } : {}),
+        }
       } finally {
         if (timer !== undefined) clearTimeout(timer)
       }

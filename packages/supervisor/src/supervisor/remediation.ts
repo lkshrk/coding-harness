@@ -46,13 +46,28 @@ export class Remediation {
       CHECKED_REASONS.includes(reason) || ENVIRONMENT_REASONS.includes(reason)
         ? fallbackClassifier
         : (this.rt.deps.classifier ?? fallbackClassifier)
+    const cached = this.rt.cache.get(run.issue)
+    const files = cached && viewIssue(cached, this.rt.config())?.files
     const c =
       reason === 'task_too_large'
         ? TASK_TOO_LARGE_CLASS
         : reason === 'base_conflict'
           ? baseConflictClass(detail)
-          : await classifier.classify({ run, reason, ...(detail ? { detail } : {}) })
+          : await classifier.classify({
+              run,
+              reason,
+              ...(detail ? { detail } : {}),
+              ...(files ? { files } : {}),
+            })
     this.rt.runs.update(run.id, { failure: c.class })
+    if (c.errors) {
+      this.rt.log.append({
+        type: 'SINGLE_CALL_INVALID',
+        issue: run.issue,
+        run: run.id,
+        data: { agent: 'classifier', errors: c.errors },
+      })
+    }
     const escalate =
       c.class !== 'environment' &&
       this.escalationCount(run.issue) >= this.rt.config().limits.repair_rounds + 2
