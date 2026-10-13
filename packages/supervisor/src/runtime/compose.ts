@@ -140,6 +140,8 @@ export async function composeSupervisor(o: ComposeOptions): Promise<Composed> {
         cpus: config.sandbox.resources.cpus ?? 4,
         memoryMb: memoryMb(config.sandbox.resources.memory),
       },
+      egress: async (repository) => (await images(repository)).egress,
+      gatewayUrl: config.gateway.base_url,
     })
   const hostGateway = async () => {
     const gw = current().gateway

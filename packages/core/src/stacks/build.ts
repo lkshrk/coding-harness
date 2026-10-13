@@ -255,7 +255,13 @@ export class DevcontainerEnvironmentBuilder implements EnvironmentBuilder {
   }
 }
 
-export type WorkerImage = { image: string; lsp: Record<string, LspEntry>; egress: string[]; stacks: string[] }
+export type WorkerImage = {
+  image: string
+  lsp: Record<string, LspEntry>
+  egress: string[]
+  stacks: string[]
+  nestedDocker?: boolean
+}
 
 export async function workerImageFor(
   builder: DevcontainerEnvironmentBuilder,
@@ -270,5 +276,6 @@ export async function workerImageFor(
     lsp: lspConfig(stacks),
     egress: [...new Set(stacks.flatMap((s) => s.egress))].sort(),
     stacks: image.stacks,
+    nestedDocker: stacks.some((s) => s.nestedDocker),
   }
 }
