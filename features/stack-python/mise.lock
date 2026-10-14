@@ -31,31 +31,31 @@ url_api = "https://api.github.com/repos/astral-sh/ruff/releases/assets/625999382
 provenance = "github-attestations"
 
 [[tools."github:astral-sh/ty"]]
-version = "0.0.86"
+version = "0.0.87"
 backend = "github:astral-sh/ty"
-specifiers = ["0.0.86"]
-
-[tools."github:astral-sh/ty".options]
-asset_pattern = "ty-aarch64-unknown-linux-gnu.tar.gz"
-
-[tools."github:astral-sh/ty"."platforms.linux-arm64"]
-checksum = "sha256:c40c4f4c72e1e7e29e71d2765b605b366393fa7e6296c903e0b21eb1927b59de"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.86/ty-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/ty/releases/assets/626334035"
-provenance = "github-attestations"
-
-[[tools."github:astral-sh/ty"]]
-version = "0.0.86"
-backend = "github:astral-sh/ty"
-specifiers = ["0.0.86"]
+specifiers = ["0.0.87"]
 
 [tools."github:astral-sh/ty".options]
 asset_pattern = "ty-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools."github:astral-sh/ty"."platforms.linux-x64"]
-checksum = "sha256:0024ef2bf1e95a56fca6d8f9be44d4abf28ee44860b05095ad2bc3cff6a6c767"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.86/ty-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/ty/releases/assets/626334238"
+checksum = "sha256:468774faee966b08606f7bbc078cc373391334f89f8e63331b339a8d9b4be87a"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.87/ty-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/ty/releases/assets/638514527"
+provenance = "github-attestations"
+
+[[tools."github:astral-sh/ty"]]
+version = "0.0.87"
+backend = "github:astral-sh/ty"
+specifiers = ["0.0.87"]
+
+[tools."github:astral-sh/ty".options]
+asset_pattern = "ty-aarch64-unknown-linux-gnu.tar.gz"
+
+[tools."github:astral-sh/ty"."platforms.linux-arm64"]
+checksum = "sha256:afcd702b62cdc16862b4115d2dd617ff4c8c9b4962bbdfa3aa1e8a25e807dda4"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.87/ty-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/ty/releases/assets/638514325"
 provenance = "github-attestations"
 
 [[tools."github:astral-sh/uv"]]
