@@ -11,8 +11,8 @@
         "bats": "1.13.0",
       },
       "optionalDependencies": {
-        "@opencode/cli-linux-arm64": "2.0.27",
-        "@opencode/cli-linux-x64-baseline": "2.0.27",
+        "@opencode/cli-linux-arm64": "2.0.32",
+        "@opencode/cli-linux-x64-baseline": "2.0.32",
       },
     },
   },
@@ -865,9 +865,9 @@
 
     "@opencode-ai/sdk": ["@opencode-ai/sdk@1.19.0", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-lDFYTD6qxzq1mfwxF6Kq1DAs6rEwF4xoZ2I3G1sB7hAZ8Yb28JurtSmmcK7ZzZ8Z4qBUYbZimHJ6DM4JFq5amw=="],
 
-    "@opencode/cli-linux-arm64": ["@opencode/cli-linux-arm64@2.0.27", "", { "os": "linux", "cpu": "arm64" }, "sha512-qK2E8iy7ZyOC1RcbJZuVuzUHHDwg4BxgE405+bPLZjep0cU2yqvifsVB0UptyiVs2GxXfZDbmn2w7y5PW49ssg=="],
+    "@opencode/cli-linux-arm64": ["@opencode/cli-linux-arm64@2.0.32", "", { "os": "linux", "cpu": "arm64" }, "sha512-YR5O03irvmot/G0f8W49ehvhn5uqCFN3vf9JTsChvf47W6ldjKCNvsaCSXS2SP26dPOUMQBn7WqbKnyHzrNR5w=="],
 
-    "@opencode/cli-linux-x64-baseline": ["@opencode/cli-linux-x64-baseline@2.0.27", "", { "os": "linux", "cpu": "x64" }, "sha512-5q+5k6G8n4FGme5wf1zQQTX5CDEgakFPkCD45TLGlbecKCpCewJIZNoDR8n2O0HaEewRlyGIWJaNIRFrBQB5YA=="],
+    "@opencode/cli-linux-x64-baseline": ["@opencode/cli-linux-x64-baseline@2.0.32", "", { "os": "linux", "cpu": "x64" }, "sha512-NrB4iglJb7vGZWJ6B0qVH1EMHhWBZ4ADsAG9W0xLanzgxJ6eLEEsGBvxRX0cm/KPag5E/N0yZGsDVDZYcnz/OQ=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.1", "", {}, "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q=="],
 
