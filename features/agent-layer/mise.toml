@@ -22,7 +22,7 @@ platforms.linux-x64 = { asset_pattern = "shellcheck-v*.linux.x86_64.tar.gz" }
 platforms.linux-arm64 = { asset_pattern = "shellcheck-v*.linux.aarch64.tar.gz" }
 
 [tools."github:astral-sh/uv"]
-version = "0.13.0"
+version = "0.13.5"
 platforms.linux-x64 = { asset_pattern = "uv-x86_64-unknown-linux-gnu.tar.gz" }
 platforms.linux-arm64 = { asset_pattern = "uv-aarch64-unknown-linux-gnu.tar.gz" }
 
